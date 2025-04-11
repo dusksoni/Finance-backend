@@ -1,0 +1,162 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EmployeeRole {
+  FINANCE_MANAGER
+  SALES_EXECUTIVE
+  SUPPORT_AGENT
+}
+
+enum LoanType {
+  TWOWHEELER
+  AGRICULTURE
+}
+
+model Admin {
+  id               String             @id @default(uuid())
+  name             String
+  email            String             @unique
+  password         String
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  employees        Employee[]
+  loginActivities  LoginActivity[]
+  actionLogs       AdminActionLog[]
+  users            User[]
+}
+
+model Role {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  permissions String[]
+
+  employees   Employee[]
+}
+
+
+model Employee {
+  id         String     @id @default(uuid())
+  name       String
+  email      String     @unique
+  password   String
+
+  roleId     String?
+  role       Role?        @relation(fields: [roleId], references: [id])
+
+  adminId    String?
+  admin      Admin?      @relation(fields: [adminId], references: [id])
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  isDeleted  Boolean  @default(false) // 👈 Add this
+  isBlocked  Boolean  @default(false) // 👈 Add this
+  users      User[]
+  loginActivities LoginActivity[]
+}
+
+
+model LoginActivity {
+  id          String     @id @default(uuid())
+  adminId     String?
+  employeeId  String?
+  role        String
+  deviceName  String?
+  deviceType  String?
+  latitude    Float?
+  longitude   Float?
+  ipAddress   String?
+  loggedInAt  DateTime   @default(now())
+
+  admin       Admin?     @relation(fields: [adminId], references: [id])
+  employee    Employee?  @relation(fields: [employeeId], references: [id])
+}
+
+model AdminActionLog {
+  id          String   @id @default(uuid())
+  adminId     String?
+  action      String
+  targetId    String?
+  table       String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  admin       Admin?    @relation(fields: [adminId], references: [id])
+}
+
+model User {
+  id          String     @id @default(uuid())
+  name        String
+  email       String?    @unique
+  phone       String?    @unique
+  otp         String?
+  createdBy   String?
+  adminId     String?
+  employeeId  String?
+  admin       Admin?     @relation(fields: [adminId], references: [id])
+  employee    Employee?  @relation(fields: [employeeId], references: [id])
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  details     UserDetails?
+  loans       Loan[]
+}
+
+model UserDetails {
+  id         String  @id @default(uuid())
+  userId     String  @unique
+  aadhaar    String  @unique
+  pan        String  @unique
+  address    String?
+  photoUrl   String?
+  user       User    @relation(fields: [userId], references: [id])
+}
+
+model Loan {
+  id            String     @id @default(uuid())
+  userId        String
+  type          LoanType
+  amount        Float
+  interestRate  Float      @default(0.05)
+  startDate     DateTime
+  dueDay        Int        @default(5)
+  isClosed      Boolean    @default(false)
+
+  user          User       @relation(fields: [userId], references: [id])
+  payments      Payment[]
+  twoWheelerLoan TwoWheelerLoan?
+  agriLoan       AgricultureLoan?
+}
+
+model Payment {
+  id         String   @id @default(uuid())
+  loanId     String
+  amount     Float
+  paidOn     DateTime
+  paymentFor DateTime
+  loan       Loan     @relation(fields: [loanId], references: [id])
+}
+
+model TwoWheelerLoan {
+  id                  String   @id @default(uuid())
+  loanId              String   @unique
+  vehicleType         String
+  brand               String
+  model               String
+  dealerName          String
+  registrationNumber  String
+  loan                Loan     @relation(fields: [loanId], references: [id])
+}
+
+model AgricultureLoan {
+  id         String   @id @default(uuid())
+  loanId     String   @unique
+  equipment  String
+  loan       Loan     @relation(fields: [loanId], references: [id])
+}
