@@ -26,6 +26,35 @@ async function main() {
       }
     ]
   });
+  await prisma.photoIdType.createMany({
+    data: [
+      {
+        name: "AADHAAR",
+        description: "12-digit unique identity number",
+        minLength: 12,
+        maxLength: 12,
+        numberTypeEg: "123412341234",
+        validation: "^[0-9]{12}$",
+      },
+      {
+        name: "PAN",
+        description: "Permanent Account Number (PAN) card",
+        minLength: 10,
+        maxLength: 10,
+        numberTypeEg: "ABCDE1234F",
+        validation: "^[A-Z]{5}[0-9]{4}[A-Z]{1}$",
+      },
+      {
+        name: "DRIVING_LICENSE",
+        description: "Driving License number in India",
+        minLength: 10,
+        maxLength: 20,
+        numberTypeEg: "MH12 20110001234",
+        validation: "^[A-Z]{2}[0-9]{2}\\s?[0-9]{11}$", // Update if your format differs
+      },
+    ],
+  });
+  
 }
 
 main()

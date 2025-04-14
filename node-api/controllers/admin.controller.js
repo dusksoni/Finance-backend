@@ -15,13 +15,10 @@ exports.adminLogin = async (req, res) => {
         .json({ status: 401, error: "Invalid credentials" });
     }
 
-    const token = jwt.sign({ adminId: admin.id, type: "ADMIN" }, SECRET, {
-      expiresIn: "7d",
-    });
-
+    
     const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-
-    await prisma.LoginActivity.create({
+    
+   const loginActivity = await prisma.LoginActivity.create({
       data: {
         adminId: admin.id,
         role: "ADMIN",
@@ -32,7 +29,10 @@ exports.adminLogin = async (req, res) => {
         ipAddress: ip,
       },
     });
-
+    
+    const token = jwt.sign({ adminId: admin.id, type: "ADMIN", loginActivityId: loginActivity.id }, SECRET, {
+      expiresIn: "7d",
+    });
     res.json({ status: 200, data: { token } });
   } catch (error) {
     return res

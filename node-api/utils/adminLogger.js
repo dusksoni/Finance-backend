@@ -1,19 +1,31 @@
 const prisma = require("../lib/prisma");
 
 /**
- * Log admin activity
+ * Log activity (admin or employee)
  * @param {Object} params
- * @param {number} params.adminId
- * @param {string} params.action - What happened (e.g. 'CREATED EMPLOYEE')
- * @param {string} params.table - Affected table (e.g. 'Employee')
- * @param {number} [params.targetId] - Affected record ID
- * @param {Object} [params.metadata] - Optional context (sent as JSON)
+ * @param {string} [params.adminId] - ID of the admin performing the action
+ * @param {string} [params.employeeId] - ID of the employee performing the action
+ * @param {string} [params.loginActivityId] - ID of the session in which action happened
+ * @param {string} params.action - Description of what happened (e.g. 'UPDATED USER')
+ * @param {string} params.table - The affected table name
+ * @param {string} [params.targetId] - ID of the record that was affected
+ * @param {Object} [params.metadata] - Extra context about the action (will be stored as JSON)
  */
-const logAdminAction = async ({ adminId, action, table, targetId, metadata }) => {
+const logAction = async ({
+  adminId,
+  employeeId,
+  loginActivityId,
+  action,
+  table,
+  targetId,
+  metadata = {},
+}) => {
   try {
-    await prisma.adminActionLog.create({
+    await prisma.actionLog.create({
       data: {
         adminId,
+        employeeId,
+        loginActivityId,
         action,
         table,
         targetId,
@@ -21,8 +33,8 @@ const logAdminAction = async ({ adminId, action, table, targetId, metadata }) =>
       },
     });
   } catch (error) {
-    console.error("Failed to log admin action:", error.message);
+    console.error("❌ Failed to log action:", error.message);
   }
 };
 
-module.exports = logAdminAction;
+module.exports = logAction;

@@ -1,7 +1,7 @@
-const logAdminAction = require("../utils/adminLogger");
 const prisma = require("../lib/prisma");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const logAction = require("../utils/adminLogger");
 const SECRET = process.env.SECRET_KEY;
 
 exports.createEmployee = async (req, res) => {
@@ -29,8 +29,9 @@ exports.createEmployee = async (req, res) => {
       },
     });
 
-    await logAdminAction({
+    await logAction({
       adminId: req.user.adminId,
+      loginActivityId: req.user.loginActivityId,
       action: "CREATED EMPLOYEE",
       table: "Employee",
       targetId: employee.id,
@@ -73,8 +74,9 @@ exports.putEmployee = async (req, res) => {
       include: { role: true },
     });
 
-    await logAdminAction({
+    await logAction({
       adminId: req.user.adminId,
+      loginActivityId: req.user.loginActivityId,
       action: "UPDATED EMPLOYEE",
       table: "Employee",
       targetId: id,
@@ -103,8 +105,9 @@ exports.deleteEmployee = async (req, res) => {
       data: { isDeleted: true },
     });
 
-    await logAdminAction({
+    await logAction({
       adminId: req.user.adminId,
+      loginActivityId: req.user.loginActivityId,
       action: "DELETED EMPLOYEE",
       table: "Employee",
       targetId: id,
@@ -133,8 +136,9 @@ exports.blockedEmployee = async (req, res) => {
       data: { isBlocked },
     });
 
-    await logAdminAction({
+    await logAction({
       adminId: req.user.adminId,
+      loginActivityId: req.user.loginActivityId,
       action: isBlocked ? "BLOCKED EMPLOYEE" : "UNBLOCKED EMPLOYEE",
       table: "Employee",
       targetId: id,
@@ -166,17 +170,13 @@ exports.employeeLogin = async (req, res) => {
     return res.status(401).json({ error: "Invalid credentials" });
   }
 
-  const token = jwt.sign(
-    { employeeId: employee.id, type: "EMPLOYEE" },
-    SECRET,
-    { expiresIn: "7d" }
-  );
+  
 
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
 
-  await prisma.loginActivity.create({
+  const loginActivity = await prisma.loginActivity.create({
     data: {
-      adminId: employee.adminId, // this links the login to the main admin
+      employeeId: employee.id, // this links the login to the main admin
       role: "EMPLOYEE",
       deviceName,
       deviceType,
@@ -186,5 +186,10 @@ exports.employeeLogin = async (req, res) => {
     },
   });
 
+  const token = jwt.sign(
+    { employeeId: employee.id, type: "EMPLOYEE", loginActivityId: loginActivity.id  },
+    SECRET,
+    { expiresIn: "7d" }
+  );
   res.json({ status: 200, data: { token } });
 };
