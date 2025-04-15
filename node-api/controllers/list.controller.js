@@ -87,7 +87,6 @@ exports.getEmployeeById = async (req, res) => {
   }
 };
 
-
 exports.listUsers = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -103,16 +102,23 @@ exports.listUsers = async (req, res) => {
             { phone: { contains: search, mode: "insensitive" } },
           ],
         }
-      : {}; // no filter if search is empty
+      : {};
 
     const [users, total] = await Promise.all([
       prisma.user.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: "desc" }, // Optional: latest first
+        orderBy: { createdAt: "desc" },
         include: {
-          details: true,
+          details: {
+            include: {
+              photo: true,
+              photoIdTypeImages: true,
+              proofOfIncomeImages: true,
+              photoIdType: true
+            },
+          },
           loans: true,
         },
       }),
@@ -134,8 +140,6 @@ exports.listUsers = async (req, res) => {
     });
   }
 };
-
-// 🔍 Get user by ID
 exports.getUserById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -143,7 +147,17 @@ exports.getUserById = async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id },
       include: {
-        details: true,
+        details: {
+          include: {
+            photo: true,
+            photoIdTypeImages: true,
+            proofOfIncomeImages: true,
+            photoIdType: true
+            
+          },
+        },
+        employee: true,
+        admin: true,
         loans: true,
       },
     });
