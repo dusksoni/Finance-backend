@@ -4,29 +4,26 @@ const jwt = require("jsonwebtoken");
 const logAction = require("../utils/adminLogger");
 const SECRET = process.env.SECRET_KEY;
 
+// CREATE EMPLOYEE
 exports.createEmployee = async (req, res) => {
   try {
-    const { name, email, password, roleId } = req.body;
-    // Check if the email already exists
-    const existingEmployee = await prisma.employee.findUnique({
-      where: { email },
-    });
+    const { name, email, password, roleId, regionId } = req.body;
 
-    if (existingEmployee) {
-      return res.status(400).json({ error: "Email already in use" });
-    }
+    const existingEmployee = await prisma.employee.findUnique({ where: { email } });
+    if (existingEmployee) return res.status(400).json({ error: "Email already in use" });
+
     const hashedPassword = await bcrypt.hash(password, 10);
+
     const employee = await prisma.employee.create({
       data: {
         name,
         email,
         password: hashedPassword,
         role: { connect: { id: roleId } },
+        region: regionId ? { connect: { id: regionId } } : undefined,
         admin: { connect: { id: req.user.adminId } },
       },
-      include: {
-        role: true,
-      },
+      include: { role: true, region: true },
     });
 
     await logAction({
@@ -35,43 +32,38 @@ exports.createEmployee = async (req, res) => {
       action: "CREATED EMPLOYEE",
       table: "Employee",
       targetId: employee.id,
-      metadata: { name, email, roleId },
+      metadata: { name, email, roleId, regionId },
     });
 
-    res.status(201).json({ message: "Employee Created" });
+    res.status(201).json({ message: "Employee Created", data: employee });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
+// UPDATE EMPLOYEE
 exports.putEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, password, roleId } = req.body;
+    const { name, password, roleId, regionId } = req.body;
 
-    // Check if employee exists
     const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee) return res.status(404).json({ error: "Employee not found" });
 
-    if (!employee) {
-      return res.status(404).json({ error: "Employee not found" });
-    }
-
-    // Prepare update data
     const updateData = {
       name,
       role: { connect: { id: roleId } },
+      region: regionId ? { connect: { id: regionId } } : undefined,
     };
 
-    // Only update password if provided
-    if (password && password.trim() !== "") {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      updateData.password = hashedPassword;
+    if (password && password.trim()) {
+      updateData.password = await bcrypt.hash(password, 10);
     }
 
-    const updatedEmployee = await prisma.employee.update({
+    const updated = await prisma.employee.update({
       where: { id },
       data: updateData,
-      include: { role: true },
+      include: { role: true, region: true },
     });
 
     await logAction({
@@ -80,25 +72,21 @@ exports.putEmployee = async (req, res) => {
       action: "UPDATED EMPLOYEE",
       table: "Employee",
       targetId: id,
-      metadata: { name, roleId },
+      metadata: updateData,
     });
 
-    res.status(200).json({ message: "Employee updated successfully" });
+    res.status(200).json({ message: "Employee updated", data: updated });
   } catch (err) {
-    console.error("Update Employee Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
 
+// DELETE EMPLOYEE (soft delete)
 exports.deleteEmployee = async (req, res) => {
+  const { id } = req.params;
   try {
-    const { id } = req.params;
-
     const employee = await prisma.employee.findUnique({ where: { id } });
-
-    if (!employee || employee.isDeleted) {
-      return res.status(404).json({ error: "Employee not found" });
-    }
+    if (!employee || employee.isDeleted) return res.status(404).json({ error: "Not found" });
 
     await prisma.employee.update({
       where: { id },
@@ -116,22 +104,19 @@ exports.deleteEmployee = async (req, res) => {
 
     res.json({ message: "Employee deleted successfully" });
   } catch (err) {
-    console.error("Delete Employee Error:", err);
-    res.status(500).json({ error: "Failed to delete employee" });
+    res.status(500).json({ error: err.message });
   }
 };
+
+// BLOCK/UNBLOCK EMPLOYEE
 exports.blockedEmployee = async (req, res) => {
+  const { id } = req.params;
+  const { isBlocked } = req.body;
   try {
-    const { id } = req.params;
-    const { isBlocked } = req.body;
-
     const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee || employee.isDeleted) return res.status(404).json({ error: "Not found" });
 
-    if (!employee || employee.isDeleted) {
-      return res.status(404).json({ error: "Employee not found" });
-    }
-
-    const updatedEmployee = await prisma.employee.update({
+    const updated = await prisma.employee.update({
       where: { id },
       data: { isBlocked },
     });
@@ -142,41 +127,34 @@ exports.blockedEmployee = async (req, res) => {
       action: isBlocked ? "BLOCKED EMPLOYEE" : "UNBLOCKED EMPLOYEE",
       table: "Employee",
       targetId: id,
-      metadata: { name: employee.name, email: employee.email },
+      metadata: { name: employee.name },
     });
 
     res.json({
       message: `Employee ${isBlocked ? "blocked" : "unblocked"} successfully`,
-      status: 200,
-      data: updatedEmployee,
+      data: updated,
     });
   } catch (err) {
-    console.error("Block/Unblock Employee Error:", err);
-    res.status(500).json({ error: "Failed to update employee status" });
+    res.status(500).json({ error: err.message });
   }
 };
 
+// LOGIN
 exports.employeeLogin = async (req, res) => {
-  const { email, password, deviceName, deviceType, latitude, longitude } =
-    req.body;
+  const { email, password, deviceName, deviceType, latitude, longitude } = req.body;
 
   const employee = await prisma.employee.findUnique({ where: { email } });
-
-  if (employee.isBlocked) {
-    return res.status(400).json({ error: "This Account is Blocked" });
-  }
-
   if (!employee || !(await bcrypt.compare(password, employee.password))) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
 
-  
+  if (employee.isBlocked) return res.status(400).json({ error: "Account is blocked" });
 
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
 
   const loginActivity = await prisma.loginActivity.create({
     data: {
-      employeeId: employee.id, // this links the login to the main admin
+      employeeId: employee.id,
       role: "EMPLOYEE",
       deviceName,
       deviceType,
@@ -187,9 +165,10 @@ exports.employeeLogin = async (req, res) => {
   });
 
   const token = jwt.sign(
-    { employeeId: employee.id, type: "EMPLOYEE", loginActivityId: loginActivity.id  },
+    { employeeId: employee.id, type: "EMPLOYEE", loginActivityId: loginActivity.id },
     SECRET,
     { expiresIn: "7d" }
   );
-  res.json({ status: 200, data: { token } });
+
+  res.json({ token });
 };

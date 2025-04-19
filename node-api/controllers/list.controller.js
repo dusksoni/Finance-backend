@@ -28,6 +28,14 @@ exports.listEmployees = async (req, res) => {
         id: true,
         name: true,
         isBlocked: true,
+        region: {
+          select: {
+            id: true,
+            name: true,
+            city: true,
+            state: true,
+          }
+        },
         email: true,
         role: {
           select: {
@@ -64,6 +72,14 @@ exports.getEmployeeById = async (req, res) => {
         name: true,
         email: true,
         isBlocked: true,
+        region: {
+          select: {
+            id: true,
+            name: true,
+            city: true,
+            state: true,
+          }
+        },
         role: {
           select: {
             id: true,
@@ -113,6 +129,9 @@ exports.listUsers = async (req, res) => {
         include: {
           details: {
             include: {
+              region: true,
+              state: true,
+              city: true,
               photo: true,
               photoIdTypeImages: true,
               proofOfIncomeImages: true,
@@ -149,6 +168,9 @@ exports.getUserById = async (req, res) => {
       include: {
         details: {
           include: {
+            region: true,
+            state: true,
+            city: true,
             photo: true,
             photoIdTypeImages: true,
             proofOfIncomeImages: true,

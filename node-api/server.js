@@ -12,6 +12,11 @@ const userAuthRoutes = require("./routes/user.auth.route");
 const terminateRoute = require("./routes/terminate.route");
 const uploadRoute = require("./routes/upload.route");
 const photoIdRoute = require("./routes/photoIdType.routes");
+const loanRoute = require("./routes/loan.route");
+const loanTypeRoute = require("./routes/loanType.routes");
+const stateRoute = require("./routes/state.routes");
+const cityRoute = require("./routes/city.routes");
+const regionRoute  = require("./routes/region.routes");
 
 app.use(cors());
 app.use(express.json());
@@ -23,6 +28,12 @@ app.use("/api/user-auth", userAuthRoutes);
 app.use("/api/terminate", terminateRoute);
 app.use("/api/file", uploadRoute);
 app.use("/api/photoId", photoIdRoute);
+app.use("/api/loan", loanRoute);
+app.use("/api/loanType", loanTypeRoute);
+app.use("/api/state", stateRoute);
+app.use("/api/city", cityRoute);
+app.use("/api/region", regionRoute);
+
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));

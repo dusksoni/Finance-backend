@@ -1,4 +1,5 @@
 const prisma = require("../lib/prisma");
+const logAction = require("../utils/adminLogger");
 
 // List all roles
 exports.listRoles = async (req, res) => {
@@ -57,7 +58,7 @@ exports.createRole = async (req, res) => {
       data: { name, description, permissions },
     });
 
-    await logAdminAction({
+    await logAction({
       adminId: req.user.adminId,
       loginActivityId: req.user.activity,
       action: "CREATED ROLE",
@@ -80,7 +81,7 @@ exports.updateRole = async (req, res) => {
       where: { id: req.params.id },
       data: { name, description, permissions },
     });
-    await logAdminAction({
+    await logAction({
       adminId: req.user.adminId,
       loginActivityId: req.user.activity,
       action: "UPDATED ROLE",
@@ -99,7 +100,7 @@ exports.deleteRole = async (req, res) => {
   try {
     const deleted = await prisma.role.delete({ where: { id: req.params.id } });
 
-    await logAdminAction({
+    await logAction({
       adminId: req.user.adminId,
       loginActivityId: req.user.activity,
       action: "DELETED ROLE",

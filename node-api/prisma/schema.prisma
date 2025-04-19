@@ -1,3 +1,7 @@
+// ==========================
+// 🔧 Prisma Configuration
+// ==========================
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,17 +11,56 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ==========================
+// 📦 Enums
+// ==========================
+
 enum EmployeeRole {
   FINANCE_MANAGER
   SALES_EXECUTIVE
   SUPPORT_AGENT
 }
 
-enum LoanType {
-  TWOWHEELER
-  AGRICULTURE
-  MSME
+// ==========================
+// 📍 Location Models
+// ==========================
+
+model State {
+  id   String @id @default(uuid())
+  name String @unique
+  city City[]
+
+  employees   Employee[] // 🔁 back-relation for Employee.state
+  userDetails UserDetails[] // 👈 new back-reference
+  Region      Region[]
 }
+
+model City {
+  id      String @id @default(uuid())
+  name    String @unique
+  stateId String
+  state   State  @relation(fields: [stateId], references: [id])
+
+  employees   Employee[] // 🔁 back-relation for Employee.city
+  userDetails UserDetails[] // 👈 new back-reference
+  Region      Region[]
+}
+
+model Region {
+  id      String @id @default(uuid())
+  name    String
+  stateId String
+  cityId  String
+
+  state       State         @relation(fields: [stateId], references: [id])
+  city        City          @relation(fields: [cityId], references: [id])
+  userDetails UserDetails[] // 👈 new back-reference
+  employees   Employee[]
+}
+
+// ==========================
+// 👤 Identity & Roles
+// ==========================
 
 model Admin {
   id        String   @id @default(uuid())
@@ -36,12 +79,11 @@ model Admin {
 }
 
 model Role {
-  id          String   @id @default(uuid())
-  name        String   @unique
+  id          String     @id @default(uuid())
+  name        String     @unique
   description String?
   permissions String[]
-
-  employees Employee[]
+  employees   Employee[]
 }
 
 model Employee {
@@ -53,17 +95,44 @@ model Employee {
   roleId String?
   role   Role?   @relation(fields: [roleId], references: [id])
 
-  adminId            String?
-  admin              Admin?               @relation(fields: [adminId], references: [id])
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  isDeleted          Boolean              @default(false) // 👈 Add this
-  isBlocked          Boolean              @default(false) // 👈 Add this
+  regionId String?
+  region   Region? @relation(fields: [regionId], references: [id])
+
+  adminId String?
+  admin   Admin?  @relation(fields: [adminId], references: [id])
+
+  stateId String?
+  cityId  String?
+  state   State?  @relation(fields: [stateId], references: [id])
+  city    City?   @relation(fields: [cityId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isDeleted Boolean  @default(false)
+  isBlocked Boolean  @default(false)
+
   users              User[]
   loginActivities    LoginActivity[]
   actionLogs         ActionLog[]
   terminationRequest TerminationRequest[]
   loans              Loan[]
+}
+
+model LoginActivity {
+  id         String   @id @default(uuid())
+  adminId    String?
+  employeeId String?
+  role       String
+  deviceName String?
+  deviceType String?
+  latitude   Float?
+  longitude  Float?
+  ipAddress  String?
+  loggedInAt DateTime @default(now())
+
+  admin      Admin?      @relation(fields: [adminId], references: [id])
+  employee   Employee?   @relation(fields: [employeeId], references: [id])
+  actionLogs ActionLog[]
 }
 
 model ActionLog {
@@ -83,51 +152,28 @@ model ActionLog {
   loginActivity LoginActivity? @relation(fields: [loginActivityId], references: [id])
 }
 
-model LoginActivity {
-  id         String   @id @default(uuid())
-  adminId    String?
-  employeeId String?
-  role       String
-  deviceName String?
-  deviceType String?
-  latitude   Float?
-  longitude  Float?
-  ipAddress  String?
-  loggedInAt DateTime @default(now())
-
-  admin      Admin?      @relation(fields: [adminId], references: [id])
-  employee   Employee?   @relation(fields: [employeeId], references: [id])
-  actionLogs ActionLog[] // 👈 This lets you track which actions were done in each login
-}
+// ==========================
+// 👥 Users
+// ==========================
 
 model User {
-  id          String       @id @default(uuid())
+  id          String    @id @default(uuid())
   name        String
-  email       String?      @unique
-  phone       String?      @unique
+  email       String?   @unique
+  phone       String?   @unique
   otp         String?
   createdBy   String?
   adminId     String?
   employeeId  String?
-  admin       Admin?       @relation(fields: [adminId], references: [id])
-  employee    Employee?    @relation(fields: [employeeId], references: [id])
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  isBlocked   Boolean      @default(false)
-  isDefaulter Boolean      @default(false)
-  details     UserDetails?
-  loans       Loan[]
-}
+  admin       Admin?    @relation(fields: [adminId], references: [id])
+  employee    Employee? @relation(fields: [employeeId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  isBlocked   Boolean   @default(false)
+  isDefaulter Boolean   @default(false)
 
-model PhotoIdType {
-  id           String        @id @default(uuid())
-  name         String        @unique
-  description  String
-  minLength    Int
-  maxLength    Int
-  numberTypeEg String
-  validation   String? // Regex or format note
-  userDetails  UserDetails[]
+  details UserDetails?
+  loans   Loan[]
 }
 
 model UserDetails {
@@ -139,36 +185,92 @@ model UserDetails {
   creditScore   Int?
   profession    String
   address       String?
-  city          String?
+  cityText      String?
   country       String
   photoId       String?
 
+  // 🔁 Foreign keys now moved here:
+  stateId  String?
+  cityId   String?
+  regionId String?
+
+  state  State?  @relation(fields: [stateId], references: [id])
+  city   City?   @relation(fields: [cityId], references: [id])
+  region Region? @relation(fields: [regionId], references: [id])
+
   user        User        @relation(fields: [userId], references: [id])
   photoIdType PhotoIdType @relation(fields: [photoIdTypeId], references: [id])
-  photo       File?       @relation("Photo", fields: [photoId], references: [id]) // 👈 named relation
+  photo       File?       @relation("Photo", fields: [photoId], references: [id])
 
   photoIdTypeImages   File[] @relation("PhotoIdTypeImages")
   proofOfIncomeImages File[] @relation("ProofOfIncomeImages")
 }
 
+model PhotoIdType {
+  id           String        @id @default(uuid())
+  name         String        @unique
+  description  String
+  minLength    Int
+  maxLength    Int
+  numberTypeEg String
+  validation   String?
+  userDetails  UserDetails[]
+}
+
+// ==========================
+// 💳 Loan & Payments
+// ==========================
+
+model LoanType {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  label       String
+  description String?
+  rules       Json?
+
+  loans Loan[]
+}
+
 model Loan {
-  id           String   @id @default(uuid())
-  type         LoanType
+  id         String   @id @default(uuid())
+  loanTypeId String
+  loanType   LoanType @relation(fields: [loanTypeId], references: [id])
+
   amount       Float
-  interestRate Float    @default(0.05)
-  startDate    DateTime
-  dueDay       Int      @default(5)
-  isClosed     Boolean  @default(false)
-  createdBy   String?
-  adminId     String?
-  employeeId  String?
-  admin       Admin?       @relation(fields: [adminId], references: [id])
-  employee    Employee?    @relation(fields: [employeeId], references: [id])
-  userId       String
-  user           User             @relation(fields: [userId], references: [id])
+  interestRate Float // e.g. 0.1 for 10%
+  interestType String? // compound-yearly
+
+  totalPayableAmount Float // Total with interest
+  totalPaidAmount    Float @default(0)
+  pendingAmount      Float // Updated after payment
+
+  startDate     DateTime
+  endDate       DateTime
+  actualEndDate DateTime?
+  tenureMonths  Int
+  dueDay        Int       @default(5)
+
+  isClosed       Boolean @default(false)
+  isDefaulted    Boolean @default(false)
+  totalDelayDays Int     @default(0)
+  defaultReason  String?
+
+  createdBy  String?
+  adminId    String?
+  employeeId String?
+  userId     String
+
+  admin    Admin?    @relation(fields: [adminId], references: [id])
+  employee Employee? @relation(fields: [employeeId], references: [id])
+  user     User      @relation(fields: [userId], references: [id])
+
   payments       Payment[]
   twoWheelerLoan TwoWheelerLoan?
   agriLoan       AgricultureLoan?
+  msmeLoan       MSMELoan?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Payment {
@@ -177,26 +279,57 @@ model Payment {
   amount     Float
   paidOn     DateTime
   paymentFor DateTime
-  loan       Loan     @relation(fields: [loanId], references: [id])
+  isDelayed  Boolean  @default(false)
+  delayDays  Int?
+  fineAmount Float?
+
+  loan Loan @relation(fields: [loanId], references: [id])
 }
 
+// ==========================
+// 🚘 Loan Sub-Types
+// ==========================
+
 model TwoWheelerLoan {
-  id                 String @id @default(uuid())
-  loanId             String @unique
-  vehicleType        String
+  id                 String  @id @default(uuid())
+  loanId             String  @unique
+  vehicleName        String
   brand              String
   model              String
-  dealerName         String
-  registrationNumber String
-  loan               Loan   @relation(fields: [loanId], references: [id])
+  variant            String?
+  registrationNumber String  @unique
+  chassisNumber      String
+  engineNumber       String
+  rcNumber           String
+
+  loan Loan @relation(fields: [loanId], references: [id])
 }
 
 model AgricultureLoan {
-  id        String @id @default(uuid())
-  loanId    String @unique
-  equipment String
-  loan      Loan   @relation(fields: [loanId], references: [id])
+  id         String  @id @default(uuid())
+  loanId     String  @unique
+  equipment  String
+  usageArea  String
+  isSeasonal Boolean @default(false)
+
+  loan Loan @relation(fields: [loanId], references: [id])
 }
+
+model MSMELoan {
+  id                 String  @id @default(uuid())
+  loanId             String  @unique
+  businessName       String
+  registrationNumber String  @unique
+  businessType       String
+  monthlyRevenue     Float
+  gstNumber          String?
+
+  loan Loan @relation(fields: [loanId], references: [id])
+}
+
+// ==========================
+// 📑 Termination / Files
+// ==========================
 
 model TerminationRequest {
   id            String   @id @default(uuid())
@@ -207,11 +340,11 @@ model TerminationRequest {
   docFile       File?    @relation(fields: [docFileId], references: [id])
   encryptedData String
   response      Json?
-  status        String? // optional: e.g. "SUCCESS", "FAILED"
-  errorMessage  String? // optional: capture failure reason if any
+  status        String?
+  errorMessage  String?
 
   createdAt  DateTime @default(now())
-  createdBy  String? // Admin or Employee ID
+  createdBy  String?
   adminId    String?
   employeeId String?
 
@@ -223,13 +356,12 @@ model File {
   id           String   @id @default(uuid())
   url          String
   publicId     String
-  resourceType String // e.g., image, raw, video
-  format       String // e.g., jpg, png, pdf
+  resourceType String
+  format       String
   createdAt    DateTime @default(now())
 
-  terminationRequest TerminationRequest[]
-
-  photo               UserDetails[] @relation("Photo") // 👈 inverse of 'photo' relation
-  photoIdTypeImages   UserDetails[] @relation("PhotoIdTypeImages")
-  proofOfIncomeImages UserDetails[] @relation("ProofOfIncomeImages")
+  terminationRequest  TerminationRequest[]
+  photo               UserDetails[]        @relation("Photo")
+  photoIdTypeImages   UserDetails[]        @relation("PhotoIdTypeImages")
+  proofOfIncomeImages UserDetails[]        @relation("ProofOfIncomeImages")
 }
