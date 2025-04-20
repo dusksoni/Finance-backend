@@ -4,7 +4,10 @@ const loanController = require("../controllers/loan.controller");
 const { adminOnly, authMiddleware, onlyAdminOrEmployee } = require("../middleware/auth");
 
 // Main Loan routes
-router.post("", authMiddleware, onlyAdminOrEmployee, loanController.createLoan);
+router.get("/", authMiddleware, onlyAdminOrEmployee, loanController.listLoans);
+router.get("/download", authMiddleware, onlyAdminOrEmployee, loanController.listLoansDownload);
+router.get("/:id", authMiddleware, onlyAdminOrEmployee, loanController.getLoanById);
+router.post("/", authMiddleware, onlyAdminOrEmployee, loanController.createLoan);
 router.put("/:id", authMiddleware, onlyAdminOrEmployee, loanController.updateLoan);
 router.get("/user/:userId",authMiddleware,  adminOnly, loanController.listLoansByUser);
 router.post("/payment",authMiddleware, loanController.makePayment);

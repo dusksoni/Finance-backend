@@ -64,13 +64,14 @@ exports.createLoan = async (req, res) => {
       await prisma.twoWheelerLoan.create({
         data: {
           loanId: loan.id,
-          vehicleType: details.vehicleType,
+          vehicleName: details.vehicleType,
           brand: details.brand,
           model: details.model,
           registrationNumber: details.registrationNumber,
           chassisNumber: details.chassisNumber,
           engineNumber: details.engineNumber,
-          dealerName: details.dealerName,
+          // dealerName: details.dealerName,
+          rcNumber: details.rcNumber || "",
         },
       });
     }
@@ -123,15 +124,21 @@ exports.updateLoan = async (req, res) => {
       details,
     } = req.body;
 
-    const existing = await prisma.loan.findUnique({ where: { id }, include: { loanType: true } });
+    const existing = await prisma.loan.findUnique({
+      where: { id },
+      include: { loanType: true },
+    });
     if (!existing) return res.status(404).json({ error: "Loan not found" });
 
     const newStartDate = startDate ? new Date(startDate) : existing.startDate;
     const newTenure = tenureMonths ?? existing.tenureMonths;
-    const newRate = interestRate !== undefined ? interestRate / 100 : existing.interestRate;
+    const newRate =
+      interestRate !== undefined ? interestRate / 100 : existing.interestRate;
     const newEndDate = addMonths(newStartDate, newTenure);
 
-    const newTotalPayableAmount = parseFloat((existing.amount * Math.pow(1 + newRate, newTenure / 12)).toFixed(2));
+    const newTotalPayableAmount = parseFloat(
+      (existing.amount * Math.pow(1 + newRate, newTenure / 12)).toFixed(2)
+    );
     const newPendingAmount = newTotalPayableAmount - existing.totalPaidAmount;
 
     const updatedLoan = await prisma.loan.update({
@@ -144,14 +151,18 @@ exports.updateLoan = async (req, res) => {
         tenureMonths: newTenure,
         dueDay: dueDay ?? existing.dueDay,
         isClosed: isClosed ?? existing.isClosed,
-        actualEndDate: actualEndDate ? new Date(actualEndDate) : existing.actualEndDate,
+        actualEndDate: actualEndDate
+          ? new Date(actualEndDate)
+          : existing.actualEndDate,
         defaultReason,
         totalPayableAmount: newTotalPayableAmount,
         pendingAmount: newPendingAmount,
       },
     });
 
-    const loanType = await prisma.loanType.findUnique({ where: { id: loanTypeId || existing.loanTypeId } });
+    const loanType = await prisma.loanType.findUnique({
+      where: { id: loanTypeId || existing.loanTypeId },
+    });
 
     if (loanType.name === "TWOWHEELER" && details) {
       await prisma.twoWheelerLoan.upsert({
@@ -193,7 +204,8 @@ exports.makePayment = async (req, res) => {
     const delayDays = differenceInDays(paidOn, dueDate);
     const isDelayed = delayDays > 5;
 
-    const fineAmount = delayDays > 20 ? amount * 0.1 : delayDays > 5 ? amount * 0.05 : 0;
+    const fineAmount =
+      delayDays > 20 ? amount * 0.1 : delayDays > 5 ? amount * 0.05 : 0;
 
     const payment = await prisma.payment.create({
       data: {
@@ -215,7 +227,9 @@ exports.makePayment = async (req, res) => {
         totalPaidAmount: loan.totalPaidAmount + amount,
         pendingAmount: loan.pendingAmount - amount,
         isDefaulted: isDelayed ? true : loan.isDefaulted,
-        totalDelayDays: isDelayed ? loan.totalDelayDays + delayDays : loan.totalDelayDays,
+        totalDelayDays: isDelayed
+          ? loan.totalDelayDays + delayDays
+          : loan.totalDelayDays,
       },
     });
 
@@ -338,5 +352,232 @@ exports.getPendingLoanDetails = async (req, res) => {
   } catch (err) {
     console.error("Pending loan error:", err);
     res.status(500).json({ error: "Failed to fetch pending loans" });
+  }
+};
+
+exports.listLoans = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      regionId,
+      stateId,
+      cityId,
+      isClosed,
+      search,
+      fromDate,
+      toDate,
+      includeTotal = false,
+    } = req.query;
+
+    const skip = (page - 1) * limit;
+
+    let filterStateId = stateId;
+    let filterCityId = cityId;
+
+    // 🌍 Resolve state & city from regionId if passed
+    if (regionId) {
+      const region = await prisma.region.findUnique({
+        where: { id: regionId },
+        select: { stateId: true, cityId: true },
+      });
+
+      if (!region) {
+        return res.status(404).json({ error: "Region not found" });
+      }
+
+      filterStateId = region.stateId;
+      filterCityId = region.cityId;
+    }
+
+    // 🧠 Build filter
+    const loanWhere = {
+      ...(isClosed !== undefined && { isClosed: isClosed === "true" }),
+      ...(fromDate &&
+        toDate && {
+          startDate: {
+            gte: new Date(fromDate),
+            lte: new Date(toDate),
+          },
+        }),
+      user: {
+        ...(search && {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { phone: { contains: search } },
+          ],
+        }),
+        details: {
+          ...(filterStateId && { stateId: filterStateId }),
+          ...(filterCityId && { cityId: filterCityId }),
+        },
+      },
+    };
+
+    const [loans, total, totalAmount] = await Promise.all([
+      prisma.loan.findMany({
+        where: loanWhere,
+        skip: parseInt(skip),
+        take: parseInt(limit),
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: {
+            include: {
+              details: true,
+            },
+          },
+          payments: true,
+          loanType: true,
+          twoWheelerLoan: true,
+          agriLoan: true,
+          msmeLoan: true,
+        },
+      }),
+      prisma.loan.count({ where: loanWhere }),
+      includeTotal === "true"
+        ? prisma.loan.aggregate({
+            where: loanWhere,
+            _sum: {
+              amount: true,
+            },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    res.status(200).json({
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      ...(includeTotal === "true" && {
+        totalAmount: totalAmount?._sum?.amount || 0,
+      }),
+      data: loans,
+    });
+  } catch (err) {
+    console.error("Loan List Filter Error:", err);
+    res.status(500).json({ error: "Failed to fetch filtered loans" });
+  }
+};
+
+exports.listLoansDownload = async (req, res) => {
+  try {
+    const {
+      regionId,
+      stateId,
+      cityId,
+      isClosed,
+      fromDate,
+      toDate,
+      includeTotal = true,
+    } = req.query;
+
+    let filterStateId = stateId;
+    let filterCityId = cityId;
+
+    // 🌍 Resolve state & city from regionId if passed
+    if (regionId) {
+      const region = await prisma.region.findUnique({
+        where: { id: regionId },
+        select: { stateId: true, cityId: true },
+      });
+
+      if (!region) {
+        return res.status(404).json({ error: "Region not found" });
+      }
+
+      filterStateId = region.stateId;
+      filterCityId = region.cityId;
+    }
+
+    // 🧠 Build filter
+    const loanWhere = {
+      ...(isClosed !== undefined && { isClosed: isClosed === "true" }),
+      ...(fromDate &&
+        toDate && {
+          startDate: {
+            gte: new Date(fromDate),
+            lte: new Date(toDate),
+          },
+        }),
+      user: {
+        details: {
+          ...(filterStateId && { stateId: filterStateId }),
+          ...(filterCityId && { cityId: filterCityId }),
+        },
+      },
+    };
+
+    const [loans, total, totalAmount] = await Promise.all([
+      prisma.loan.findMany({
+        where: loanWhere,
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: {
+            include: {
+              details: true,
+            },
+          },
+          payments: true,
+          loanType: true,
+          twoWheelerLoan: true,
+          agriLoan: true,
+          msmeLoan: true,
+        },
+      }),
+      prisma.loan.count({ where: loanWhere }),
+      prisma.loan.aggregate({
+        where: loanWhere,
+        _sum: {
+          amount: true,
+          pendingAmount: true,
+        },
+      }),
+    ]);
+    console.log(totalAmount);
+    res.status(200).json({
+      total,
+      totalAmount: totalAmount?._sum?.amount || 0,
+      data: loans,
+    });
+  } catch (err) {
+    console.error("Loan List Filter Error:", err);
+    res.status(500).json({ error: "Failed to fetch filtered loans" });
+  }
+};
+
+exports.getLoanById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const loan = await prisma.loan.findUnique({
+      where: { id },
+      include: {
+        user: {
+          include: {
+            details: {
+              include: {
+                state: true,
+                city: true,
+                region: true,
+              },
+            },
+          },
+        },
+        loanType: true,
+        payments: true,
+        twoWheelerLoan: true,
+        agriLoan: true,
+        msmeLoan: true,
+      },
+    });
+
+    if (!loan) {
+      return res.status(404).json({ error: "Loan not found" });
+    }
+
+    res.status(200).json({ data: loan });
+  } catch (err) {
+    console.error("Get Loan By ID Error:", err);
+    res.status(500).json({ error: "Failed to fetch loan details" });
   }
 };
