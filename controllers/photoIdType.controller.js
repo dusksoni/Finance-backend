@@ -1,12 +1,32 @@
 const prisma = require("../lib/prisma");
+const logAction = require("../utils/adminLogger");
 
 // CREATE
 exports.createPhotoIdType = async (req, res) => {
   try {
     const { name, description, minLength, maxLength, numberTypeEg, validation } = req.body;
+
     const newType = await prisma.photoIdType.create({
-      data: { name, description, minLength, maxLenght: maxLength, numberTypeEg, validation },
+      data: {
+        name,
+        description,
+        minLength,
+        maxLength,
+        numberTypeEg,
+        validation,
+      },
     });
+
+    await logAction({
+      action: "CREATED PHOTO ID TYPE",
+      table: "PhotoIdType",
+      targetId: newType.id,
+      metadata: newType,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
     res.status(201).json({ status: 201, message: "Photo ID Type created", data: newType });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -40,10 +60,29 @@ exports.updatePhotoIdType = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, minLength, maxLength, numberTypeEg, validation } = req.body;
+
     const updated = await prisma.photoIdType.update({
       where: { id },
-      data: { name, description, minLength, maxLenght: maxLength, numberTypeEg, validation },
+      data: {
+        name,
+        description,
+        minLength,
+        maxLength,
+        numberTypeEg,
+        validation,
+      },
     });
+
+    await logAction({
+      action: "UPDATED PHOTO ID TYPE",
+      table: "PhotoIdType",
+      targetId: id,
+      metadata: updated,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
     res.json({ message: "Updated successfully", data: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -54,7 +93,19 @@ exports.updatePhotoIdType = async (req, res) => {
 exports.deletePhotoIdType = async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.photoIdType.delete({ where: { id } });
+
+    const deleted = await prisma.photoIdType.delete({ where: { id } });
+
+    await logAction({
+      action: "DELETED PHOTO ID TYPE",
+      table: "PhotoIdType",
+      targetId: id,
+      metadata: deleted,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
     res.json({ message: "Deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });

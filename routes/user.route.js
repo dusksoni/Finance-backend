@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const { createUser, createUserDetails, getUserDetailsByUserId, updateUserDetails, deleteUserDetails } = require("../controllers/user.controller");
+const { createUser, createUserDetails, getUserDetailsByUserId, updateUserDetails, deleteUserDetails, getDefaulters } = require("../controllers/user.controller");
 const { authMiddleware, onlyAdminOrEmployee } = require("../middleware/auth");
 const { listUsers, getUserById } = require("../controllers/list.controller");
 
+router.get("/defaulter", authMiddleware, onlyAdminOrEmployee, getDefaulters);
 router.post("/", authMiddleware, onlyAdminOrEmployee, createUser);
 router.get("/", authMiddleware, onlyAdminOrEmployee,  listUsers);
 router.get("/:id", authMiddleware, onlyAdminOrEmployee,  getUserById);

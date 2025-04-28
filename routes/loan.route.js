@@ -11,8 +11,9 @@ router.post("/", authMiddleware, onlyAdminOrEmployee, loanController.createLoan)
 router.put("/:id", authMiddleware, onlyAdminOrEmployee, loanController.updateLoan);
 router.get("/user/:userId",authMiddleware,  adminOnly, loanController.listLoansByUser);
 router.post("/payment",authMiddleware, loanController.makePayment);
+router.get("/payment",authMiddleware, loanController.getDuePayments);
+router.post("/payment/verifyPayment",authMiddleware, loanController.verifyPayment);
 router.get("/pending", authMiddleware, onlyAdminOrEmployee,  loanController.getPendingLoanDetails);
-router.get("/defaulters", authMiddleware, onlyAdminOrEmployee, loanController.getDefaulters);
 router.put("/close/:id", authMiddleware, onlyAdminOrEmployee, loanController.closeLoan);
 
 module.exports = router;

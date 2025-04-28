@@ -8,6 +8,7 @@ const {
   startOfMonth,
   isBefore,
 } = require("date-fns");
+const logAction = require("../utils/adminLogger");
 
 exports.createLoan = async (req, res) => {
   try {
@@ -99,6 +100,16 @@ exports.createLoan = async (req, res) => {
         },
       });
     }
+    
+    await logAction({
+      action: "CREATED LOAN",
+      table: "Loan",
+      targetId: loan.id,
+      metadata: loan,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
 
     res.status(201).json({ message: "Loan created successfully", data: loan });
   } catch (error) {
@@ -188,6 +199,17 @@ exports.updateLoan = async (req, res) => {
       });
     }
 
+    
+    await logAction({
+      action: "UPDATED LOAN",
+      table: "Loan",
+      targetId: id,
+      metadata: updatedLoan,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
     res.json({ message: "Loan updated successfully", data: updatedLoan });
   } catch (error) {
     console.error("Update Loan Error:", error);
@@ -198,14 +220,22 @@ exports.updateLoan = async (req, res) => {
 // Make Payment
 exports.makePayment = async (req, res) => {
   try {
-    const { loanId, amount, paymentFor } = req.body;
+    const {
+      loanId,
+      amount,
+      paymentFor,
+      mode,
+      transactionId, // only for online
+    } = req.body;
+
     const paidOn = new Date();
     const dueDate = new Date(paymentFor);
     const delayDays = differenceInDays(paidOn, dueDate);
     const isDelayed = delayDays > 5;
-
     const fineAmount =
       delayDays > 20 ? amount * 0.1 : delayDays > 5 ? amount * 0.05 : 0;
+
+    const isOnline = mode === "ONLINE";
 
     const payment = await prisma.payment.create({
       data: {
@@ -216,9 +246,14 @@ exports.makePayment = async (req, res) => {
         isDelayed,
         delayDays: isDelayed ? delayDays : null,
         fineAmount: isDelayed ? fineAmount : null,
+        mode,
+        transactionId: isOnline ? transactionId : null,
+        verified: isOnline, // auto-verified if online
+        verifiedById: isOnline ? req.user.employeeId : null, // for online
       },
     });
 
+    // update loan status
     const loan = await prisma.loan.findUnique({ where: { id: loanId } });
 
     await prisma.loan.update({
@@ -233,12 +268,138 @@ exports.makePayment = async (req, res) => {
       },
     });
 
+    await logAction({
+      action: "MADE PAYMENT",
+      table: "Payment",
+      targetId: payment.id,
+      metadata: payment,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
     res.status(201).json({ message: "Payment added", data: payment });
   } catch (error) {
     console.error("Payment Error:", error);
     res.status(500).json({ error: error.message });
   }
 };
+
+exports.verifyPayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const payment = await prisma.payment.update({
+      where: { id },
+      data: {
+        verified: true,
+        verifiedById: req.user.employeeId,
+      },
+    });
+
+    await logAction({
+      action: "VERIFIED CASH PAYMENT",
+      table: "Payment",
+      targetId: id,
+      metadata: payment,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
+    res.json({ message: "Payment verified", data: payment });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getDuePayments = async (req, res) => {
+  try {
+    const { userId, loanId, includeAdvance = false } = req.query;
+
+    if (!userId) return res.status(400).json({ error: "userId is required" });
+
+    const loans = await prisma.loan.findMany({
+      where: {
+        userId,
+        ...(loanId && { id: loanId }),
+        isClosed: false,
+      },
+      include: {
+        payments: true,
+        loanType: true,
+      },
+    });
+
+    const today = new Date();
+    const result = [];
+
+    for (const loan of loans) {
+      const paymentMap = new Map();
+      loan.payments.forEach((p) => {
+        const key = `${getYear(p.paymentFor)}-${getMonth(p.paymentFor)}`;
+        paymentMap.set(key, p);
+      });
+
+      const months = [];
+      for (let i = 0; i < loan.tenureMonths; i++) {
+        const paymentDate = addMonths(loan.startDate, i);
+        const key = `${getYear(paymentDate)}-${getMonth(paymentDate)}`;
+        const existingPayment = paymentMap.get(key);
+
+        const isCurrentMonth = isSameMonth(paymentDate, today);
+        const isPast = isBefore(paymentDate, today);
+
+        const isDue = isPast && !existingPayment;
+        const isAdvance =
+          includeAdvance && !isPast && !existingPayment;
+
+        if (isDue || isCurrentMonth || isAdvance) {
+          months.push({
+            loanId: loan.id,
+            loanType: loan.loanType.label,
+            month: paymentDate.toLocaleString("default", { month: "long" }),
+            year: paymentDate.getFullYear(),
+            dueDate: startOfMonth(paymentDate),
+            amount: loan.amount,
+            status: existingPayment
+              ? "PAID"
+              : isPast
+              ? "DUE"
+              : isCurrentMonth
+              ? "THIS MONTH"
+              : "ADVANCE",
+            fine:
+              isPast && !existingPayment
+                ? calculateFine(today, paymentDate, loan.amount)
+                : 0,
+            verified: existingPayment?.verified || false,
+          });
+        }
+      }
+
+      result.push({
+        loanId: loan.id,
+        loanType: loan.loanType.label,
+        totalDue: months.filter((m) => m.status === "DUE").length,
+        totalAdvance: months.filter((m) => m.status === "ADVANCE").length,
+        currentMonthDue: months.find((m) => m.status === "THIS MONTH"),
+        months,
+      });
+    }
+
+    res.status(200).json({ data: result });
+  } catch (err) {
+    console.error("Get Due Payments Error:", err);
+    res.status(500).json({ error: "Failed to fetch payment dues" });
+  }
+};
+
+function calculateFine(today, dueDate, amount) {
+  const diffDays = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+  if (diffDays <= 5) return 0;
+  if (diffDays <= 20) return amount * 0.05;
+  return amount * 0.1;
+}
 
 // List Loans by User
 exports.listLoansByUser = async (req, res) => {
@@ -259,20 +420,6 @@ exports.listLoansByUser = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
-// Get Defaulters
-exports.getDefaulters = async (req, res) => {
-  try {
-    const loans = await prisma.loan.findMany({
-      where: { isClosed: false, isDefaulted: true },
-      include: { user: true, payments: true },
-    });
-    res.json(loans);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
 // Close Loan
 exports.closeLoan = async (req, res) => {
   try {
@@ -280,6 +427,15 @@ exports.closeLoan = async (req, res) => {
     const loan = await prisma.loan.update({
       where: { id },
       data: { isClosed: true, actualEndDate: new Date() },
+    });
+    await logAction({
+      action: "CLOSED LOAN",
+      table: "Loan",
+      targetId: id,
+      metadata: loan,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
     res.json({ message: "Loan closed", data: loan });
   } catch (err) {

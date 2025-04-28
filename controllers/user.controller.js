@@ -1,7 +1,10 @@
 const prisma = require("../lib/prisma");
 const twilio = require("twilio");
 const logAction = require("../utils/adminLogger");
-const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const client = twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+);
 
 exports.createUser = async (req, res) => {
   const { name, phone, otp, email, isDefaulter } = req.body;
@@ -20,7 +23,6 @@ exports.createUser = async (req, res) => {
       return res.status(401).json({ error: "Invalid or expired OTP" });
     }
 
-
     const newUser = await prisma.user.create({
       data: {
         name,
@@ -28,12 +30,14 @@ exports.createUser = async (req, res) => {
         createdBy: req.user?.type,
         adminId: req.user?.adminId || null,
         employeeId: req.user?.employeeId || null,
-        isDefaulter,
+        isDefaulter: isDefaulter === "true" ? true : false,
         email: email || null,
       },
     });
 
-    res.status(201).json({ message: "User created successfully", data: newUser });
+    res
+      .status(201)
+      .json({ message: "User created successfully", data: newUser });
   } catch (err) {
     console.error("Create user error:", err.message);
     res.status(500).json({ error: "Failed to verify OTP or create user" });
@@ -60,15 +64,20 @@ exports.createUserDetails = async (req, res) => {
       proofOfIncomeImages = [],
     } = req.body;
 
-    const type = await prisma.photoIdType.findUnique({ where: { id: photoIdTypeId } });
+    const type = await prisma.photoIdType.findUnique({
+      where: { id: photoIdTypeId },
+    });
     if (!type) return res.status(400).json({ error: "Invalid Photo ID type" });
 
     if (type.validation && !new RegExp(type.validation).test(photoIdNumber)) {
-      return res.status(400).json({ error: `Invalid ID format: ${type.numberTypeEg}` });
+      return res
+        .status(400)
+        .json({ error: `Invalid ID format: ${type.numberTypeEg}` });
     }
 
     const existing = await prisma.userDetails.findUnique({ where: { userId } });
-    if (existing) return res.status(400).json({ error: "User details already exist" });
+    if (existing)
+      return res.status(400).json({ error: "User details already exist" });
 
     const createFiles = async (files) =>
       Promise.all(
@@ -84,20 +93,21 @@ exports.createUserDetails = async (req, res) => {
         )
       ).then((created) => created.map((f) => ({ id: f.id })));
 
-    const [photoFile, photoIdTypeImageIds, proofOfIncomeImageIds] = await Promise.all([
-      photo
-        ? prisma.file.create({
-            data: {
-              url: photo.secure_url,
-              publicId: photo.public_id,
-              resourceType: photo.resource_type,
-              format: photo.format,
-            },
-          })
-        : null,
-      createFiles(photoIdTypeImages),
-      createFiles(proofOfIncomeImages),
-    ]);
+    const [photoFile, photoIdTypeImageIds, proofOfIncomeImageIds] =
+      await Promise.all([
+        photo
+          ? prisma.file.create({
+              data: {
+                url: photo.secure_url,
+                publicId: photo.public_id,
+                resourceType: photo.resource_type,
+                format: photo.format,
+              },
+            })
+          : null,
+        createFiles(photoIdTypeImages),
+        createFiles(proofOfIncomeImages),
+      ]);
 
     const created = await prisma.userDetails.create({
       data: {
@@ -158,7 +168,8 @@ exports.updateUserDetails = async (req, res) => {
     } = req.body;
 
     const existing = await prisma.userDetails.findUnique({ where: { userId } });
-    if (!existing) return res.status(404).json({ error: "User details not found" });
+    if (!existing)
+      return res.status(404).json({ error: "User details not found" });
 
     let photoFileId = null;
     if (photo?.secure_url && !photo.id) {
@@ -249,14 +260,14 @@ exports.getUserDetailsByUserId = async (req, res) => {
   }
 };
 
-
 // DELETE
 exports.deleteUserDetails = async (req, res) => {
   try {
     const { userId } = req.params;
 
     const existing = await prisma.userDetails.findUnique({ where: { userId } });
-    if (!existing) return res.status(404).json({ error: "User details not found" });
+    if (!existing)
+      return res.status(404).json({ error: "User details not found" });
 
     await prisma.userDetails.delete({ where: { userId } });
 
@@ -273,6 +284,53 @@ exports.deleteUserDetails = async (req, res) => {
     res.json({ message: "User details deleted successfully" });
   } catch (err) {
     console.error("Delete UserDetails Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// GET Defaulters with Search Filters
+exports.getDefaulters = async (req, res) => {
+  try {
+    const { photoIdNumber, name, phone, email } = req.query;
+
+    const users = await prisma.user.findMany({
+      where: {
+        isDefaulter: true,
+        ...(name && {
+          name: {
+            contains: name,
+            mode: "insensitive",
+          },
+        }),
+        ...(phone && {
+          phone: {
+            contains: phone,
+          },
+        }),
+        ...(email && {
+          email: {
+            contains: email,
+            mode: "insensitive",
+          },
+        }),
+        ...(photoIdNumber && {
+          details: {
+            is: {
+              photoIdNumber: {
+                contains: photoIdNumber,
+                mode: "insensitive",
+              },
+            },
+          },
+        }),
+      },
+      include: {
+        details: true,
+        loans: true,
+      },
+    });
+    res.status(200).json({ data: users });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };

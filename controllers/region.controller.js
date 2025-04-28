@@ -1,8 +1,11 @@
 const prisma = require("../lib/prisma");
+const logAction = require("../utils/adminLogger");
 
+// CREATE
 exports.createRegion = async (req, res) => {
   try {
     const { name, stateId, cityId } = req.body;
+
     const region = await prisma.region.create({
       data: {
         name,
@@ -10,12 +13,24 @@ exports.createRegion = async (req, res) => {
         cityId,
       },
     });
+
+    await logAction({
+      action: "CREATED REGION",
+      table: "Region",
+      targetId: region.id,
+      metadata: region,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
     res.status(201).json({ message: "Region created", data: region });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
+// GET ALL
 exports.getAllRegions = async (req, res) => {
   try {
     const regions = await prisma.region.findMany({
@@ -23,7 +38,7 @@ exports.getAllRegions = async (req, res) => {
         state: true,
         city: true,
         employees: true,
-        userDetails: true
+        userDetails: true,
       },
     });
     res.json({ status: 200, data: regions });
@@ -32,6 +47,7 @@ exports.getAllRegions = async (req, res) => {
   }
 };
 
+// GET BY ID
 exports.getRegionById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -46,6 +62,7 @@ exports.getRegionById = async (req, res) => {
   }
 };
 
+// UPDATE
 exports.updateRegion = async (req, res) => {
   try {
     const { id } = req.params;
@@ -55,16 +72,40 @@ exports.updateRegion = async (req, res) => {
       where: { id },
       data: { name, stateId, cityId },
     });
+
+    await logAction({
+      action: "UPDATED REGION",
+      table: "Region",
+      targetId: id,
+      metadata: updated,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
     res.json({ message: "Region updated", data: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
+// DELETE
 exports.deleteRegion = async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.region.delete({ where: { id } });
+
+    const deleted = await prisma.region.delete({ where: { id } });
+
+    await logAction({
+      action: "DELETED REGION",
+      table: "Region",
+      targetId: id,
+      metadata: deleted,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
     res.json({ message: "Region deleted" });
   } catch (err) {
     res.status(500).json({ error: err.message });

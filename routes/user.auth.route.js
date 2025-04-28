@@ -5,4 +5,5 @@ const { authMiddleware } = require("../middleware/auth");
 
 router.post("/send-otp", authMiddleware, sendOtp);
 
+
 module.exports = router;

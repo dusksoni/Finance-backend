@@ -9,8 +9,11 @@ exports.createEmployee = async (req, res) => {
   try {
     const { name, email, password, roleId, regionId } = req.body;
 
-    const existingEmployee = await prisma.employee.findUnique({ where: { email } });
-    if (existingEmployee) return res.status(400).json({ error: "Email already in use" });
+    const existingEmployee = await prisma.employee.findUnique({
+      where: { email },
+    });
+    if (existingEmployee)
+      return res.status(400).json({ error: "Email already in use" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -86,7 +89,8 @@ exports.deleteEmployee = async (req, res) => {
   const { id } = req.params;
   try {
     const employee = await prisma.employee.findUnique({ where: { id } });
-    if (!employee || employee.isDeleted) return res.status(404).json({ error: "Not found" });
+    if (!employee || employee.isDeleted)
+      return res.status(404).json({ error: "Not found" });
 
     await prisma.employee.update({
       where: { id },
@@ -114,7 +118,8 @@ exports.blockedEmployee = async (req, res) => {
   const { isBlocked } = req.body;
   try {
     const employee = await prisma.employee.findUnique({ where: { id } });
-    if (!employee || employee.isDeleted) return res.status(404).json({ error: "Not found" });
+    if (!employee || employee.isDeleted)
+      return res.status(404).json({ error: "Not found" });
 
     const updated = await prisma.employee.update({
       where: { id },
@@ -141,34 +146,74 @@ exports.blockedEmployee = async (req, res) => {
 
 // LOGIN
 exports.employeeLogin = async (req, res) => {
-  const { email, password, deviceName, deviceType, latitude, longitude } = req.body;
+  const { email, password, deviceName, deviceType, latitude, longitude } =
+    req.body;
+  try {
+    const employee = await prisma.employee.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        password: true,
+        isBlocked: true,
+        region: {
+          select: {
+            id: true,
+            name: true,
+            city: true,
+            state: true,
+          }
+        },
+        role: {
+          select: {
+            id: true,
+            name: true,
+            permissions: true,
+          }
+        },
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    if (!employee || !(await bcrypt.compare(password, employee.password))) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
 
-  const employee = await prisma.employee.findUnique({ where: { email } });
-  if (!employee || !(await bcrypt.compare(password, employee.password))) {
-    return res.status(401).json({ error: "Invalid credentials" });
+    if (employee.isBlocked)
+      return res.status(400).json({ error: "Account is blocked" });
+
+    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+
+    const loginActivity = await prisma.loginActivity.create({
+      data: {
+        employeeId: employee.id,
+        role: "EMPLOYEE",
+        deviceName,
+        deviceType,
+        latitude: latitude === "" ? null : parseFloat(latitude),
+        longitude: longitude === "" ? null : parseFloat(longitude),
+        ipAddress: ip,
+      },
+    });
+
+    const token = jwt.sign(
+      {
+        employeeId: employee.id,
+        type: "EMPLOYEE",
+        loginActivityId: loginActivity.id,
+      },
+      SECRET,
+      { expiresIn: "7d" }
+    );
+
+    delete employee.password; // Remove password from the response
+    delete employee.isBlocked; // Remove isBlocked from the response
+
+    res.json({ status: 200, data: { token, employee: employee } });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ error: "Internal server error", error: error, status: 500 });
   }
-
-  if (employee.isBlocked) return res.status(400).json({ error: "Account is blocked" });
-
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-
-  const loginActivity = await prisma.loginActivity.create({
-    data: {
-      employeeId: employee.id,
-      role: "EMPLOYEE",
-      deviceName,
-      deviceType,
-      latitude,
-      longitude,
-      ipAddress: ip,
-    },
-  });
-
-  const token = jwt.sign(
-    { employeeId: employee.id, type: "EMPLOYEE", loginActivityId: loginActivity.id },
-    SECRET,
-    { expiresIn: "7d" }
-  );
-
-  res.json({ token });
 };

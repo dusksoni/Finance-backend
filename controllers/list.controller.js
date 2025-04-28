@@ -7,7 +7,7 @@ exports.listEmployees = async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const skip = (page - 1) * limit;
   const search = req.query.search || "";
-  const isDeleted = req.query.isDeleted === "true" ? true : false
+  const isDeleted = req.query.isDeleted === "true" ? true : false;
 
   const where = {
     adminId,
@@ -34,19 +34,19 @@ exports.listEmployees = async (req, res) => {
             name: true,
             city: true,
             state: true,
-          }
+          },
         },
         email: true,
         role: {
           select: {
             name: true,
             description: true,
-            permissions: true
-          }
+            permissions: true,
+          },
         },
         createdAt: true,
-        updatedAt: true
-      }
+        updatedAt: true,
+      },
     }),
     prisma.employee.count({ where }),
   ]);
@@ -78,18 +78,18 @@ exports.getEmployeeById = async (req, res) => {
             name: true,
             city: true,
             state: true,
-          }
+          },
         },
         role: {
           select: {
             id: true,
             name: true,
             permissions: true,
-          }
+          },
         },
         createdAt: true,
-        updatedAt: true
-      }
+        updatedAt: true,
+      },
     });
 
     if (!employee) {
@@ -135,7 +135,7 @@ exports.listUsers = async (req, res) => {
               photo: true,
               photoIdTypeImages: true,
               proofOfIncomeImages: true,
-              photoIdType: true
+              photoIdType: true,
             },
           },
           loans: true,
@@ -174,13 +174,19 @@ exports.getUserById = async (req, res) => {
             photo: true,
             photoIdTypeImages: true,
             proofOfIncomeImages: true,
-            photoIdType: true
-            
+            photoIdType: true,
           },
         },
         employee: true,
         admin: true,
-        loans: true,
+        loans: {
+          include: {
+            loanType: true,
+            twoWheelerLoan: true,
+            msmeLoan: true,
+            agriLoan: true,
+          },
+        },
       },
     });
 

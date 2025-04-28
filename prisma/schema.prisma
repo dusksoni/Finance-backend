@@ -272,18 +272,27 @@ model Loan {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
 model Payment {
-  id         String   @id @default(uuid())
-  loanId     String
-  amount     Float
-  paidOn     DateTime
-  paymentFor DateTime
-  isDelayed  Boolean  @default(false)
-  delayDays  Int?
-  fineAmount Float?
+  id              String   @id @default(uuid())
+  loanId          String
+  amount          Float
+  paidOn          DateTime
+  paymentFor      DateTime
+  isDelayed       Boolean  @default(false)
+  delayDays       Int?
+  fineAmount      Float?
+  mode            PaymentMode
+  transactionId   String?
+  verified        Boolean  @default(false)
+  verifiedById    String?
 
-  loan Loan @relation(fields: [loanId], references: [id])
+  loan            Loan     @relation(fields: [loanId], references: [id])
+  verifiedBy      Employee? @relation("VerifiedBy", fields: [verifiedById], references: [id])
+}
+
+enum PaymentMode {
+  ONLINE
+  CASH
 }
 
 // ==========================
