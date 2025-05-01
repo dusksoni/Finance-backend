@@ -5,81 +5,33 @@ const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
-
 exports.createUser = async (req, res) => {
-  const { name, phone, otp, email, isDefaulter } = req.body;
+  const {
+    name,
+    phone,
+    email,
+    isDefaulter,
+    photoIds = [],
+    proofOfIncome,
+    creditScore,
+    profession,
+    address,
+    cityText,
+    country,
+    stateId,
+    cityId,
+    regionId,
+    proofOfIncomeImages = [],
+  } = req.body;
 
-  if (!name || !phone || !otp)
+  if (!name || !phone)
     return res.status(400).json({ error: "Name, phone & OTP are required" });
 
   try {
     const existing = await prisma.user.findUnique({ where: { phone } });
     if (existing) return res.status(400).json({ error: "User already exists" });
-    const check = await client.verify.v2
-      .services(process.env.TWILIO_VERIFY_SERVICE_SID)
-      .verificationChecks.create({ to: `+91${phone}`, code: otp });
 
-    if (check.status !== "approved") {
-      return res.status(401).json({ error: "Invalid or expired OTP" });
-    }
-
-    const newUser = await prisma.user.create({
-      data: {
-        name,
-        phone,
-        createdBy: req.user?.type,
-        adminId: req.user?.adminId || null,
-        employeeId: req.user?.employeeId || null,
-        isDefaulter: isDefaulter === "true" ? true : false,
-        email: email || null,
-      },
-    });
-
-    res
-      .status(201)
-      .json({ message: "User created successfully", data: newUser });
-  } catch (err) {
-    console.error("Create user error:", err.message);
-    res.status(500).json({ error: "Failed to verify OTP or create user" });
-  }
-};
-// =============== CREATE USER DETAILS ===============
-exports.createUserDetails = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const {
-      photoIdTypeId,
-      photoIdNumber,
-      proofOfIncome,
-      creditScore,
-      profession,
-      address,
-      cityText,
-      country,
-      stateId,
-      cityId,
-      regionId,
-      photo,
-      photoIdTypeImages = [],
-      proofOfIncomeImages = [],
-    } = req.body;
-
-    const type = await prisma.photoIdType.findUnique({
-      where: { id: photoIdTypeId },
-    });
-    if (!type) return res.status(400).json({ error: "Invalid Photo ID type" });
-
-    if (type.validation && !new RegExp(type.validation).test(photoIdNumber)) {
-      return res
-        .status(400)
-        .json({ error: `Invalid ID format: ${type.numberTypeEg}` });
-    }
-
-    const existing = await prisma.userDetails.findUnique({ where: { userId } });
-    if (existing)
-      return res.status(400).json({ error: "User details already exist" });
-
-    const createFiles = async (files) =>
+    const createFiles = async (files = []) =>
       Promise.all(
         files.map((file) =>
           prisma.file.create({
@@ -93,66 +45,155 @@ exports.createUserDetails = async (req, res) => {
         )
       ).then((created) => created.map((f) => ({ id: f.id })));
 
-    const [photoFile, photoIdTypeImageIds, proofOfIncomeImageIds] =
-      await Promise.all([
-        photo
-          ? prisma.file.create({
-              data: {
-                url: photo.secure_url,
-                publicId: photo.public_id,
-                resourceType: photo.resource_type,
-                format: photo.format,
-              },
-            })
-          : null,
-        createFiles(photoIdTypeImages),
-        createFiles(proofOfIncomeImages),
-      ]);
+    const proofIncomeImages = await createFiles(proofOfIncomeImages);
 
-    const created = await prisma.userDetails.create({
+    const user = await prisma.user.create({
       data: {
-        userId,
-        photoIdTypeId,
-        photoIdNumber,
+        name,
+        phone,
+        email,
+        isDefaulter: isDefaulter=== "true" ? true : false ,
         proofOfIncome,
-        creditScore: creditScore ? parseInt(creditScore) : null,
+        // creditScore,
         profession,
         address,
         cityText,
         country,
         stateId,
         cityId,
-        regionId,
-        photoId: photoFile?.id || null,
-        photoIdTypeImages: { connect: photoIdTypeImageIds },
-        proofOfIncomeImages: { connect: proofOfIncomeImageIds },
+        // regionId,
+        proofOfIncomeImages: { connect: proofIncomeImages },
+        photoIds: {
+          create: await Promise.all(
+            photoIds.map(async (pid) => ({
+              photoIdNumber: pid.photoIdNumber,
+              photoIdTypeId: pid.photoIdTypeId,
+              images: {
+                connect: await createFiles(pid.images),
+              },
+            }))
+          ),
+        },
+      },
+      include: {
+        photoIds: true,
       },
     });
 
-    await logAction({
-      action: "CREATED USER DETAILS",
-      table: "UserDetails",
-      targetId: created.id,
-      metadata: created,
-      loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
-    });
-
-    res.status(201).json({ message: "User details created", data: created });
+    res.status(201).json({ message: "User created successfully", data: user });
   } catch (err) {
-    console.error("Error creating user details:", err);
+    console.error("Create user error:", err.message);
+    res.status(500).json({ error: "Failed to create user" });
+  }
+};
+exports.getAllUsers = async (req, res) => {
+  try {
+    const {
+      name,
+      phone,
+      email,
+      photoIdNumber,
+      isDefaulter,
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    const filters = {
+      ...(name && {
+        name: { contains: name, mode: "insensitive" },
+      }),
+      ...(phone && {
+        phone: { contains: phone },
+      }),
+      ...(email && {
+        email: { contains: email, mode: "insensitive" },
+      }),
+      ...(isDefaulter !== undefined && {
+        isDefaulter: isDefaulter === "true",
+      }),
+      ...(photoIdNumber && {
+        photoIds: {
+          some: {
+            photoIdNumber: {
+              contains: photoIdNumber,
+              mode: "insensitive",
+            },
+          },
+        },
+      }),
+    };
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const take = parseInt(limit);
+
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where: filters,
+        skip,
+        take,
+        orderBy: { createdAt: "desc" },
+        include: {
+          photoIds: {
+            include: {
+              images: true,
+              photoIdType: true,
+            },
+          },
+          proofOfIncomeImages: true,
+          loans: true
+        },
+      }),
+      prisma.user.count({ where: filters }),
+    ]);
+
+    res.status(200).json({
+      data: users,
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(total / limit),
+     
+    });
+  } catch (err) {
+    console.error("Get All Users Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 };
 
-// =============== UPDATE USER DETAILS ===============
-exports.updateUserDetails = async (req, res) => {
+exports.getUserById = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const { id } = req.params;
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        photoIds: {
+          include: {
+            images: true,
+            photoIdType: true,
+          },
+        },
+        proofOfIncomeImages: true,
+      },
+    });
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    res.json({ status: 200, data: user });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
     const {
-      photoIdTypeId,
-      photoIdNumber,
+      name,
+      phone,
+      email,
+      isDefaulter,
+      photoIds = [],
       proofOfIncome,
       creditScore,
       profession,
@@ -162,34 +203,12 @@ exports.updateUserDetails = async (req, res) => {
       stateId,
       cityId,
       regionId,
-      photo,
-      photoIdTypeImages = [],
       proofOfIncomeImages = [],
     } = req.body;
 
-    const existing = await prisma.userDetails.findUnique({ where: { userId } });
-    if (!existing)
-      return res.status(404).json({ error: "User details not found" });
-
-    let photoFileId = null;
-    if (photo?.secure_url && !photo.id) {
-      const newPhoto = await prisma.file.create({
-        data: {
-          url: photo.secure_url,
-          publicId: photo.public_id,
-          resourceType: photo.resource_type,
-          format: photo.format,
-        },
-      });
-      photoFileId = newPhoto.id;
-    }
-
-    const prepareFileIds = async (files = []) => {
-      const existingIds = files.filter((f) => f.id).map((f) => ({ id: f.id }));
-      const newFiles = files.filter((f) => !f.id && f.secure_url);
-
-      const createdFiles = await Promise.all(
-        newFiles.map((file) =>
+    const createFiles = async (files = []) =>
+      Promise.all(
+        files.map((file) =>
           prisma.file.create({
             data: {
               url: file.secure_url,
@@ -199,23 +218,21 @@ exports.updateUserDetails = async (req, res) => {
             },
           })
         )
-      );
+      ).then((created) => created.map((f) => ({ id: f.id })));
 
-      return [...existingIds, ...createdFiles.map((f) => ({ id: f.id }))];
-    };
+    const proofIncomeImages = await createFiles(proofOfIncomeImages);
 
-    const [photoIdTypeImageIds, proofOfIncomeImageIds] = await Promise.all([
-      prepareFileIds(photoIdTypeImages),
-      prepareFileIds(proofOfIncomeImages),
-    ]);
+    await prisma.photoID.deleteMany({ where: { userId: id } });
 
-    const updated = await prisma.userDetails.update({
-      where: { userId },
+    const updatedUser = await prisma.user.update({
+      where: { id },
       data: {
-        photoIdTypeId,
-        photoIdNumber,
+        name,
+        phone,
+        email,
+        isDefaulter,
         proofOfIncome,
-        creditScore: creditScore ? parseInt(creditScore) : null,
+        creditScore,
         profession,
         address,
         cityText,
@@ -223,113 +240,46 @@ exports.updateUserDetails = async (req, res) => {
         stateId,
         cityId,
         regionId,
-        ...(photoFileId && { photoId: photoFileId }),
-        photoIdTypeImages: { set: photoIdTypeImageIds },
-        proofOfIncomeImages: { set: proofOfIncomeImageIds },
-      },
-    });
-
-    await logAction({
-      action: "UPDATED USER DETAILS",
-      table: "UserDetails",
-      targetId: updated.id,
-      metadata: updated,
-      loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
-    });
-
-    res.status(200).json({ message: "User details updated", data: updated });
-  } catch (err) {
-    console.error("Update UserDetails Error:", err);
-    res.status(500).json({ error: err.message });
-  }
-};
-// READ
-exports.getUserDetailsByUserId = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const details = await prisma.userDetails.findUnique({
-      where: { userId: parseInt(userId) },
-    });
-    if (!details)
-      return res.status(404).json({ error: "User details not found" });
-    res.json(details);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// DELETE
-exports.deleteUserDetails = async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const existing = await prisma.userDetails.findUnique({ where: { userId } });
-    if (!existing)
-      return res.status(404).json({ error: "User details not found" });
-
-    await prisma.userDetails.delete({ where: { userId } });
-
-    await logAction({
-      action: "DELETED USER DETAILS",
-      table: "UserDetails",
-      targetId: existing.id,
-      metadata: existing,
-      loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
-    });
-
-    res.json({ message: "User details deleted successfully" });
-  } catch (err) {
-    console.error("Delete UserDetails Error:", err);
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// GET Defaulters with Search Filters
-exports.getDefaulters = async (req, res) => {
-  try {
-    const { photoIdNumber, name, phone, email } = req.query;
-
-    const users = await prisma.user.findMany({
-      where: {
-        isDefaulter: true,
-        ...(name && {
-          name: {
-            contains: name,
-            mode: "insensitive",
-          },
-        }),
-        ...(phone && {
-          phone: {
-            contains: phone,
-          },
-        }),
-        ...(email && {
-          email: {
-            contains: email,
-            mode: "insensitive",
-          },
-        }),
-        ...(photoIdNumber && {
-          details: {
-            is: {
-              photoIdNumber: {
-                contains: photoIdNumber,
-                mode: "insensitive",
+        proofOfIncomeImages: {
+          set: [],
+          connect: proofIncomeImages,
+        },
+        photoIds: {
+          create: await Promise.all(
+            photoIds.map(async (pid) => ({
+              photoIdNumber: pid.photoIdNumber,
+              photoIdTypeId: pid.photoIdTypeId,
+              images: {
+                connect: await createFiles(pid.images),
               },
-            },
-          },
-        }),
+            }))
+          ),
+        },
       },
       include: {
-        details: true,
-        loans: true,
+        photoIds: true,
       },
     });
-    res.status(200).json({ data: users });
+
+    res.json({ status: 200, message: "User updated", data: updatedUser });
+  } catch (err) {
+    console.error("Update user error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    await prisma.photoID.deleteMany({ where: { userId: id } });
+
+    await prisma.user.delete({ where: { id } });
+
+    res.json({ status: 200, message: "User deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

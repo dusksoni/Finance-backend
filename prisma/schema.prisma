@@ -24,15 +24,14 @@ enum EmployeeRole {
 // ==========================
 // 📍 Location Models
 // ==========================
-
 model State {
   id   String @id @default(uuid())
   name String @unique
   city City[]
 
-  employees   Employee[] // 🔁 back-relation for Employee.state
-  userDetails UserDetails[] // 👈 new back-reference
-  Region      Region[]
+  employees Employee[]
+  users     User[]     
+  Region    Region[]
 }
 
 model City {
@@ -41,9 +40,9 @@ model City {
   stateId String
   state   State  @relation(fields: [stateId], references: [id])
 
-  employees   Employee[] // 🔁 back-relation for Employee.city
-  userDetails UserDetails[] // 👈 new back-reference
-  Region      Region[]
+  employees Employee[]
+  users     User[]    
+  Region    Region[]
 }
 
 model Region {
@@ -52,10 +51,10 @@ model Region {
   stateId String
   cityId  String
 
-  state       State         @relation(fields: [stateId], references: [id])
-  city        City          @relation(fields: [cityId], references: [id])
-  userDetails UserDetails[] // 👈 new back-reference
-  employees   Employee[]
+  state State  @relation(fields: [stateId], references: [id])
+  city  City   @relation(fields: [cityId], references: [id])
+  users User[] 
+  employees Employee[]
 }
 
 // ==========================
@@ -116,6 +115,7 @@ model Employee {
   actionLogs         ActionLog[]
   terminationRequest TerminationRequest[]
   loans              Loan[]
+  verifiedPayments Payment[] @relation("VerifiedBy")
 }
 
 model LoginActivity {
@@ -155,56 +155,57 @@ model ActionLog {
 // ==========================
 // 👥 Users
 // ==========================
-
 model User {
-  id          String    @id @default(uuid())
+  id          String   @id @default(uuid())
   name        String
-  email       String?   @unique
-  phone       String?   @unique
-  otp         String?
+  email       String?  @unique
+  phone       String?  @unique
   createdBy   String?
   adminId     String?
   employeeId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isBlocked   Boolean  @default(false)
+  isDefaulter Boolean  @default(false)
+
+  // Personal Details
+  profession  String?
+  address     String?
+  cityText    String?
+  country     String?
+  creditScore Int?
+  proofOfIncome String?
+
+  // Foreign keys
+
+  stateId     String?
+  cityId      String?
+  regionId    String?
+  photoId     String?
+
+  state       State?   @relation(fields: [stateId], references: [id])
+  city        City?    @relation(fields: [cityId], references: [id])
+  region      Region?  @relation(fields: [regionId], references: [id])
+  photo       File?    @relation("Photo", fields: [photoId], references: [id])
+
+  // Relations
   admin       Admin?    @relation(fields: [adminId], references: [id])
   employee    Employee? @relation(fields: [employeeId], references: [id])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  isBlocked   Boolean   @default(false)
-  isDefaulter Boolean   @default(false)
-
-  details UserDetails?
-  loans   Loan[]
-}
-
-model UserDetails {
-  id            String  @id @default(uuid())
-  userId        String  @unique
-  photoIdNumber String  @unique
-  photoIdTypeId String
-  proofOfIncome String
-  creditScore   Int?
-  profession    String
-  address       String?
-  cityText      String?
-  country       String
-  photoId       String?
-
-  // 🔁 Foreign keys now moved here:
-  stateId  String?
-  cityId   String?
-  regionId String?
-
-  state  State?  @relation(fields: [stateId], references: [id])
-  city   City?   @relation(fields: [cityId], references: [id])
-  region Region? @relation(fields: [regionId], references: [id])
-
-  user        User        @relation(fields: [userId], references: [id])
-  photoIdType PhotoIdType @relation(fields: [photoIdTypeId], references: [id])
-  photo       File?       @relation("Photo", fields: [photoId], references: [id])
-
-  photoIdTypeImages   File[] @relation("PhotoIdTypeImages")
+  loans       Loan[]
+  photoIds PhotoID[]
   proofOfIncomeImages File[] @relation("ProofOfIncomeImages")
 }
+model PhotoID {
+  id          String   @id @default(uuid())
+  userId      String
+  photoIdTypeId String
+  photoIdNumber String @unique
+
+  user   User   @relation(fields: [userId], references: [id])
+  photoIdType PhotoIdType @relation(fields: [photoIdTypeId], references: [id])
+  images      File[]      @relation("PhotoIDImages")
+}
+
 
 model PhotoIdType {
   id           String        @id @default(uuid())
@@ -214,7 +215,7 @@ model PhotoIdType {
   maxLength    Int
   numberTypeEg String
   validation   String?
-  userDetails  UserDetails[]
+ photoIds     PhotoID[]
 }
 
 // ==========================
@@ -370,7 +371,7 @@ model File {
   createdAt    DateTime @default(now())
 
   terminationRequest  TerminationRequest[]
-  photo               UserDetails[]        @relation("Photo")
-  photoIdTypeImages   UserDetails[]        @relation("PhotoIdTypeImages")
-  proofOfIncomeImages UserDetails[]        @relation("ProofOfIncomeImages")
+  photo               User[]        @relation("Photo")
+  proofOfIncomeImages User[]        @relation("ProofOfIncomeImages")
+  photoIDImages       PhotoID[]     @relation("PhotoIDImages")
 }

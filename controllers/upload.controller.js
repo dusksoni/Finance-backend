@@ -1,18 +1,30 @@
 const cloudinary = require("../middleware/cloudinaryconfig");
 const multer = require("multer");
-const { Buffer } = require("buffer");
+const streamifier = require("streamifier");
 
 // Multer memory storage
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// Cloudinary uploader
-async function handleUpload(file) {
-  const result = await cloudinary.uploader.upload(file, {
-    resource_type: "auto", // supports images, videos, PDFs, etc.
-    folder: "kushal_finance",
+exports.uploadMiddleware = upload.single("image");
+
+function streamUpload(req) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: "auto",
+        folder: "kushal_finance",
+      },
+      (error, result) => {
+        if (result) {
+          resolve(result);
+        } else {
+          reject(error);
+        }
+      }
+    );
+    streamifier.createReadStream(req.file.buffer).pipe(stream);
   });
-  return result;
 }
 
 async function removeImage(publicId) {
@@ -20,32 +32,27 @@ async function removeImage(publicId) {
   return result;
 }
 
-exports.uploadMiddleware = upload.single("image");
-
 exports.uploadFile = async (req, res) => {
-    try {
-        const b64 = Buffer.from(req.file.buffer).toString("base64");
-        const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
-    
-        const cldRes = await handleUpload(dataURI); // Cloudinary upload
-    
-        const fileType = cldRes.format; // Extract file format (e.g., 'pdf', 'jpg', etc.)
-    
-        console.log(cldRes)
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file provided" });
+    }
 
-        res.json({
-          status: 200,
-          data: {
-            secure_url: cldRes.secure_url,
-            public_id: cldRes.public_id,
-            resource_type: cldRes.resource_type,
-            format: fileType, // 👈 This is what you want
-          },
-        });
-      } catch (err) {
-        console.error("Upload error:", err);
-        res.status(500).json({ error: "Something went wrong", status: 500 });
-      }
+    const result = await streamUpload(req);
+
+    res.json({
+      status: 200,
+      data: {
+        secure_url: result.secure_url,
+        public_id: result.public_id,
+        resource_type: result.resource_type,
+        format: result.format,
+      },
+    });
+  } catch (err) {
+    console.error("Upload error:", err);
+    res.status(500).json({ error: "Upload failed", message: err.message });
+  }
 };
 
 exports.deleteFile = async (req, res) => {
@@ -53,7 +60,9 @@ exports.deleteFile = async (req, res) => {
     const { public_id } = req.body;
 
     if (!public_id) {
-      return res.status(400).json({ error: "No public_id provided", status: 400 });
+      return res
+        .status(400)
+        .json({ error: "No public_id provided", status: 400 });
     }
 
     const result = await removeImage(public_id);
@@ -61,10 +70,14 @@ exports.deleteFile = async (req, res) => {
     if (result.result === "ok") {
       return res.json({ message: "File successfully removed", status: 200 });
     } else {
-      return res.status(500).json({ error: "Failed to remove file", status: 500 });
+      return res
+        .status(500)
+        .json({ error: "Failed to remove file", status: 500 });
     }
   } catch (err) {
     console.error("Delete Error:", err);
-    res.status(500).json({ error: "Something went wrong", status: 500 });
+    res
+      .status(500)
+      .json({ error: "Something went wrong", status: 500, message: err });
   }
 };
