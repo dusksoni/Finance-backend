@@ -18,7 +18,7 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ~/kushal-finance-backend
-            sudo git pull https://dusksoni:GITHUB_PAT_REMOVED@github.com/dusksoni/kushal-finance-frontend.git main
+            sudo git pull https://dusksoni:GITHUB_PAT_REMOVED@github.com/dusksoni/kushal-finance-backend.git main
             sudo npm install -f
 
 
