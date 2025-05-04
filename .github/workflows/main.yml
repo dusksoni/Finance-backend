@@ -17,20 +17,20 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd ~/node-app
-            git pull origin main
-            npm install
+            cd ~/kushal-finance-backend
+            sudo git pull https://dusksoni:GITHUB_PAT_REMOVED@github.com/dusksoni/kushal-finance-backend.git main
+            sudo npm install -f
+
 
             # ===== API1.COM =====
-            cp ~/envs/api1.env
-            # ===== API1.COM =====
-            cp ~/envs/api1.env .env
+            cp ~/backend-envs/kushalfinance.env .env
+            npx prisma migrate deploy
             pm2 delete api1 || true
-            PORT=4001 pm2 start index.js --name api1 --log ~/logs/api1.log
+            PORT=3001 pm2 start index.js --name api1
 
-            # ===== API2.COM =====
-            cp ~/envs/api2.env .env
-            pm2 delete api2 || true
-            PORT=4002 pm2 start index.js --name api2 --log ~/logs/api2.log
+            # # ===== API2.COM =====
+            # cp ~/envs/api2.env .env
+            # pm2 delete api2 || true
+            # PORT=4002 pm2 start index.js --name api2 --log ~/logs/api2.log
 
             pm2 save
