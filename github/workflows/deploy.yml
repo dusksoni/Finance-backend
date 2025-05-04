@@ -7,6 +7,7 @@ on:
 
 jobs:
   deploy:
+    name: Deploy Backend App
     runs-on: ubuntu-latest
 
     steps:
