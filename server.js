@@ -3,7 +3,6 @@ require("dotenv").config();
 const app = express();
 const cors = require("cors");
 
-
 const adminRoutes = require("./routes/admin.route");
 const employeeRoutes = require("./routes/employee.route");
 const userRoutes = require("./routes/user.route");
@@ -16,10 +15,21 @@ const loanRoute = require("./routes/loan.route");
 const loanTypeRoute = require("./routes/loanType.routes");
 const stateRoute = require("./routes/state.routes");
 const cityRoute = require("./routes/city.routes");
-const regionRoute  = require("./routes/region.routes");
+const regionRoute = require("./routes/region.routes");
 
 app.use(cors());
 app.use(express.json());
+app.get("/", async (req, res) => {
+  try {
+    res.json({ status: 200, data: process.env.COMPANY_NAME?.toLowerCase() });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+      status: 500,
+    });
+  }
+});
 app.use("/api/admin", adminRoutes);
 app.use("/api/employee", employeeRoutes);
 app.use("/api/users", userRoutes);
@@ -34,6 +44,7 @@ app.use("/api/state", stateRoute);
 app.use("/api/city", cityRoute);
 app.use("/api/region", regionRoute);
 
-
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+app.listen(PORT, () =>
+  console.log(`🚀 Server running on http://localhost:${PORT}`)
+);
