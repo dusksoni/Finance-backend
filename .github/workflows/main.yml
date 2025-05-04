@@ -36,6 +36,7 @@ jobs:
             # sudo cp ~/backend-envs/test.env .env
             sudo npx prisma migrate deploy
             sudo npx prisma db seed
+            sudo pm2 delete kushalfinanceStaging || true
             # sudo PORT=3001 pm2 start server.js --name kushalfinanceStaging
             sudo dotenv -e ~/backend-envs/test.env --PORT=3002 pm2 start server.js --name kushalfinanceStaging
 
