@@ -1,38 +1,38 @@
-steps:
-  - name: SSH and Deploy
-    uses: appleboy/ssh-action@master
-    with:
-      host: ${{ secrets.EC2_IP }}
-      username: ubuntu
-      key: ${{ secrets.EC2_SSH_KEY }}
-      script: |
-        cd ~/kushal-finance-backend
+name: Deploy Node App for Multiple Domains
 
-        # Pull latest changes
-        git pull origin main
+on:
+  push:
+    branches:
+      - main
 
-        # Install dependencies
-        npm install -f
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-        # ========= API1.COM Setup =========
+    steps:
+      - name: SSH and Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_IP }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/kushal-finance-backend
+            sudo git pull https://dusksoni:GITHUB_PAT_REMOVED@github.com/dusksoni/kushal-finance-backend.git main
+            sudo npm install -f
 
-        # Set .env from central env location
-        cp ~/backend-envs/kushalfinance.env .env
 
-        # Run Prisma Migrations and Seeding
-        npx prisma migrate deploy
-        npx prisma db seed
+            # ===== API1.COM =====
+    
+            sudo cp ~/backend-envs/kushalfinance.env .env
+            sudo npx prisma migrate deploy
+            sudo npx prisma db seed
+            sudo pm2 delete api1 || true
+            PORT=3001 pm2 start index.js --name api1
 
-        # Restart service with PM2
-        pm2 delete api1 || true
-        PORT=3001 pm2 start index.js --name api1
+            # # ===== API2.COM =====
+            # cp ~/envs/api2.env .env
+            # pm2 delete api2 || true
+            # PORT=4002 pm2 start index.js --name api2 --log ~/logs/api2.log
 
-        # ========= Add more domains if needed =========
-        # cp ~/backend-envs/another.env .env
-        # npx prisma migrate deploy
-        # npx prisma db seed
-        # pm2 delete api2 || true
-        # PORT=4002 pm2 start index.js --name api2
-
-        # Save PM2 process list
-        pm2 save
+            pm2 save
