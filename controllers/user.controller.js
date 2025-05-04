@@ -11,6 +11,7 @@ exports.createUser = async (req, res) => {
     phone,
     email,
     isDefaulter,
+    photo,
     photoIds = [],
     proofOfIncome,
     creditScore,
@@ -20,17 +21,70 @@ exports.createUser = async (req, res) => {
     country,
     stateId,
     cityId,
-    regionId,
     proofOfIncomeImages = [],
   } = req.body;
 
-  if (!name || !phone)
-    return res.status(400).json({ error: "Name, phone & OTP are required" });
+  if (!name || !phone) {
+    return res.status(400).json({ error: "Name and phone are required" });
+  }
 
   try {
-    const existing = await prisma.user.findUnique({ where: { phone } });
-    if (existing) return res.status(400).json({ error: "User already exists" });
+    // 1. Check if user exists by phone
+    const existingUser = await prisma.user.findUnique({
+      where: { phone },
+      include: {
+        photoIds: true,
+        proofOfIncomeImages: true,
+        photo: true,
+      },
+    });
 
+    if (existingUser) {
+      return res.status(400).json({
+        error: "User already exists with this phone number",
+        user: existingUser,
+      });
+    }
+
+    // 2. Check if any of the photoIdTypeId + photoIdNumber exists
+    for (const pid of photoIds) {
+      const matched = await prisma.user.findFirst({
+        where: {
+          photoIds: {
+            some: {
+              photoIdTypeId: pid.photoIdTypeId,
+              photoIdNumber: pid.photoIdNumber,
+            },
+          },
+        },
+        include: {
+          photoIds: true,
+          proofOfIncomeImages: true,
+          photo: true,
+        },
+      });
+
+      if (matched) {
+        return res.status(400).json({
+          error: "User already exists with this document",
+          user: matched,
+        });
+      }
+    }
+
+    // ✅ Get regionId from stateId and cityId
+    const region = await prisma.region.findFirst({
+      where: { stateId, cityId },
+      select: { id: true },
+    });
+
+    if (!region) {
+      return res
+        .status(400)
+        .json({ error: "Region not found for given state and city" });
+    }
+
+    // ✅ Helper to store file(s)
     const createFiles = async (files = []) =>
       Promise.all(
         files.map((file) =>
@@ -46,23 +100,31 @@ exports.createUser = async (req, res) => {
       ).then((created) => created.map((f) => ({ id: f.id })));
 
     const proofIncomeImages = await createFiles(proofOfIncomeImages);
+    const profilePhoto = photo ? await createFiles([photo]) : [];
 
+    // ✅ Create user
     const user = await prisma.user.create({
       data: {
         name,
         phone,
         email,
-        isDefaulter: isDefaulter=== "true" ? true : false ,
+        isDefaulter: isDefaulter === "true" ? true : false,
         proofOfIncome,
-        // creditScore,
+        creditScore,
         profession,
         address,
         cityText,
         country,
         stateId,
         cityId,
-        // regionId,
+        regionId: region.id,
+        createdBy: req.user?.type || "unknown",
+        adminId: req.user?.adminId || null,
+        employeeId: req.user?.employeeId || null,
         proofOfIncomeImages: { connect: proofIncomeImages },
+        photo: profilePhoto.length
+          ? { connect: { id: profilePhoto[0].id } }
+          : undefined,
         photoIds: {
           create: await Promise.all(
             photoIds.map(async (pid) => ({
@@ -76,16 +138,21 @@ exports.createUser = async (req, res) => {
         },
       },
       include: {
-        photoIds: true,
+        photoIds: {
+          include: { images: true },
+        },
+        proofOfIncomeImages: true,
+        photo: true,
       },
     });
 
     res.status(201).json({ message: "User created successfully", data: user });
   } catch (err) {
-    console.error("Create user error:", err.message);
+    console.error("Create user error:", err);
     res.status(500).json({ error: "Failed to create user" });
   }
 };
+
 exports.getAllUsers = async (req, res) => {
   try {
     const {
@@ -139,8 +206,13 @@ exports.getAllUsers = async (req, res) => {
               photoIdType: true,
             },
           },
+          city: true,
+          employee: true,
+          photo: true,
+          state: true,
+          region: true,
           proofOfIncomeImages: true,
-          loans: true
+          loans: true,
         },
       }),
       prisma.user.count({ where: filters }),
@@ -152,7 +224,6 @@ exports.getAllUsers = async (req, res) => {
       page: parseInt(page),
       limit: parseInt(limit),
       totalPages: Math.ceil(total / limit),
-     
     });
   } catch (err) {
     console.error("Get All Users Error:", err.message);
@@ -173,7 +244,13 @@ exports.getUserById = async (req, res) => {
             photoIdType: true,
           },
         },
-        proofOfIncomeImages: true,
+        city: true,
+          employee: true,
+          photo: true,
+          state: true,
+          region: true,
+          proofOfIncomeImages: true,
+          loans: true,
       },
     });
 
