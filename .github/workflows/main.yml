@@ -24,18 +24,19 @@ jobs:
 
             # ===== API1.COM =====
     
-            sudo cp ~/backend-envs/kushalfinance.env .env
+            # sudo cp ~/backend-envs/kushalfinance.env .env
             sudo npx prisma migrate deploy
             sudo npx prisma db seed
             sudo pm2 delete kushalfinance || true
-            sudo PORT=3001 pm2 start server.js --name kushalfinance
+            # sudo PORT=3001 pm2 start server.js --name kushalfinance
+            dotenv -e ~/envs/kushalfinance.env -- PORT=3001 pm2 start server.js --name kushalfinance
 
              # ===== API1.COM =====
     
-            sudo cp ~/backend-envs/test.env .env
+            # sudo cp ~/backend-envs/test.env .env
             sudo npx prisma migrate deploy
             sudo npx prisma db seed
-            sudo pm2 delete kushalfinanceStaging || true
-            sudo PORT=3002 pm2 start server.js --name kushalfinanceStaging
+            # sudo PORT=3001 pm2 start server.js --name kushalfinanceStaging
+            dotenv -e ~/envs/test.env -- PORT=3002 pm2 start server.js --name kushalfinanceStaging
 
             pm2 save
