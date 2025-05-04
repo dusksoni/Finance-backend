@@ -30,9 +30,12 @@ jobs:
             sudo pm2 delete kushalfinance || true
             sudo PORT=3001 pm2 start server.js --name kushalfinance
 
-            # # ===== API2.COM =====
-            # cp ~/envs/api2.env .env
-            # pm2 delete api2 || true
-            # PORT=4002 pm2 start index.js --name api2 --log ~/logs/api2.log
+             # ===== API1.COM =====
+    
+            sudo cp ~/backend-envs/test.env .env
+            sudo npx prisma migrate deploy
+            sudo npx prisma db seed
+            sudo pm2 delete kushalfinanceStaging || true
+            sudo PORT=3002 pm2 start server.js --name kushalfinanceStaging
 
             pm2 save
