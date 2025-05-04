@@ -27,8 +27,10 @@ jobs:
             sudo cp ~/backend-envs/kushalfinance.env .env
             sudo npx prisma migrate deploy
             sudo npx prisma db seed
-            sudo pm2 delete api1 || true
-            PORT=3001 pm2 start index.js --name api1
+            set +e  # disable exit on error
+            pm2 delete kushalfinance || true
+            set -e  # re-enable error stop for rest
+            PORT=3001 pm2 start index.js --name kushalfinance
 
             # # ===== API2.COM =====
             # cp ~/envs/api2.env .env
