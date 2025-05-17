@@ -107,8 +107,12 @@ exports.createLoan = async (req, res) => {
       targetId: loan.id,
       metadata: loan,
       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+      admin: req.user?.adminId
+        ? { connect: { id: req.user.adminId } }
+        : undefined,
+      employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : undefined,
     });
 
     res.status(201).json({ message: "Loan created successfully", data: loan });
@@ -206,8 +210,12 @@ exports.updateLoan = async (req, res) => {
       targetId: id,
       metadata: updatedLoan,
       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+      admin: req.user?.adminId
+        ? { connect: { id: req.user.adminId } }
+        : undefined,
+      employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : undefined,
     });
 
     res.json({ message: "Loan updated successfully", data: updatedLoan });
@@ -274,8 +282,12 @@ exports.makePayment = async (req, res) => {
       targetId: payment.id,
       metadata: payment,
       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+      admin: req.user?.adminId
+        ? { connect: { id: req.user.adminId } }
+        : undefined,
+      employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : undefined,
     });
 
     res.status(201).json({ message: "Payment added", data: payment });
@@ -302,8 +314,12 @@ exports.verifyPayment = async (req, res) => {
       targetId: id,
       metadata: payment,
       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+      admin: req.user?.adminId
+        ? { connect: { id: req.user.adminId } }
+        : undefined,
+      employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : undefined,
     });
 
     res.json({ message: "Payment verified", data: payment });
@@ -434,8 +450,12 @@ exports.closeLoan = async (req, res) => {
       targetId: id,
       metadata: loan,
       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+      admin: req.user?.adminId
+        ? { connect: { id: req.user.adminId } }
+        : undefined,
+      employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : undefined,
     });
     res.json({ message: "Loan closed", data: loan });
   } catch (err) {

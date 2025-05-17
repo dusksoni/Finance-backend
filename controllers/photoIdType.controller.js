@@ -23,8 +23,12 @@ exports.createPhotoIdType = async (req, res) => {
       targetId: newType.id,
       metadata: newType,
       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+      admin: req.user?.adminId
+        ? { connect: { id: req.user.adminId } }
+        : undefined,
+      employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : undefined,
     });
 
     res.status(201).json({ status: 201, message: "Photo ID Type created", data: newType });
@@ -79,8 +83,12 @@ exports.updatePhotoIdType = async (req, res) => {
       targetId: id,
       metadata: updated,
       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+      admin: req.user?.adminId
+        ? { connect: { id: req.user.adminId } }
+        : undefined,
+      employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : undefined,
     });
 
     res.json({ message: "Updated successfully", data: updated });
@@ -102,8 +110,12 @@ exports.deletePhotoIdType = async (req, res) => {
       targetId: id,
       metadata: deleted,
       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+      admin: req.user?.adminId
+        ? { connect: { id: req.user.adminId } }
+        : undefined,
+      employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : undefined,
     });
 
     res.json({ message: "Deleted successfully" });

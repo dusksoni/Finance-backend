@@ -16,6 +16,7 @@ const loanTypeRoute = require("./routes/loanType.routes");
 const stateRoute = require("./routes/state.routes");
 const cityRoute = require("./routes/city.routes");
 const regionRoute = require("./routes/region.routes");
+const listRoutes = require("./routes/list.route");
 
 app.use(cors());
 app.use(express.json());
@@ -33,6 +34,7 @@ app.get("/", async (req, res) => {
 app.use("/api/admin", adminRoutes);
 app.use("/api/employee", employeeRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/list", listRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/user-auth", userAuthRoutes);
 app.use("/api/terminate", terminateRoute);

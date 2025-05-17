@@ -28,7 +28,7 @@ model State {
   id   String @id @default(uuid())
   name String @unique
   city City[]
-
+  stateCode String @default("00")
   employees Employee[]
   users     User[]     
   Region    Region[]
@@ -54,6 +54,7 @@ model Region {
   state State  @relation(fields: [stateId], references: [id])
   city  City   @relation(fields: [cityId], references: [id])
   users User[] 
+  branches Branch[]
   employees Employee[]
 }
 
@@ -75,6 +76,8 @@ model Admin {
   actionLogs         ActionLog[]
   users              User[]
   loans              Loan[]
+  ceaseHistoriesAssigned CeaseHistory[] @relation("AssignedBy")
+  requestedUpdates UserUpdateRequest[] @relation("RequestedByAdmin")
 }
 
 model Role {
@@ -109,13 +112,18 @@ model Employee {
   updatedAt DateTime @updatedAt
   isDeleted Boolean  @default(false)
   isBlocked Boolean  @default(false)
-
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id])
   users              User[]
   loginActivities    LoginActivity[]
   actionLogs         ActionLog[]
   terminationRequest TerminationRequest[]
   loans              Loan[]
   verifiedPayments Payment[] @relation("VerifiedBy")
+  requestedUpdates UserUpdateRequest[] @relation("RequestedByEmployee")
+  ceaseHistoriesAssignedTo CeaseHistory[] @relation("CeaseAssignedTo")
+  ceaseHistoriesCeasedBy   CeaseHistory[] @relation("CeasedBy")
+
 }
 
 model LoginActivity {
@@ -129,7 +137,7 @@ model LoginActivity {
   longitude  Float?
   ipAddress  String?
   loggedInAt DateTime @default(now())
-
+  userUpdateRequests UserUpdateRequest[]
   admin      Admin?      @relation(fields: [adminId], references: [id])
   employee   Employee?   @relation(fields: [employeeId], references: [id])
   actionLogs ActionLog[]
@@ -157,7 +165,14 @@ model ActionLog {
 // ==========================
 model User {
   id          String   @id @default(uuid())
-  name        String
+  firstName       String @default("")
+  middleName      String @default("")
+  lastName        String @default("")
+  relationFirstName       String @default("")
+  relationMiddleName      String @default("")
+  relationLastName        String @default("")
+  dateOfBirth DateTime @default(now())
+  maritalStatus String? @default("")
   email       String?  @unique
   phone       String?  @unique
   createdBy   String?
@@ -167,34 +182,106 @@ model User {
   updatedAt   DateTime @updatedAt
   isBlocked   Boolean  @default(false)
   isDefaulter Boolean  @default(false)
-
-  // Personal Details
+  qualification String? 
   profession  String?
   address     String?
   cityText    String?
   country     String?
   creditScore Int?
   proofOfIncome String?
-
-  // Foreign keys
-
   stateId     String?
   cityId      String?
   regionId    String?
   photoId     String?
-
+  genderId    String?
+  relationTypeId    String?
+  addressCategoryId    String?
   state       State?   @relation(fields: [stateId], references: [id])
   city        City?    @relation(fields: [cityId], references: [id])
+  pincode     Int?
   region      Region?  @relation(fields: [regionId], references: [id])
+  addressCategory      AddressCategory?  @relation(fields: [addressCategoryId], references: [id])
+  relationType   RelationType? @relation(fields: [relationTypeId], references: [id])
+  gender      Gender?  @relation(fields: [genderId], references: [id])
   photo       File?    @relation("Photo", fields: [photoId], references: [id])
-
-  // Relations
   admin       Admin?    @relation(fields: [adminId], references: [id])
   employee    Employee? @relation(fields: [employeeId], references: [id])
+
+  guarantorReputationScore Int?      // Calculated based on the loans they guaranteed
+  totalGuaranteedLoans     Int?      // How many loans user has guaranteed
+  successfulGuarantees     Int?      // Loans where borrower paid on time
+  failedGuarantees         Int?      // Loans where borrower defaulted
+  guarantorLoans LoanGuarantor[] @relation("UserAsGuarantor")
   loans       Loan[]
-  photoIds PhotoID[]
+  photoIds    PhotoID[]
   proofOfIncomeImages File[] @relation("ProofOfIncomeImages")
+  updateRequests UserUpdateRequest[]
+  
 }
+
+
+model UserUpdateRequest {
+  id                     String   @id @default(uuid())
+  userId                 String
+  changes                Json
+  status                 String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  reviewedByAdminId      String?
+  updatedAt             DateTime?
+  rejectedReason         String?
+  loginActivityId        String?
+  requestedByAdminId     String?
+  requestedByEmployeeId  String?
+  user                   User     @relation(fields: [userId], references: [id])
+  loginActivity          LoginActivity? @relation(fields: [loginActivityId], references: [id])
+  requestedByAdmin       Admin?  @relation("RequestedByAdmin", fields: [requestedByAdminId], references: [id])
+  requestedByEmployee    Employee? @relation("RequestedByEmployee", fields: [requestedByEmployeeId], references: [id])
+}
+
+
+
+
+model RelationType {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  value     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users  User[]
+}
+
+model AddressCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  value     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users  User[]
+}
+
+model Gender {
+  id        String   @id @default(uuid())
+  name      String  @unique
+  value     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users  User[]
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  name      String
+  regionId  String
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  region Region @relation(fields: [regionId], references: [id])
+  loans  Loan[]
+  employees Employee[]
+}
+
+
 model PhotoID {
   id          String   @id @default(uuid())
   userId      String
@@ -232,47 +319,116 @@ model LoanType {
   loans Loan[]
 }
 
+model LoanGuarantor {
+  id            String   @id @default(uuid())
+  loanId        String
+  guarantorId   String
+
+  performanceScore Float?    // Optional: Custom logic
+  isFlagged        Boolean?  @default(false) // Whether to warn this guarantor
+  notes            String?   // For remarks like "Defaulted twice", etc.
+
+  loan      Loan @relation(fields: [loanId], references: [id])
+  guarantor   User @relation("UserAsGuarantor", fields: [guarantorId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+enum FileStatus {
+  INITIATED          // File created, awaiting further action
+  IN_PROGRESS        // Processing underway (verification, evaluation)
+  PENDING_APPROVAL   // Waiting for final approval
+  APPROVED           // Approved but not yet disbursed
+  DISBURSED          // Loan amount given to the user
+  ACTIVE             // Loan is live, repayment ongoing
+  OVERDUE            // Payment due is late
+  DEFAULTED          // Repeated missed payments / declared default
+  CEASED             // Product/assets ceased due to non-payment
+  RELEASED           // Product/assets returned to customer
+  CLOSED             // Loan fully repaid and file closed
+  REJECTED           // Application rejected before approval
+  CANCELLED          // File manually cancelled before any disbursal
+  LEGAL_ACTION       // Under legal processing
+  WRITTEN_OFF        // Loan marked as bad debt/loss
+  UNDER_COLLECTION   // Sent to recovery team or agents
+}
+
 model Loan {
   id         String   @id @default(uuid())
+  fileNo     String   @unique
   loanTypeId String
   loanType   LoanType @relation(fields: [loanTypeId], references: [id])
-
+  disbirstedDate DateTime @default(now())
+  agrementDate DateTime @default(now())
   amount       Float
+  downPayment  Float?
+  loanAmount   Float
+  fileStatus FileStatus @default(INITIATED)
+  ceaseHistories CeaseHistory[]
   interestRate Float // e.g. 0.1 for 10%
   interestType String? // compound-yearly
-
+  monthlyPayableAmount Float
   totalPayableAmount Float // Total with interest
   totalPaidAmount    Float @default(0)
   pendingAmount      Float // Updated after payment
-
+  penaltyPercentage Float
+  rtoCharges Float?
+  processingCharges Float?
+  otherCharges Float?
   startDate     DateTime
   endDate       DateTime
   actualEndDate DateTime?
   tenureMonths  Int
   dueDay        Int       @default(5)
-
   isClosed       Boolean @default(false)
   isDefaulted    Boolean @default(false)
   totalDelayDays Int     @default(0)
   defaultReason  String?
-
+  insuranceAmount Float?
+  insuranceDate DateTime?
+  insuranceValidTill DateTime?
+  insuranceAlert Boolean @default(false)
+  insuranceNumber String?
+  insuranceCompany String?
+  ourPaymentType String?
+  comment String?
   createdBy  String?
   adminId    String?
   employeeId String?
   userId     String
-
+  branchId    String?
+  branch      Branch?  @relation(fields: [branchId], references: [id])
   admin    Admin?    @relation(fields: [adminId], references: [id])
   employee Employee? @relation(fields: [employeeId], references: [id])
   user     User      @relation(fields: [userId], references: [id])
-
   payments       Payment[]
+  guarantors LoanGuarantor[]
   twoWheelerLoan TwoWheelerLoan?
   agriLoan       AgricultureLoan?
   msmeLoan       MSMELoan?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+model CeaseHistory {
+  id             String   @id @default(uuid())
+  loanId         String
+  assignedById   String?  // Admin who assigned
+  assignedToId   String?  // Employee assigned to cease
+  ceasedById     String?  // Employee who actually ceased
+  ceaseDate      DateTime?
+  location       String?
+  comment        String?
+  releaseDate    DateTime? // Optional if released
+
+  loan           Loan     @relation(fields: [loanId], references: [id])
+  assignedBy     Admin?     @relation("AssignedBy", fields: [assignedById], references: [id])
+  assignedTo     Employee?  @relation("CeaseAssignedTo", fields: [assignedToId], references: [id])
+  ceasedBy       Employee?  @relation("CeasedBy", fields: [ceasedById], references: [id])
+
+
+  createdAt      DateTime @default(now())
+}
+
 model Payment {
   id              String   @id @default(uuid())
   loanId          String
@@ -304,26 +460,76 @@ model TwoWheelerLoan {
   id                 String  @id @default(uuid())
   loanId             String  @unique
   vehicleName        String
-  brand              String
-  model              String
-  variant            String?
+
+  brandId    String
+  modelId    String
+  variantId  String?
+
   registrationNumber String  @unique
   chassisNumber      String
   engineNumber       String
   rcNumber           String
 
+  brand    VehicleBrand  @relation(fields: [brandId], references: [id])
+  model    VehicleModel  @relation(fields: [modelId], references: [id])
+  variant  VehicleVariant? @relation(fields: [variantId], references: [id])
+
   loan Loan @relation(fields: [loanId], references: [id])
 }
+
+model VehicleBrand {
+  id    String   @id @default(uuid())
+  name  String   @unique
+  models VehicleModel[]
+  twoWheelerLoans TwoWheelerLoan[]
+
+}
+
+model VehicleModel {
+  id       String   @id @default(uuid())
+  name     String
+  brandId  String
+  brand    VehicleBrand @relation(fields: [brandId], references: [id])
+  variants VehicleVariant[]
+  twoWheelerLoans TwoWheelerLoan[]
+
+}
+
+model VehicleVariant {
+  id       String   @id @default(uuid())
+  name     String
+  modelId  String
+  model    VehicleModel @relation(fields: [modelId], references: [id])
+  twoWheelerLoans TwoWheelerLoan[]
+
+}
+
 
 model AgricultureLoan {
   id         String  @id @default(uuid())
   loanId     String  @unique
-  equipment  String
-  usageArea  String
+  equipmentId String
+  usageAreaId String?
   isSeasonal Boolean @default(false)
+
+  equipment  Equipment  @relation(fields: [equipmentId], references: [id])
+  usageArea  UsageArea?  @relation(fields: [usageAreaId], references: [id])
 
   loan Loan @relation(fields: [loanId], references: [id])
 }
+
+model Equipment {
+  id    String   @id @default(uuid())
+  name  String   @unique
+  loans AgricultureLoan[]
+}
+
+model UsageArea {
+  id    String   @id @default(uuid())
+  name  String   @unique
+  loans AgricultureLoan[]
+}
+
 
 model MSMELoan {
   id                 String  @id @default(uuid())

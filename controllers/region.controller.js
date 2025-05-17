@@ -20,8 +20,12 @@ exports.createRegion = async (req, res) => {
       targetId: region.id,
       metadata: region,
       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+      admin: req.user?.adminId
+        ? { connect: { id: req.user.adminId } }
+        : undefined,
+      employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : undefined,
     });
 
     res.status(201).json({ message: "Region created", data: region });
@@ -79,8 +83,12 @@ exports.updateRegion = async (req, res) => {
       targetId: id,
       metadata: updated,
       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+      admin: req.user?.adminId
+        ? { connect: { id: req.user.adminId } }
+        : undefined,
+      employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : undefined,
     });
 
     res.json({ message: "Region updated", data: updated });
@@ -102,8 +110,12 @@ exports.deleteRegion = async (req, res) => {
       targetId: id,
       metadata: deleted,
       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+      admin: req.user?.adminId
+        ? { connect: { id: req.user.adminId } }
+        : undefined,
+      employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : undefined,
     });
 
     res.json({ message: "Region deleted" });
