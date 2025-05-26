@@ -172,6 +172,42 @@ async function main() {
     )
   );
 
+   // 💳 Loan Types
+  const loanTypes = [
+    {
+      name: "TWOWHEELER",
+      label: "Two Wheeler Loan",
+      description: "Loan for purchasing two-wheeler vehicles",
+      rules: null,
+    },
+    {
+      name: "AGRICULTURE",
+      label: "Agriculture Loan",
+      description: "Loan for agricultural equipment and farm use",
+      rules: null,
+    },
+    {
+      name: "MSME",
+      label: "MSME Loan",
+      description: "Loan for Micro, Small & Medium Enterprises",
+      rules: null,
+    },
+  ];
+
+  await Promise.all(
+    loanTypes.map((lt) =>
+      prisma.loanType.upsert({
+        where: { name: lt.name },
+        update: {
+          label: lt.label,
+          description: lt.description,
+          rules: lt.rules,
+        },
+        create: lt,
+      })
+    )
+  );
+
   console.log("✅ Seeding completed successfully.");
 }
 

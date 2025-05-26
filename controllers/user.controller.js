@@ -323,7 +323,12 @@ exports.getUserById = async (req, res) => {
           state: true,
           region: true,
           proofOfIncomeImages: true,
-          loans: true,
+          loans: {
+            include: {
+              loanType: true,
+             
+            },
+          },
       },
     });
 

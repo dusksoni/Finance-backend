@@ -149,6 +149,64 @@ exports.getAllAddressCategories = async (req, res) => {
 };
 
 // ========== VEHICLE BRAND ==========
+exports.createBranch = async (req, res) => {
+  try {
+    const { name, regionId, address, pincode, phone, email } = req.body;
+    const branch = await prisma.branch.create({
+      data: {
+        name,
+        address,
+        pincode,
+        phone,
+        email,
+        region: {
+          connect: { id: regionId },
+        },
+      },
+    });
+    res.status(201).json({ data: branch, status: 201 });
+  } catch (err) {
+    res.status(500).json({ error: err.message, status: 500 });
+  }
+};
+
+exports.getBranches = async (req, res) => {
+  try {
+    const branches = await prisma.branch.findMany({
+      include: { employees: true, region: true, loans: true },
+    });
+    res.status(200).json({ data: branches, status: 200 });
+  } catch (err) {
+    res.status(500).json({ error: err.message, status: 500 });
+  }
+};
+
+exports.updateBranch = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+    const updated = await prisma.branch.update({
+      where: { id },
+      data: { name },
+    });
+    res.status(200).json({ data: updated, status: 200 });
+  } catch (err) {
+    res.status(500).json({ error: err.message, status: 500 });
+  }
+};
+
+exports.deleteBranch = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.branch.delete({ where: { id } });
+    res
+      .status(200)
+      .json({ message: "Branch deleted successfully", status: 200 });
+  } catch (err) {
+    res.status(500).json({ error: err.message, status: 500 });
+  }
+};
+// ========== VEHICLE BRAND ==========
 exports.createBrand = async (req, res) => {
   try {
     const { name } = req.body;
@@ -200,7 +258,9 @@ exports.deleteBrand = async (req, res) => {
 exports.createModel = async (req, res) => {
   try {
     const { name, brandId } = req.body;
-    const model = await prisma.vehicleModel.create({ data: { name, brand: { connect: { id: brandId } } } });
+    const model = await prisma.vehicleModel.create({
+      data: { name, brand: { connect: { id: brandId } } },
+    });
     res.status(201).json({ data: model, status: 201 });
   } catch (err) {
     res.status(500).json({ error: err.message, status: 500 });

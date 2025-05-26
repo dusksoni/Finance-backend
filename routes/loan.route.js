@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const loanController = require("../controllers/loan.controller");
 const { adminOnly, authMiddleware, onlyAdminOrEmployee } = require("../middleware/auth");
+const { makePayment, verifyPayment } = require("../controllers/payment.controller");
 
 // Main Loan routes
 router.get("/", authMiddleware, onlyAdminOrEmployee, loanController.listLoans);
@@ -10,10 +11,7 @@ router.get("/:id", authMiddleware, onlyAdminOrEmployee, loanController.getLoanBy
 router.post("/", authMiddleware, onlyAdminOrEmployee, loanController.createLoan);
 router.put("/:id", authMiddleware, onlyAdminOrEmployee, loanController.updateLoan);
 router.get("/user/:userId",authMiddleware,  adminOnly, loanController.listLoansByUser);
-router.post("/payment",authMiddleware, loanController.makePayment);
-router.get("/payment",authMiddleware, loanController.getDuePayments);
-router.post("/payment/verifyPayment",authMiddleware, loanController.verifyPayment);
-router.get("/pending", authMiddleware, onlyAdminOrEmployee,  loanController.getPendingLoanDetails);
-router.put("/close/:id", authMiddleware, onlyAdminOrEmployee, loanController.closeLoan);
+router.post("/payment",authMiddleware, makePayment);
+router.post("/payment/verifyPayment",authMiddleware, verifyPayment);
 
 module.exports = router;

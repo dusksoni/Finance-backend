@@ -9,118 +9,193 @@ const {
   isBefore,
 } = require("date-fns");
 const logAction = require("../utils/adminLogger");
+const checkVerifyPermission = require("../middleware/checkVerifyPermission");
+
 
 exports.createLoan = async (req, res) => {
   try {
     const {
       userId,
       loanTypeId,
-      amount,
-      interestRate, // e.g. 10 means 10%
+      productAmount,
+      principalLoanAmount,
+      interestRate,   // percent, e.g. 10
       startDate,
       dueDay,
       tenureMonths,
-      createdBy,
-      adminId,
-      employeeId,
-      details, // type-specific loan fields
+      details,        // type-specific payload
+      fileNo,
+      disbursedDate,
+      agreementDate,
+      downPayment,
+      interestType,
+      penaltyPercentage,
+      rtoCharges,
+      processingCharges,
+      otherCharges,
+      insuranceAmount,
+      insuranceDate,
+      insuranceValidTill,
+      insuranceAlert,
+      insuranceNumber,
+      insuranceCompany,
+      ourPaymentType,
+      comment,
+      branchId,
     } = req.body;
 
+    // Parse and compute totals
     const parsedStart = new Date(startDate);
-    const endDate = addMonths(parsedStart, tenureMonths);
+    const endDate     = addMonths(parsedStart, tenureMonths);
     const rateDecimal = interestRate / 100;
-    const t = tenureMonths / 12;
+    const years       = tenureMonths / 12;
 
-    const totalPayableAmount = Number(
-      (amount * Math.pow(1 + rateDecimal, t)).toFixed(2)
+    // Total compound interest formula: P * (1 + r)^t
+    const totalAmount     = parseFloat(
+      (principalLoanAmount * Math.pow(1 + rateDecimal, years)).toFixed(2)
     );
-    const pendingAmount = totalPayableAmount;
+    const interestAmount  = parseFloat((totalAmount - principalLoanAmount).toFixed(2));
+    const monthlyPayable  = parseFloat((totalAmount / tenureMonths).toFixed(2));
+    const pendingAmount   = totalAmount;
 
-    const loan = await prisma.loan.create({
-      data: {
-        userId,
-        loanTypeId,
-        amount,
-        interestRate: rateDecimal,
-        interestType: "compound-yearly",
-        totalPayableAmount,
-        totalPaidAmount: 0,
-        pendingAmount, // ✅ Track unpaid
-        startDate: parsedStart,
-        endDate,
-        tenureMonths,
-        dueDay: dueDay || 5,
-        createdBy,
-        adminId,
-        employeeId,
+    // Check CREATE_LOAN permission for employees
+    const verified =
+      req.user.type === "ADMIN" ||
+      (req.user.type === "EMPLOYEE" &&
+        (await checkVerifyPermission(req.user, "CREATE_LOAN")));
+
+    // Perform all writes in one transaction (timeout extended to 30s)
+    const newLoan = await prisma.$transaction(
+      async (tx) => {
+        // 1) Create core Loan record
+        const loan = await tx.loan.create({
+          data: {
+            user:                { connect: { id: userId } },
+            fileNo,
+            loanType:            { connect: { id: loanTypeId } },
+            disbursedDate:       disbursedDate ? new Date(disbursedDate) : null,
+            agreementDate:       agreementDate ? new Date(agreementDate) : null,
+            productAmount,
+            downPayment,
+            principalLoanAmount,
+            interestAmount,
+            totalAmount,
+            monthlyPayableAmount: monthlyPayable,
+            pendingAmount,
+            rtoCharges,
+            processingCharges,
+            otherCharges,
+            ourPaymentType,
+            interestType,
+            interestRate,
+            penaltyPercentage,
+            tenureMonths,
+            startDate:            parsedStart,
+            endDate,
+            dueDay,
+            fileStatus:          verified ? "ACTIVE" : "PENDING_APPROVAL",
+            insuranceAmount,
+            insuranceDate:       insuranceDate ? new Date(insuranceDate) : null,
+            insuranceValidTill:  insuranceValidTill ? new Date(insuranceValidTill) : null,
+            insuranceAlert:      insuranceAlert === "true",
+            insuranceNumber,
+            insuranceCompany,
+            comment,
+            branch:              { connect: { id: branchId } },
+            createdBy:           req.user.type,
+            admin:               req.user.type === "ADMIN"
+                                   ? { connect: { id: req.user.adminId } }
+                                   : undefined,
+            employee:            req.user.type === "EMPLOYEE"
+                                   ? { connect: { id: req.user.employeeId } }
+                                   : undefined,
+          },
+        });
+
+        // 2) Create subtype record
+        const loanType = await tx.loanType.findUnique({ where: { id: loanTypeId } });
+        if (loanType.name === "TWOWHEELER") {
+          await tx.twoWheelerLoan.create({
+            data: {
+              loan:               { connect: { id: loan.id } },
+              vehicleName:        details.vehicleName,
+              brand:              { connect: { id: details.brandId } },
+              model:              { connect: { id: details.modelId } },
+              registrationNumber: details.rcNumber,
+              chassisNumber:      details.chassisNumber,
+              engineNumber:       details.engineNumber,
+            },
+          });
+        } else if (loanType.name === "AGRICULTURE") {
+          await tx.agricultureLoan.create({
+            data: {
+              loan:      { connect: { id: loan.id } },
+              equipment: details.equipment,
+              usageArea: details.usageArea,
+              isSeasonal: details.isSeasonal ?? false,
+            },
+          });
+        } else if (loanType.name === "MSME") {
+          await tx.mSMELoan.create({
+            data: {
+              loan:               { connect: { id: loan.id } },
+              businessName:       details.businessName,
+              registrationNumber: details.registrationNumber,
+              businessType:       details.businessType,
+              monthlyRevenue:     details.monthlyRevenue,
+              gstNumber:          details.gstNumber,
+            },
+          });
+        }
+
+        // 3) Create EMI schedule
+        const paymentsData = Array.from({ length: tenureMonths }).map((_, i) => ({
+          loanId:        loan.id,
+          paymentFor:    addMonths(parsedStart, i),
+          paymentDate:   addMonths(parsedStart, i),
+          principalPaid: 0,
+          interestPaid:  0,
+          finePaid:      0,
+          totalPaid:     0,
+          paymentMode:   "",
+          paymentStatus: "PENDING",
+          status:        "UNPAID",
+          isDelayed:     false,
+          isForeclosure: false,
+        }));
+        await tx.payment.createMany({ data: paymentsData });
+
+        // 4) Audit log
+        await logAction({
+          action:          "CREATED LOAN",
+          table:           "Loan",
+          targetId:        loan.id,
+          metadata:        loan,
+          loginActivityId: req.user.loginActivityId,
+          admin:           req.user.adminId ? { connect: { id: req.user.adminId } } : undefined,
+          employee:        req.user.employeeId ? { connect: { id: req.user.employeeId } } : undefined,
+          prisma:          tx,
+        });
+
+        return loan;
       },
+      {
+        maxWait: 2000,   // up to 2s to acquire the transaction
+        timeout: 30000,  // up to 30s for the transaction to complete
+      }
+    );
+
+    return res.status(201).json({
+      message: "Loan created successfully",
+      data:    newLoan,
     });
-
-    // 🧩 Create type-specific details
-    const loanType = await prisma.loanType.findUnique({
-      where: { id: loanTypeId },
-    });
-
-    if (loanType.name === "TWOWHEELER") {
-      await prisma.twoWheelerLoan.create({
-        data: {
-          loanId: loan.id,
-          vehicleName: details.vehicleType,
-          brand: details.brand,
-          model: details.model,
-          registrationNumber: details.registrationNumber,
-          chassisNumber: details.chassisNumber,
-          engineNumber: details.engineNumber,
-          // dealerName: details.dealerName,
-          rcNumber: details.rcNumber || "",
-        },
-      });
-    }
-
-    if (loanType.name === "AGRICULTURE") {
-      await prisma.agricultureLoan.create({
-        data: {
-          loanId: loan.id,
-          equipment: details.equipment,
-          usageArea: details.usageArea,
-          isSeasonal: details.isSeasonal || false,
-        },
-      });
-    }
-
-    if (loanType.name === "MSME") {
-      await prisma.mSMELoan.create({
-        data: {
-          loanId: loan.id,
-          businessName: details.businessName,
-          registrationNumber: details.registrationNumber,
-          businessType: details.businessType,
-          monthlyRevenue: details.monthlyRevenue,
-          gstNumber: details.gstNumber,
-        },
-      });
-    }
-    
-    await logAction({
-      action: "CREATED LOAN",
-      table: "Loan",
-      targetId: loan.id,
-      metadata: loan,
-      loginActivityId: req.user.loginActivityId,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : undefined,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : undefined,
-    });
-
-    res.status(201).json({ message: "Loan created successfully", data: loan });
   } catch (error) {
     console.error("Create Loan Error:", error);
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 };
+
+
 
 // Update Loan
 exports.updateLoan = async (req, res) => {
@@ -203,7 +278,6 @@ exports.updateLoan = async (req, res) => {
       });
     }
 
-    
     await logAction({
       action: "UPDATED LOAN",
       table: "Loan",
@@ -224,198 +298,6 @@ exports.updateLoan = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
-// Make Payment
-exports.makePayment = async (req, res) => {
-  try {
-    const {
-      loanId,
-      amount,
-      paymentFor,
-      mode,
-      transactionId, // only for online
-    } = req.body;
-
-    const paidOn = new Date();
-    const dueDate = new Date(paymentFor);
-    const delayDays = differenceInDays(paidOn, dueDate);
-    const isDelayed = delayDays > 5;
-    const fineAmount =
-      delayDays > 20 ? amount * 0.1 : delayDays > 5 ? amount * 0.05 : 0;
-
-    const isOnline = mode === "ONLINE";
-
-    const payment = await prisma.payment.create({
-      data: {
-        loanId,
-        amount,
-        paymentFor: dueDate,
-        paidOn,
-        isDelayed,
-        delayDays: isDelayed ? delayDays : null,
-        fineAmount: isDelayed ? fineAmount : null,
-        mode,
-        transactionId: isOnline ? transactionId : null,
-        verified: isOnline, // auto-verified if online
-        verifiedById: isOnline ? req.user.employeeId : null, // for online
-      },
-    });
-
-    // update loan status
-    const loan = await prisma.loan.findUnique({ where: { id: loanId } });
-
-    await prisma.loan.update({
-      where: { id: loanId },
-      data: {
-        totalPaidAmount: loan.totalPaidAmount + amount,
-        pendingAmount: loan.pendingAmount - amount,
-        isDefaulted: isDelayed ? true : loan.isDefaulted,
-        totalDelayDays: isDelayed
-          ? loan.totalDelayDays + delayDays
-          : loan.totalDelayDays,
-      },
-    });
-
-    await logAction({
-      action: "MADE PAYMENT",
-      table: "Payment",
-      targetId: payment.id,
-      metadata: payment,
-      loginActivityId: req.user.loginActivityId,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : undefined,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : undefined,
-    });
-
-    res.status(201).json({ message: "Payment added", data: payment });
-  } catch (error) {
-    console.error("Payment Error:", error);
-    res.status(500).json({ error: error.message });
-  }
-};
-
-exports.verifyPayment = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const payment = await prisma.payment.update({
-      where: { id },
-      data: {
-        verified: true,
-        verifiedById: req.user.employeeId,
-      },
-    });
-
-    await logAction({
-      action: "VERIFIED CASH PAYMENT",
-      table: "Payment",
-      targetId: id,
-      metadata: payment,
-      loginActivityId: req.user.loginActivityId,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : undefined,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : undefined,
-    });
-
-    res.json({ message: "Payment verified", data: payment });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-exports.getDuePayments = async (req, res) => {
-  try {
-    const { userId, loanId, includeAdvance = false } = req.query;
-
-    if (!userId) return res.status(400).json({ error: "userId is required" });
-
-    const loans = await prisma.loan.findMany({
-      where: {
-        userId,
-        ...(loanId && { id: loanId }),
-        isClosed: false,
-      },
-      include: {
-        payments: true,
-        loanType: true,
-      },
-    });
-
-    const today = new Date();
-    const result = [];
-
-    for (const loan of loans) {
-      const paymentMap = new Map();
-      loan.payments.forEach((p) => {
-        const key = `${getYear(p.paymentFor)}-${getMonth(p.paymentFor)}`;
-        paymentMap.set(key, p);
-      });
-
-      const months = [];
-      for (let i = 0; i < loan.tenureMonths; i++) {
-        const paymentDate = addMonths(loan.startDate, i);
-        const key = `${getYear(paymentDate)}-${getMonth(paymentDate)}`;
-        const existingPayment = paymentMap.get(key);
-
-        const isCurrentMonth = isSameMonth(paymentDate, today);
-        const isPast = isBefore(paymentDate, today);
-
-        const isDue = isPast && !existingPayment;
-        const isAdvance =
-          includeAdvance && !isPast && !existingPayment;
-
-        if (isDue || isCurrentMonth || isAdvance) {
-          months.push({
-            loanId: loan.id,
-            loanType: loan.loanType.label,
-            month: paymentDate.toLocaleString("default", { month: "long" }),
-            year: paymentDate.getFullYear(),
-            dueDate: startOfMonth(paymentDate),
-            amount: loan.amount,
-            status: existingPayment
-              ? "PAID"
-              : isPast
-              ? "DUE"
-              : isCurrentMonth
-              ? "THIS MONTH"
-              : "ADVANCE",
-            fine:
-              isPast && !existingPayment
-                ? calculateFine(today, paymentDate, loan.amount)
-                : 0,
-            verified: existingPayment?.verified || false,
-          });
-        }
-      }
-
-      result.push({
-        loanId: loan.id,
-        loanType: loan.loanType.label,
-        totalDue: months.filter((m) => m.status === "DUE").length,
-        totalAdvance: months.filter((m) => m.status === "ADVANCE").length,
-        currentMonthDue: months.find((m) => m.status === "THIS MONTH"),
-        months,
-      });
-    }
-
-    res.status(200).json({ data: result });
-  } catch (err) {
-    console.error("Get Due Payments Error:", err);
-    res.status(500).json({ error: "Failed to fetch payment dues" });
-  }
-};
-
-function calculateFine(today, dueDate, amount) {
-  const diffDays = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
-  if (diffDays <= 5) return 0;
-  if (diffDays <= 20) return amount * 0.05;
-  return amount * 0.1;
-}
 
 // List Loans by User
 exports.listLoansByUser = async (req, res) => {

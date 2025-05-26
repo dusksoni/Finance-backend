@@ -24,13 +24,23 @@ const {
   getUsageAreas,
   updateUsageArea,
   deleteUsageArea,
+  getBranches,
+  createBranch,
+  updateBranch,
+  deleteBranch,
 } = require("../controllers/list.controller");
+const { ro } = require("date-fns/locale");
 
 // Public lookup endpoints
 router.get("/genders", getAllGenders);
 router.get("/relation-types", getAllRelationTypes);
 router.get("/address-categories", getAllAddressCategories);
 
+// branch
+router.get("/branch", getBranches);
+router.post("/branch", createBranch);
+router.put("/branch/:id", updateBranch);
+router.delete("/branch/:id", deleteBranch);
 
 // Vehicle Brand
 router.post("/brands", createBrand);
