@@ -1,301 +1,499 @@
 const prisma = require("../lib/prisma");
 const {
   addMonths,
+  setDate,
   isAfter,
   differenceInDays,
   getMonth,
   getYear,
   startOfMonth,
   isBefore,
+  addYears,
 } = require("date-fns");
 const logAction = require("../utils/adminLogger");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 
+const FREQUENCY_OFFSETS = {
+  MONTHLY: { fn: addMonths, step: 1 },
+  QUARTERLY: { fn: addMonths, step: 3 },
+  HALF_YEARLY: { fn: addMonths, step: 6 },
+  YEARLY: { fn: addYears, step: 1 },
+};
 
 exports.createLoan = async (req, res) => {
   try {
     const {
       userId,
       loanTypeId,
-      productAmount,
+      productAmount, 
+      downPayment = 0,
       principalLoanAmount,
-      interestRate,   // percent, e.g. 10
+      interestRate, 
+      tenureMonths, 
       startDate,
-      dueDay,
-      tenureMonths,
-      details,        // type-specific payload
+      dueDay = 5, 
+      details,
       fileNo,
+      paymentFrequency,
       disbursedDate,
       agreementDate,
-      downPayment,
       interestType,
       penaltyPercentage,
       rtoCharges,
       processingCharges,
       otherCharges,
+      ourPaymentType,
       insuranceAmount,
       insuranceDate,
       insuranceValidTill,
       insuranceAlert,
       insuranceNumber,
       insuranceCompany,
-      ourPaymentType,
       comment,
       branchId,
     } = req.body;
 
-    // Parse and compute totals
-    const parsedStart = new Date(startDate);
-    const endDate     = addMonths(parsedStart, tenureMonths);
-    const rateDecimal = interestRate / 100;
-    const years       = tenureMonths / 12;
+    // 1) Calculate principal
+    if (principalLoanAmount <= 0) {
+      return res.status(400).json({ error: "Principal must be > 0." });
+    }
+    console.log("calculate  principle")
+    
+    // 2) Monthly interest rate
+    // annual % -> decimal -> monthly
+    const rMonth = interestRate / 100 / 12;
+    console.log("Monthly interest rate")
+    
+    // EMI formula P * r(1+r)^n / ((1+r)^n - 1)
+    const n = tenureMonths;
+    const EMI = (principalLoanAmount * Math.pow(1 + interestRate / 100, n))/n
 
-    // Total compound interest formula: P * (1 + r)^t
-    const totalAmount     = parseFloat(
-      (principalLoanAmount * Math.pow(1 + rateDecimal, years)).toFixed(2)
-    );
-    const interestAmount  = parseFloat((totalAmount - principalLoanAmount).toFixed(2));
-    const monthlyPayable  = parseFloat((totalAmount / tenureMonths).toFixed(2));
-    const pendingAmount   = totalAmount;
+    console.log("emi formula")
+    // 3) Build schedule
+    const { fn: offsetFn, step } =
+    FREQUENCY_OFFSETS[paymentFrequency] || FREQUENCY_OFFSETS.MONTHLY;
+    let scheduleBalance = principalLoanAmount;
+    const schedule = [];
+    
+    console.log("schedule")
 
-    // Check CREATE_LOAN permission for employees
+    // firstDue = startDate plus one frequency period, then set day-of-month
+    let firstDue = offsetFn(new Date(startDate), step);
+    firstDue = setDate(firstDue, dueDay);
+    console.log("first date")
+    
+    for (let i = 0; i < n; i++) {
+      console.log("loop start")
+      const dueDate = offsetFn(firstDue, step * i);
+      const interestComponent = parseFloat(
+        (scheduleBalance * rMonth).toFixed(2)
+      );
+      console.log("interestComponent")
+      const principalComponent = parseFloat(
+        (EMI - interestComponent).toFixed(2)
+      );
+      console.log("principalComponent")
+      scheduleBalance = parseFloat(
+        (scheduleBalance - principalComponent).toFixed(2)
+      );
+      console.log("scheduleBalance")
+      
+      schedule.push({
+        paymentFor: dueDate,
+        paymentDate: dueDate,
+        emiPayAmount: EMI,
+        principalAmt: principalComponent,
+        interestAmt: interestComponent,
+        amountPaidSoFar: 0,
+        fineAmount: 0,
+        status: "UNPAID",
+        paymentStatus: "PENDING",
+        isDelayed: false,
+        isForeclosure: false,
+      });
+    }
+    console.log("schedule push")
+    
+    // 4) Permission
     const verified =
-      req.user.type === "ADMIN" ||
-      (req.user.type === "EMPLOYEE" &&
-        (await checkVerifyPermission(req.user, "CREATE_LOAN")));
-
-    // Perform all writes in one transaction (timeout extended to 30s)
-    const newLoan = await prisma.$transaction(
-      async (tx) => {
-        // 1) Create core Loan record
+    req.user.type === "ADMIN" ||
+    (req.user.type === "EMPLOYEE" &&
+      (await checkVerifyPermission(req.user, "CREATE_LOAN")));
+      console.log("permission")
+      
+      // 5) Transaction
+      const newLoan = await prisma.$transaction(
+        async (tx) => {
+          console.log("Transaction start")
+        // a) Loan table
         const loan = await tx.loan.create({
           data: {
-            user:                { connect: { id: userId } },
+            user: { connect: { id: userId } },
             fileNo,
-            loanType:            { connect: { id: loanTypeId } },
-            disbursedDate:       disbursedDate ? new Date(disbursedDate) : null,
-            agreementDate:       agreementDate ? new Date(agreementDate) : null,
+            loanType: { connect: { id: loanTypeId } },
             productAmount,
             downPayment,
-            principalLoanAmount,
-            interestAmount,
-            totalAmount,
-            monthlyPayableAmount: monthlyPayable,
-            pendingAmount,
+            principalLoanAmount: principal,
+            interestAmount: parseFloat((EMI * n - principal).toFixed(2)),
+            totalAmount: parseFloat((EMI * n).toFixed(2)),
+            monthlyPayableAmount: EMI,
+            pendingAmount: parseFloat((EMI * n).toFixed(2)),
+            interestRate,
+            interestType,
+            penaltyPercentage,
+            tenureMonths: n,
+            paymentFrequency,
             rtoCharges,
             processingCharges,
             otherCharges,
             ourPaymentType,
-            interestType,
-            interestRate,
-            penaltyPercentage,
-            tenureMonths,
-            startDate:            parsedStart,
-            endDate,
+            startDate: new Date(startDate),
+            endDate: schedule[n - 1].paymentFor,
             dueDay,
-            fileStatus:          verified ? "ACTIVE" : "PENDING_APPROVAL",
+            fileStatus: verified ? "ACTIVE" : "PENDING_APPROVAL",
+            disbursedDate: disbursedDate ? new Date(disbursedDate) : null,
+            agreementDate: agreementDate ? new Date(agreementDate) : null,
             insuranceAmount,
-            insuranceDate:       insuranceDate ? new Date(insuranceDate) : null,
-            insuranceValidTill:  insuranceValidTill ? new Date(insuranceValidTill) : null,
-            insuranceAlert:      insuranceAlert === "true",
+            insuranceDate: insuranceDate ? new Date(insuranceDate) : null,
+            insuranceValidTill: insuranceValidTill
+              ? new Date(insuranceValidTill)
+              : null,
+            insuranceAlert: insuranceAlert === "true",
             insuranceNumber,
             insuranceCompany,
             comment,
-            branch:              { connect: { id: branchId } },
-            createdBy:           req.user.type,
-            admin:               req.user.type === "ADMIN"
-                                   ? { connect: { id: req.user.adminId } }
-                                   : undefined,
-            employee:            req.user.type === "EMPLOYEE"
-                                   ? { connect: { id: req.user.employeeId } }
-                                   : undefined,
+            branch: { connect: { id: branchId } },
+            createdBy: req.user.type,
+            admin:
+              req.user.type === "ADMIN"
+                ? { connect: { id: req.user.adminId } }
+                : undefined,
+            employee:
+              req.user.type === "EMPLOYEE"
+                ? { connect: { id: req.user.employeeId } }
+                : undefined,
           },
         });
-
-        // 2) Create subtype record
-        const loanType = await tx.loanType.findUnique({ where: { id: loanTypeId } });
-        if (loanType.name === "TWOWHEELER") {
+        console.log("loan create")
+        // b) Subtypes (same as before)…
+        const lt = await tx.loanType.findUnique({ where: { id: loanTypeId } });
+        if (lt.name === "TWOWHEELER") {
           await tx.twoWheelerLoan.create({
             data: {
-              loan:               { connect: { id: loan.id } },
-              vehicleName:        details.vehicleName,
-              brand:              { connect: { id: details.brandId } },
-              model:              { connect: { id: details.modelId } },
+              loan: { connect: { id: loan.id } },
+              vehicleName: details.vehicleName,
+              brand: { connect: { id: details.brandId } },
+              model: { connect: { id: details.modelId } },
               registrationNumber: details.rcNumber,
-              chassisNumber:      details.chassisNumber,
-              engineNumber:       details.engineNumber,
+              chassisNumber: details.chassisNumber,
+              engineNumber: details.engineNumber,
             },
           });
-        } else if (loanType.name === "AGRICULTURE") {
+        } else if (lt.name === "AGRICULTURE") {
           await tx.agricultureLoan.create({
             data: {
-              loan:      { connect: { id: loan.id } },
+              loan: { connect: { id: loan.id } },
               equipment: details.equipment,
               usageArea: details.usageArea,
-              isSeasonal: details.isSeasonal ?? false,
+              isSeasonal: details.isSeasonal || false,
             },
           });
-        } else if (loanType.name === "MSME") {
+        } else if (lt.name === "MSME") {
           await tx.mSMELoan.create({
             data: {
-              loan:               { connect: { id: loan.id } },
-              businessName:       details.businessName,
+              loan: { connect: { id: loan.id } },
+              businessName: details.businessName,
               registrationNumber: details.registrationNumber,
-              businessType:       details.businessType,
-              monthlyRevenue:     details.monthlyRevenue,
-              gstNumber:          details.gstNumber,
+              businessType: details.businessType,
+              monthlyRevenue: details.monthlyRevenue,
+              gstNumber: details.gstNumber,
             },
           });
         }
-
-        // 3) Create EMI schedule
-        const paymentsData = Array.from({ length: tenureMonths }).map((_, i) => ({
-          loanId:        loan.id,
-          paymentFor:    addMonths(parsedStart, i),
-          paymentDate:   addMonths(parsedStart, i),
-          principalPaid: 0,
-          interestPaid:  0,
-          finePaid:      0,
-          totalPaid:     0,
-          paymentMode:   "",
-          paymentStatus: "PENDING",
-          status:        "UNPAID",
-          isDelayed:     false,
-          isForeclosure: false,
-        }));
-        await tx.payment.createMany({ data: paymentsData });
-
-        // 4) Audit log
-        await logAction({
-          action:          "CREATED LOAN",
-          table:           "Loan",
-          targetId:        loan.id,
-          metadata:        loan,
-          loginActivityId: req.user.loginActivityId,
-          admin:           req.user.adminId ? { connect: { id: req.user.adminId } } : undefined,
-          employee:        req.user.employeeId ? { connect: { id: req.user.employeeId } } : undefined,
-          prisma:          tx,
+        console.log("loan type created")
+        
+        // c) Payments
+        await tx.payment.createMany({
+          data: schedule.map((s) => ({
+            ...s,
+            loanId: loan.id,
+          })),
         });
-
+        console.log("payment created")
+        
+        // d) Audit
+        await logAction({
+          action: "CREATED_LOAN",
+          table: "Loan",
+          targetId: loan.id,
+          metadata: loan,
+          loginActivityId: req.user.loginActivityId,
+          admin: req.user.adminId
+          ? { connect: { id: req.user.adminId } }
+          : undefined,
+          employee: req.user.employeeId
+          ? { connect: { id: req.user.employeeId } }
+          : undefined,
+          prisma: tx,
+        });
+        console.log("log action")
+        
         return loan;
       },
       {
-        maxWait: 2000,   // up to 2s to acquire the transaction
-        timeout: 30000,  // up to 30s for the transaction to complete
+        maxWait: 2000, // wait 2s to acquire TX
+        timeout: 30000, // total 30s TX timeout
       }
     );
-
+    console.log("success")
+    
+    // 6) Success
     return res.status(201).json({
       message: "Loan created successfully",
-      data:    newLoan,
+      data: newLoan,
+      status: 201,
     });
   } catch (error) {
     console.error("Create Loan Error:", error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message, status: 500 });
   }
 };
 
-
-
-// Update Loan
+// ------------- updateLoan -------------
 exports.updateLoan = async (req, res) => {
   try {
-    const { id } = req.params;
-    const {
-      loanTypeId,
-      amount,
-      interestRate,
-      startDate,
-      tenureMonths,
-      dueDay,
-      isClosed,
-      actualEndDate,
-      defaultReason,
-      details,
-    } = req.body;
+    const loanId = req.params.id;
+    const payload = req.body;
 
+    // Fetch existing (incl schedule + subtype)
     const existing = await prisma.loan.findUnique({
-      where: { id },
-      include: { loanType: true },
-    });
-    if (!existing) return res.status(404).json({ error: "Loan not found" });
-
-    const newStartDate = startDate ? new Date(startDate) : existing.startDate;
-    const newTenure = tenureMonths ?? existing.tenureMonths;
-    const newRate =
-      interestRate !== undefined ? interestRate / 100 : existing.interestRate;
-    const newEndDate = addMonths(newStartDate, newTenure);
-
-    const newTotalPayableAmount = parseFloat(
-      (existing.amount * Math.pow(1 + newRate, newTenure / 12)).toFixed(2)
-    );
-    const newPendingAmount = newTotalPayableAmount - existing.totalPaidAmount;
-
-    const updatedLoan = await prisma.loan.update({
-      where: { id },
-      data: {
-        loanTypeId: loanTypeId ?? existing.loanTypeId,
-        interestRate: newRate,
-        startDate: newStartDate,
-        endDate: newEndDate,
-        tenureMonths: newTenure,
-        dueDay: dueDay ?? existing.dueDay,
-        isClosed: isClosed ?? existing.isClosed,
-        actualEndDate: actualEndDate
-          ? new Date(actualEndDate)
-          : existing.actualEndDate,
-        defaultReason,
-        totalPayableAmount: newTotalPayableAmount,
-        pendingAmount: newPendingAmount,
+      where: { id: loanId },
+      include: {
+        loanType: true,
+        payments: true,
+        twoWheelerLoan: true,
+        agriLoan: true,
+        msmeLoan: true,
       },
     });
+    if (!existing) {
+      return res.status(404).json({ error: "Loan not found" });
+    }
 
-    const loanType = await prisma.loanType.findUnique({
-      where: { id: loanTypeId || existing.loanTypeId },
+    // Pull or default fields
+    const newAnnualPct =
+      payload.interestRate !== undefined
+        ? payload.interestRate
+        : existing.interestRate;
+    const newProductAmt = payload.productAmount ?? existing.productAmount;
+    const newDownPay = payload.downPayment ?? existing.downPayment;
+    const newPrincipal = newProductAmt - newDownPay;
+    if (newPrincipal <= 0) {
+      return res
+        .status(400)
+        .json({ error: "Principal must be > 0 (productAmount-downPayment>" });
+    }
+
+    const newTenure = payload.tenureMonths ?? existing.tenureMonths;
+    const newFreq = payload.paymentFrequency || existing.paymentFrequency;
+    const newDueDay = payload.dueDay ?? existing.dueDay;
+    const newStartDate = payload.startDate
+      ? new Date(payload.startDate)
+      : existing.startDate;
+    const newLoanTypeId = payload.loanTypeId ?? existing.loanTypeId;
+
+    // compute EMI & schedule params
+    const rMonth = newAnnualPct / 100 / 12;
+    const n = newTenure;
+    const P = newPrincipal;
+    let newEMI, factor;
+    if (rMonth > 0) {
+      factor = Math.pow(1 + rMonth, n);
+      newEMI = parseFloat(((P * rMonth * factor) / (factor - 1)).toFixed(2));
+    } else {
+      newEMI = parseFloat((P / n).toFixed(2));
+    }
+    const newTotalAmt = parseFloat((newEMI * n).toFixed(2));
+    const newInterestAmt = parseFloat((newTotalAmt - P).toFixed(2));
+    const newPendingAmount = parseFloat(
+      (newTotalAmt - existing.totalPaidAmount).toFixed(2)
+    );
+
+    // schedule reschedule flag
+    const freqCfg = FREQUENCY_OFFSETS[newFreq] || FREQUENCY_OFFSETS.MONTHLY;
+    const mustReschedule =
+      existing.paymentFrequency !== newFreq ||
+      existing.tenureMonths !== newTenure ||
+      existing.interestRate !== newAnnualPct ||
+      existing.startDate.getTime() !== newStartDate.getTime() ||
+      existing.dueDay !== newDueDay;
+
+    // permission
+    const isAdmin = req.user.type === "ADMIN";
+    const isEmpOk =
+      req.user.type === "EMPLOYEE" &&
+      (await checkVerifyPermission(req.user, "CREATE_LOAN"));
+    const verified = isAdmin || isEmpOk;
+
+    // run tx
+    const updatedLoan = await prisma.$transaction(async (tx) => {
+      // 1) update Loan
+      const loan = await tx.loan.update({
+        where: { id: loanId },
+        data: {
+          loanType: { connect: { id: newLoanTypeId } },
+          productAmount: newProductAmt,
+          downPayment: newDownPay,
+          principalLoanAmount: P,
+          interestAmount: newInterestAmt,
+          totalAmount: newTotalAmt,
+          monthlyPayableAmount: newEMI,
+          pendingAmount: newPendingAmount,
+          interestRate: newAnnualPct,
+          tenureMonths: newTenure,
+          paymentFrequency: newFreq,
+          startDate: newStartDate,
+          dueDay: newDueDay,
+          endDate: setDate(offsetFn(newStartDate, freqCfg.step * n), newDueDay),
+          fileNo: payload.fileNo ?? existing.fileNo,
+          disbursedDate: payload.disbursedDate
+            ? new Date(payload.disbursedDate)
+            : existing.disbursedDate,
+          agreementDate: payload.agreementDate
+            ? new Date(payload.agreementDate)
+            : existing.agreementDate,
+          rtoCharges: payload.rtoCharges ?? existing.rtoCharges,
+          processingCharges:
+            payload.processingCharges ?? existing.processingCharges,
+          otherCharges: payload.otherCharges ?? existing.otherCharges,
+          ourPaymentType: payload.ourPaymentType ?? existing.ourPaymentType,
+          insuranceAmount: payload.insuranceAmount ?? existing.insuranceAmount,
+          insuranceDate: payload.insuranceDate
+            ? new Date(payload.insuranceDate)
+            : existing.insuranceDate,
+          insuranceValidTill: payload.insuranceValidTill
+            ? new Date(payload.insuranceValidTill)
+            : existing.insuranceValidTill,
+          insuranceAlert:
+            payload.insuranceAlert !== undefined
+              ? payload.insuranceAlert === "true"
+              : existing.insuranceAlert,
+          insuranceNumber: payload.insuranceNumber ?? existing.insuranceNumber,
+          insuranceCompany:
+            payload.insuranceCompany ?? existing.insuranceCompany,
+          comment: payload.comment ?? existing.comment,
+          branch: payload.branchId
+            ? { connect: { id: payload.branchId } }
+            : undefined,
+          isClosed: payload.isClosed ?? existing.isClosed,
+          actualEndDate: payload.actualEndDate
+            ? new Date(payload.actualEndDate)
+            : existing.actualEndDate,
+          defaultReason: payload.defaultReason ?? existing.defaultReason,
+
+          fileStatus: verified ? "ACTIVE" : existing.fileStatus,
+        },
+      });
+
+      // 2) Payments reset
+      if (mustReschedule) {
+        await tx.payment.deleteMany({ where: { loanId: loan.id } });
+
+        // rebuild schedule
+        let bal = P;
+        const sch = [];
+        const fn = freqCfg.fn;
+        const stp = freqCfg.step;
+        let firstDue = setDate(fn(newStartDate, stp), newDueDay);
+
+        for (let i = 0; i < n; i++) {
+          const dt = fn(firstDue, stp * i);
+          const intC = parseFloat((bal * rMonth).toFixed(2));
+          const prC = parseFloat((newEMI - intC).toFixed(2));
+          bal = parseFloat((bal - prC).toFixed(2));
+
+          sch.push({
+            loanId: loan.id,
+            paymentFor: dt,
+            paymentDate: dt,
+            emiPayAmount: newEMI,
+            principalAmt: prC,
+            interestAmt: intC,
+            amountPaidSoFar: 0,
+            fineAmount: 0,
+            status: "UNPAID",
+            paymentStatus: "PENDING",
+            isDelayed: false,
+            isForeclosure: false,
+          });
+        }
+        await tx.payment.createMany({ data: sch });
+      }
+
+      // 3) upsert subtype (same logic)
+
+      const lt = await tx.loanType.findUnique({ where: { id: newLoanTypeId } });
+      if (lt.name === "TWOWHEELER" && payload.details) {
+        await tx.twoWheelerLoan.upsert({
+          where: { loanId: loan.id },
+          create: {
+            loan: { connect: { id: loan.id } },
+            vehicleName: payload.details.vehicleName,
+            brand: { connect: { id: payload.details.brandId } },
+            model: { connect: { id: payload.details.modelId } },
+            registrationNumber: payload.details.rcNumber,
+            chassisNumber: payload.details.chassisNumber,
+            engineNumber: payload.details.engineNumber,
+          },
+          update: {
+            vehicleName: payload.details.vehicleName,
+            brand: { connect: { id: payload.details.brandId } },
+            model: { connect: { id: payload.details.modelId } },
+            registrationNumber: payload.details.rcNumber,
+            chassisNumber: payload.details.chassisNumber,
+            engineNumber: payload.details.engineNumber,
+          },
+        });
+      } else if (lt.name === "AGRICULTURE" && payload.details) {
+        await tx.agricultureLoan.upsert({
+          where: { loanId: loan.id },
+          create: { loanId: loan.id, ...payload.details },
+          update: { ...payload.details },
+        });
+      } else if (lt.name === "MSME" && payload.details) {
+        await tx.mSMELoan.upsert({
+          where: { loanId: loan.id },
+          create: { loanId: loan.id, ...payload.details },
+          update: { ...payload.details },
+        });
+      }
+
+      // 4) Audit
+      await logAction({
+        action: "UPDATED_LOAN",
+        table: "Loan",
+        targetId: loan.id,
+        metadata: loan,
+        loginActivityId: req.user.loginActivityId,
+        admin: req.user.adminId
+          ? { connect: { id: req.user.adminId } }
+          : undefined,
+        employee: req.user.employeeId
+          ? { connect: { id: req.user.employeeId } }
+          : undefined,
+        prisma: tx,
+      });
+
+      return loan;
     });
 
-    if (loanType.name === "TWOWHEELER" && details) {
-      await prisma.twoWheelerLoan.upsert({
-        where: { loanId: id },
-        update: { ...details },
-        create: { loanId: id, ...details },
-      });
-    }
-
-    if (loanType.name === "AGRICULTURE" && details) {
-      await prisma.agricultureLoan.upsert({
-        where: { loanId: id },
-        update: { ...details },
-        create: { loanId: id, ...details },
-      });
-    }
-
-    if (loanType.name === "MSME" && details) {
-      await prisma.mSMELoan.upsert({
-        where: { loanId: id },
-        update: { ...details },
-        create: { loanId: id, ...details },
-      });
-    }
-
-    await logAction({
-      action: "UPDATED LOAN",
-      table: "Loan",
-      targetId: id,
-      metadata: updatedLoan,
-      loginActivityId: req.user.loginActivityId,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : undefined,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : undefined,
+    return res.json({
+      message: "Loan updated successfully",
+      data: updatedLoan,
     });
-
-    res.json({ message: "Loan updated successfully", data: updatedLoan });
-  } catch (error) {
-    console.error("Update Loan Error:", error);
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error("Update Loan Error:", err);
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -570,11 +768,7 @@ exports.listLoansDownload = async (req, res) => {
         where: loanWhere,
         orderBy: { createdAt: "desc" },
         include: {
-          user: {
-            include: {
-              details: true,
-            },
-          },
+          user: true,
           payments: true,
           loanType: true,
           twoWheelerLoan: true,
@@ -610,32 +804,35 @@ exports.getLoanById = async (req, res) => {
     const loan = await prisma.loan.findUnique({
       where: { id },
       include: {
-        user: {
-          include: {
-            details: {
-              include: {
-                state: true,
-                city: true,
-                region: true,
-              },
-            },
-          },
-        },
+        user: true,
         loanType: true,
         payments: true,
-        twoWheelerLoan: true,
-        agriLoan: true,
+        twoWheelerLoan: {
+          include: {
+            brand: true,
+            model: true,
+          },
+        },
+        agriLoan: {
+          include: {
+            equipment: true,
+          },
+        },
         msmeLoan: true,
+
+        branch: true,
       },
     });
 
     if (!loan) {
-      return res.status(404).json({ error: "Loan not found" });
+      return res.status(404).json({ error: "Loan not found", status: 404 });
     }
 
-    res.status(200).json({ data: loan });
+    res.status(200).json({ data: loan, status: 200 });
   } catch (err) {
     console.error("Get Loan By ID Error:", err);
-    res.status(500).json({ error: "Failed to fetch loan details" });
+    res
+      .status(500)
+      .json({ error: "Failed to fetch loan details", status: 500 });
   }
 };

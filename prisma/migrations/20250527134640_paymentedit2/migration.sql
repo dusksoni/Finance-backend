@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Payment" ADD COLUMN     "interestPaid" DECIMAL(65,30) NOT NULL DEFAULT 0,
+ADD COLUMN     "principalPaid" DECIMAL(65,30) NOT NULL DEFAULT 0;

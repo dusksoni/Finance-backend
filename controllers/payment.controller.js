@@ -2,60 +2,54 @@ const { differenceInDays } = require("date-fns");
 const prisma = require("../lib/prisma");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 
-
-function calculateFine(dueDate, pendingAmount) {
-  const today = new Date();
-  const delayDays = Math.max(differenceInDays(today, new Date(dueDate)), 0);
-  let finePercentage = 0;
-
-  if (delayDays > 7 && delayDays <= 20) {
-    finePercentage = 2.5;
-  } else if (delayDays > 20 && delayDays <= 30) {
-    finePercentage = 5;
-  } else if (delayDays > 30) {
-    const monthsLate = Math.floor((delayDays - 30) / 30) + 1;
-    finePercentage = 5 + monthsLate * 5;
+function calculateFine(dueDate, pendingPrincipal) {
+  const today = new Date("Tue Jan 07 2026 19:28:47 GMT+0530 (India Standard Time)");
+  const daysLate = Math.max(differenceInDays(today, dueDate), 0);
+  let pct = 0;
+  if (daysLate > 7 && daysLate <= 20) pct = 2.5;
+  else if (daysLate > 20 && daysLate <= 30) pct = 5;
+  else if (daysLate > 30) {
+    let extraMonths = Math.ceil((daysLate - 30)/30);
+    pct = 5 + extraMonths*5;
   }
-
-  const fineAmount = parseFloat(((finePercentage / 100) * pendingAmount).toFixed(2));
-  const total = parseFloat((pendingAmount + fineAmount).toFixed(2));
-
-  return { finePercentage, fineAmount, total, delayDays };
+  const fineAmt = parseFloat(((pct/100)*Number(pendingPrincipal)));
+  return { daysLate, fineAmt, pct };
 }
 
 exports.getPendingPaymentsByLoanId = async (req, res) => {
   try {
     const { loanId } = req.params;
-    const today = new Date();
+    const today = new Date("Tue Jan 07 2026 19:28:47 GMT+0530 (India Standard Time)");
 
-    const payments = await prisma.payment.findMany({
-      where: {
-        loanId,
-        paymentFor: { lte: today },
-        status: { in: ["UNPAID", "PARTIAL"] },
-      },
+    // load future & unpaid installments
+    const installments = await prisma.payment.findMany({
+      where: { loanId, status: { in: ["UNPAID","PARTIAL"] }, paymentFor: { lte: today } },
       orderBy: { paymentFor: "asc" },
     });
 
-    const updatedPayments = await Promise.all(
-      payments.map(async (payment) => {
-        const fine = calculateFine(payment.paymentFor, payment.pendingAmount);
-        await prisma.payment.update({
-          where: { id: payment.id },
-          data: {
-            fineAmount: fine.fineAmount,
-            delayDays: fine.delayDays,
-            isDelayed: fine.delayDays > 0,
-          },
-        });
-        return { ...payment, ...fine, total: fine.total };
-      })
-    );
+    let grandTotal = 0;
+    const enriched = installments.map((inst) => {
+      const { fineAmt, daysLate, pct } = calculateFine(inst.paymentFor, inst.emiPayAmount);
+      console.log(fineAmt, daysLate, pct);
+      const totalDue = parseFloat((Number(inst.emiPayAmount) + fineAmt));
+      grandTotal += totalDue;
+      return {
+        id: inst.id,
+        paymentFor: inst.paymentFor,
+        emiPayAmount: Number(inst.emiPayAmount),
+        principalAmt: inst.principalAmt,
+        interestAmt: inst.interestAmt,
+        fineAmount: fineAmt,
+        delayDays: daysLate,
+        finePercentage: pct,
+        total: totalDue,
+      };
+    });
 
-    const grandTotal = updatedPayments.reduce((sum, p) => sum + p.total, 0);
-    return res.status(200).json({ loanId, pendingPayments: updatedPayments, grandTotal });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.json({ loanId, pendingPayments: enriched, grandTotal });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message });
   }
 };
 
@@ -63,73 +57,66 @@ exports.makePayment = async (req, res) => {
   try {
     const { loanId } = req.params;
     const { amountPaid, paymentMode, transactionId, paymentDate } = req.body;
+    if (amountPaid <= 0) throw new Error("Invalid amount");
 
-    if (amountPaid <= 0) return res.status(400).json({ error: "Invalid payment amount." });
-
-    const loan = await prisma.loan.findUnique({ where: { id: loanId } });
-    if (!loan) return res.status(404).json({ error: "Loan not found." });
-
-    const payments = await prisma.payment.findMany({
-      where: { loanId, status: { in: ["UNPAID", "PARTIAL"] } },
+    // fetch unpaid installments in order
+    const installments = await prisma.payment.findMany({
+      where: { loanId, status: { in: ["UNPAID","PARTIAL"] } },
       orderBy: { paymentFor: "asc" },
     });
 
-    let remainingAmount = amountPaid;
-    const isOnline = ["ONLINE", "UPI"].includes(paymentMode);
-    const updatedPayments = [];
+    let remaining = amountPaid;
+    const updated = [];
 
-    for (let payment of payments) {
-      const fine = calculateFine(payment.paymentFor, payment.pendingAmount);
-      const totalDue = payment.pendingAmount + fine.fineAmount;
-      if (remainingAmount <= 0) break;
+    for (const inst of installments) {
+      if (remaining <= 0) break;
 
-      let paid = Math.min(remainingAmount, totalDue);
-      remainingAmount -= paid;
+      // re-calc fine & total due
+      const { fineAmt } = calculateFine(inst.paymentFor, inst.principalAmt);
+      const totalDue = inst.emiPayAmount + fineAmt - inst.amountPaidSoFar;
 
-      const isPaid = paid >= totalDue;
-      const status = isPaid ? "PAID" : "PARTIAL";
-      const verified = req.user.type === "ADMIN" || (req.user.type === "EMPLOYEE" && await checkVerifyPermission(req.user, "VERIFY_PAYMENT"));
-      const verifiedByAdminId = req.user.type === "ADMIN" ? req.user.id : null;
-      const verifiedByEmployeeId = req.user.type === "EMPLOYEE" ? req.user.id : null;
+      // pay up to totalDue
+      const pay = Math.min(remaining, totalDue);
+      remaining -= pay;
 
-      const updatedPayment = await prisma.payment.update({
-        where: { id: payment.id },
+      // determine new status
+      const newPaid = inst.amountPaidSoFar + pay;
+      const isFullyPaid = newPaid >= (inst.emiPayAmount + fineAmt);
+      const newStatus = isFullyPaid ? "PAID" : "PARTIAL";
+
+      // update record
+      await prisma.payment.update({
+        where: { id: inst.id },
         data: {
-          paidAmount: payment.paidAmount + paid,
-          pendingAmount: Math.max(totalDue - (payment.paidAmount + paid), 0),
-          status,
-          isPaid,
-          paymentStatus: verified ? "APPROVED" : "PENDING",
+          amountPaidSoFar: newPaid,
+          fineAmount: fineAmt,
+          delayDays: daysLate,
+          status: newStatus,
           paymentMode,
-          transactionId: isOnline ? transactionId : null,
-          fineAmount: fine.fineAmount,
-          delayDays: fine.delayDays,
-          isDelayed: fine.delayDays > 0,
-          verified,
-          verifiedByAdminId,
-          verifiedByEmployeeId,
+          transactionId,
           paymentDate: paymentDate || new Date(),
         },
       });
 
-      if (verified) {
-        await prisma.loan.update({
-          where: { id: loanId },
-          data: {
-            totalPaidAmount: { increment: paid },
-            pendingAmount: { decrement: paid },
-          },
-        });
-      }
+      // reduce loan’s pendingAmount, totalPaidAmount
+      await prisma.loan.update({
+        where: { id: loanId },
+        data: {
+          pendingAmount: { decrement: pay },
+          totalPaidAmount: { increment: pay },
+        },
+      });
 
-      updatedPayments.push(updatedPayment);
+      updated.push({ id: inst.id, paid: pay, status: newStatus });
     }
 
-    return res.status(200).json({ message: "Payment processed", usedAmount: amountPaid - remainingAmount, updatedPayments });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.json({ message: "Payment applied", used: amountPaid - remaining, updated });
+  } catch (err) {
+    console.error(err);
+    return res.status(400).json({ error: err.message });
   }
 };
+
 
 exports.verifyPayment = async (req, res) => {
   try {

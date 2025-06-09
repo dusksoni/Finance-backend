@@ -384,7 +384,7 @@ model Loan {
   startDate            DateTime
   endDate              DateTime
   dueDay               Int      @default(5)
-
+  paymentFrequency     String? @default("MONTHLY")
   fileStatus     FileStatus @default(INITIATED)
   isClosed       Boolean    @default(false)
   isDefaulted    Boolean    @default(false)
@@ -420,33 +420,37 @@ model Loan {
   updatedAt DateTime @updatedAt
 }
 
+
 model Payment {
-  id          String   @id @default(uuid())
-  loanId      String
-  paymentFor  DateTime
-  paymentDate DateTime @default(now())
+  id             String   @id @default(uuid())
+  loanId         String
+  paymentFor     DateTime
+  paymentDate    DateTime @default(now())
 
-  principalPaid Decimal @default(0)
-  interestPaid  Decimal @default(0)
-  finePaid      Decimal @default(0)
-  totalPaid     Decimal @default(0)
+  emiPayAmount   Decimal @default(0)
+  principalAmt   Decimal @default(0)
+  interestAmt    Decimal @default(0)
+  amountPaidSoFar Decimal @default(0)
+  finePaid       Decimal @default(0)
+  totalPaid      Decimal @default(0)
+  principalPaid  Decimal @default(0)
+  interestPaid   Decimal @default(0)
+  paymentMode    String?
+  paymentStatus  String   @default("PENDING")
+  status         String   @default("UNPAID")
+  transactionId  String?
+  isForeclosure  Boolean  @default(false)
 
-  paymentMode   String
-  paymentStatus String  @default("PENDING")
-  status        String  @default("UNPAID")
-  transactionId String?
-  isForeclosure Boolean @default(false)
-
-  isDelayed            Boolean   @default(false)
-  delayDays            Int?
-  fineAmount           Float?
-  verified             Boolean   @default(false)
-  verifiedAt           DateTime?
+  isDelayed      Boolean  @default(false)
+  delayDays      Int?
+  fineAmount     Float?
+  verified       Boolean  @default(false)
+  verifiedAt     DateTime?
   verifiedByAdminId    String?
   verifiedByEmployeeId String?
 
-  loan               Loan      @relation(fields: [loanId], references: [id])
-  verifiedByAdmin    Admin?    @relation("VerifiedByAdmin", fields: [verifiedByAdminId], references: [id])
+  loan             Loan      @relation(fields: [loanId], references: [id])
+  verifiedByAdmin  Admin?    @relation("VerifiedByAdmin", fields: [verifiedByAdminId], references: [id])
   verifiedByEmployee Employee? @relation("VerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])
 }
 
@@ -483,7 +487,7 @@ enum PaymentMode {
 model TwoWheelerLoan {
   id          String @id @default(uuid())
   loanId      String @unique
-  vehicleName String
+  vehicleName String?
 
   brandId   String
   modelId   String
