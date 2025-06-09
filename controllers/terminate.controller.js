@@ -89,12 +89,14 @@ exports.terminateHypothecation = async (req, res) => {
     // 🔥 8. Respond
     if (parsedResponse.responseCode === 200) {
       return res.status(200).json({
+        status: 200,
         message: "Termination request successful",
         data: parsedResponse,
       });
     } else {
       return res.status(400).json({
-        status: parsedResponse.responseCode,
+        status: 400,
+        responseCode: parsedResponse.responseCode,
         message: parsedResponse.responseMessage || "Termination failed",
       });
     }
