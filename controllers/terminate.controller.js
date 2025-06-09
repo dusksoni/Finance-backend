@@ -22,7 +22,6 @@ exports.terminateHypothecation = async (req, res) => {
       userId: CLIENT_ID,
       userPwd: USER_PWD,
     };
-    
 
     // 🔥 2. Encrypt
     const encryptedData = encrypt(JSON.stringify(requestPayload), SECRET_KEY);
