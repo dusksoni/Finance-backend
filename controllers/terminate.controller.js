@@ -102,7 +102,7 @@ exports.terminateHypothecation = async (req, res) => {
     res.status(500).json({
       status: "error",
       message: "Internal server error",
-      details: error.message,
+      details: error,
     });
   }
 };
