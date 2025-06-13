@@ -63,7 +63,7 @@ exports.terminateHypothecation = async (req, res) => {
         encryptedData: encryptedData,
         response: parsedResponse.responseMessage,
         status: parsedResponse.responseCode,
-        errorMessage: parsedResponse.responseCode === 200 ? null : parsedResponse.responseMessage,
+        errorMessage: parsedResponse.responseCode == 1 ? null : parsedResponse.responseMessage,
         adminId: req.user?.adminId || null,
         employeeId: req.user?.employeeId || null,
         createdBy: req.user?.type || "unknown",
