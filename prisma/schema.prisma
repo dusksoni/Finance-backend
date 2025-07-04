@@ -79,6 +79,7 @@ model Admin {
   ceaseHistoriesAssigned CeaseHistory[]       @relation("AssignedBy")
   requestedUpdates       UserUpdateRequest[]  @relation("RequestedByAdmin")
   verifiedPayments       Payment[]            @relation("VerifiedByAdmin")
+  payments               Payment[]
 }
 
 model Role {
@@ -124,6 +125,7 @@ model Employee {
   requestedUpdates         UserUpdateRequest[]  @relation("RequestedByEmployee")
   ceaseHistoriesAssignedTo CeaseHistory[]       @relation("CeaseAssignedTo")
   ceaseHistoriesCeasedBy   CeaseHistory[]       @relation("CeasedBy")
+  payments                 Payment[]
 }
 
 model LoginActivity {
@@ -367,10 +369,10 @@ model Loan {
   principalLoanAmount  Float
   interestAmount       Float
   totalAmount          Float
-  totalPaidPrincipal   Float    @default(0)
-  totalPaidInterest    Float    @default(0)
-  totalPaidFine        Float    @default(0)
-  totalPaidAmount      Float    @default(0)
+  totalPaidPrincipal   Float      @default(0)
+  totalPaidInterest    Float      @default(0)
+  totalPaidFine        Float      @default(0)
+  totalPaidAmount      Float      @default(0)
   monthlyPayableAmount Float
   pendingAmount        Float
   rtoCharges           Float?
@@ -383,13 +385,13 @@ model Loan {
   tenureMonths         Int
   startDate            DateTime
   endDate              DateTime
-  dueDay               Int      @default(5)
-  paymentFrequency     String? @default("MONTHLY")
-  fileStatus     FileStatus @default(INITIATED)
-  isClosed       Boolean    @default(false)
-  isDefaulted    Boolean    @default(false)
-  totalDelayDays Int        @default(0)
-  defaultReason  String?
+  dueDay               Int        @default(5)
+  paymentFrequency     String?    @default("MONTHLY")
+  fileStatus           FileStatus @default(INITIATED)
+  isClosed             Boolean    @default(false)
+  isDefaulted          Boolean    @default(false)
+  totalDelayDays       Int        @default(0)
+  defaultReason        String?
 
   insuranceAmount    Float?
   insuranceDate      DateTime?
@@ -409,6 +411,7 @@ model Loan {
   admin          Admin?           @relation(fields: [adminId], references: [id])
   employee       Employee?        @relation(fields: [employeeId], references: [id])
   user           User             @relation(fields: [userId], references: [id])
+  emi            EMI[]
   payments       Payment[]
   ceaseHistories CeaseHistory[]
   guarantors     LoanGuarantor[]
@@ -420,38 +423,60 @@ model Loan {
   updatedAt DateTime @updatedAt
 }
 
+model EMI {
+  id          String   @id @default(uuid())
+  loanId      String
+  paymentFor  DateTime
+  paymentDate DateTime @default(now())
 
-model Payment {
-  id             String   @id @default(uuid())
-  loanId         String
-  paymentFor     DateTime
-  paymentDate    DateTime @default(now())
-
-  emiPayAmount   Decimal @default(0)
-  principalAmt   Decimal @default(0)
-  interestAmt    Decimal @default(0)
+  emiPayAmount    Decimal @default(0)
+  principalAmt    Decimal @default(0)
+  interestAmt     Decimal @default(0)
   amountPaidSoFar Decimal @default(0)
-  finePaid       Decimal @default(0)
-  totalPaid      Decimal @default(0)
-  principalPaid  Decimal @default(0)
-  interestPaid   Decimal @default(0)
-  paymentMode    String?
-  paymentStatus  String   @default("PENDING")
-  status         String   @default("UNPAID")
-  transactionId  String?
-  isForeclosure  Boolean  @default(false)
+  finePaid        Decimal @default(0)
+  totalPaid       Decimal @default(0)
+  principalPaid   Decimal @default(0)
+  interestPaid    Decimal @default(0)
 
-  isDelayed      Boolean  @default(false)
-  delayDays      Int?
-  fineAmount     Float?
-  verified       Boolean  @default(false)
-  verifiedAt     DateTime?
+  status        String @default("UNPAID")
+
+  isForeclosure        Boolean   @default(false)
+  isDelayed            Boolean   @default(false)
+  delayDays            Int?
+  fineAmount           Float?
+  verified             Boolean   @default(false)
+  verifiedAt           DateTime?
   verifiedByAdminId    String?
   verifiedByEmployeeId String?
 
-  loan             Loan      @relation(fields: [loanId], references: [id])
-  verifiedByAdmin  Admin?    @relation("VerifiedByAdmin", fields: [verifiedByAdminId], references: [id])
+  loan Loan @relation(fields: [loanId], references: [id])
+
+  payments Payment[] // one-to-many: all payments linked to this EMI
+}
+
+model Payment {
+  id            String      @id @default(uuid())
+  loanId        String
+  emiId         String?
+  amount        Decimal?    @default(0)
+  paymentDate   DateTime    @default(now())
+  paymentMode   PaymentMode?
+  transactionId String?
+  status        String      @default("PENDING") // PENDING, PAID, UNVERIFIED
+
+  verified             Boolean   @default(false)
+  verifiedAt           DateTime?
+  verifiedByAdminId    String?
+  verifiedByEmployeeId String?
+
+  adminId            String?
+  employeeId         String?
+  emi                EMI?       @relation(fields: [emiId], references: [id])
+  verifiedByAdmin    Admin?    @relation("VerifiedByAdmin", fields: [verifiedByAdminId], references: [id])
   verifiedByEmployee Employee? @relation("VerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])
+  admin              Admin?    @relation(fields: [adminId], references: [id])
+  employee           Employee? @relation(fields: [employeeId], references: [id])
+  loan               Loan      @relation(fields: [loanId], references: [id])
 }
 
 model CeaseHistory {
@@ -485,8 +510,8 @@ enum PaymentMode {
 // ==========================
 
 model TwoWheelerLoan {
-  id          String @id @default(uuid())
-  loanId      String @unique
+  id          String  @id @default(uuid())
+  loanId      String  @unique
   vehicleName String?
 
   brandId   String

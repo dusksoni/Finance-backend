@@ -20,6 +20,9 @@ const FREQUENCY_OFFSETS = {
   YEARLY: { fn: addYears, step: 1 },
 };
 
+// ====================
+// 🟢 CREATE LOAN
+// ====================
 exports.createLoan = async (req, res) => {
   try {
     const {
@@ -28,10 +31,10 @@ exports.createLoan = async (req, res) => {
       productAmount,
       downPayment = 0,
       principalLoanAmount,
-      interestRate, // Annual % (e.g. 14)
-      tenureMonths, // Total number of installments
+      interestRate, // Annual %, e.g. 14
+      tenureMonths, // number of installments
       startDate, // JS date string
-      dueDay = 5, // Day-of-month on which payments fall
+      dueDay = 5, // day-of-month
       paymentFrequency = "MONTHLY",
       details, // subtype payload
       fileNo,
@@ -53,49 +56,39 @@ exports.createLoan = async (req, res) => {
       penaltyPercentage,
     } = req.body;
 
-    // 1) Check principal
+    // 1) Validate principal & tenure
     const P = Number(principalLoanAmount);
     if (!P || P <= 0) {
-      return res.status(400).json({
-        error: "principalLoanAmount must be more than 0",
-        status: 400,
-      });
+      return res.status(400).json({ error: "principalLoanAmount must be > 0" });
     }
     const n = parseInt(tenureMonths, 10);
     if (!n || n < 1) {
-      return res
-        .status(400)
-        .json({ error: "Months will be more than 0", status: 400 });
+      return res.status(400).json({ error: "tenureMonths must be >= 1" });
     }
 
-    // 2) Compute monthly EMI using amortization formula
+    // 2) EMI calculation (annual compounding)
     const totalPayable = P * Math.pow(1 + interestRate / 100, n / 12);
     const EMI = totalPayable / n;
 
-    // 3) Build amortization schedule
+    // 3) Build schedule (same frequency logic)
     const { fn: offsetFn, step } =
       FREQUENCY_OFFSETS[paymentFrequency] || FREQUENCY_OFFSETS.MONTHLY;
 
     let balance = P;
     const schedule = [];
 
-    // first installment date: shift startDate by one frequency increment, then set day-of-month
+    // Determine first due date
     let firstDue = setDate(new Date(startDate), dueDay);
     if (new Date(startDate).getDate() > dueDay) {
-      // Move forward one frequency interval
       firstDue = offsetFn(firstDue, step);
     }
 
     for (let i = 0; i < n; i++) {
       const dueDate = offsetFn(firstDue, step * i);
-
-      // interest portion on current balance
       const interestPortion = parseFloat(
         (balance * (interestRate / 100 / 12)).toFixed(2)
       );
-      // principal portion = EMI minus interest
       const principalPortion = parseFloat((EMI - interestPortion).toFixed(2));
-      // reduce remaining balance
       balance = parseFloat((balance - principalPortion).toFixed(2));
 
       schedule.push({
@@ -106,8 +99,7 @@ exports.createLoan = async (req, res) => {
         interestAmt: interestPortion,
         amountPaidSoFar: 0,
         fineAmount: 0,
-        status: "UNPAID", // UNPAID | PARTIAL | PAID
-        paymentStatus: "PENDING", // PENDING | APPROVED
+        status: "UNPAID",
         isDelayed: false,
         isForeclosure: false,
       });
@@ -120,21 +112,19 @@ exports.createLoan = async (req, res) => {
       (await checkVerifyPermission(req.user, "CREATE_LOAN"));
     const verified = isAdmin || isEmpCan;
 
-    // 5) Persist everything in one transaction
+    // 5) Transaction: Loan, subtypes, schedule, log
     const created = await prisma.$transaction(
       async (tx) => {
-        // a) Create core Loan
+        // a) Core loan
         const loan = await tx.loan.create({
           data: {
             user: { connect: { id: userId } },
-            fileNo,
             loanType: { connect: { id: loanTypeId } },
+            fileNo,
             productAmount,
             downPayment,
             principalLoanAmount,
-            interestAmount: parseFloat(
-              (totalPayable - principalLoanAmount).toFixed(2)
-            ),
+            interestAmount: parseFloat((totalPayable - P).toFixed(2)),
             totalAmount: totalPayable,
             monthlyPayableAmount: EMI,
             pendingAmount: totalPayable,
@@ -171,7 +161,7 @@ exports.createLoan = async (req, res) => {
           },
         });
 
-        // b) Sub-type record
+        // b) Sub-type
         const lt = await tx.loanType.findUnique({ where: { id: loanTypeId } });
         if (lt.name === "TWOWHEELER") {
           await tx.twoWheelerLoan.create({
@@ -189,7 +179,7 @@ exports.createLoan = async (req, res) => {
           await tx.agricultureLoan.create({
             data: {
               loan: { connect: { id: loan.id } },
-              equipment: details.equipment,
+              equipment: { connect: { id: details.equipmentId } },
               usageArea: details.usageArea,
               isSeasonal: details.isSeasonal || false,
             },
@@ -207,12 +197,9 @@ exports.createLoan = async (req, res) => {
           });
         }
 
-        // c) Bulk-insert schedule into Payment table
-        await tx.payment.createMany({
-          data: schedule.map((row) => ({
-            ...row,
-            loanId: loan.id,
-          })),
+        // c) EMI schedule
+        await tx.eMI.createMany({
+          data: schedule.map((row) => ({ ...row, loanId: loan.id })),
         });
 
         // d) Audit log
@@ -232,253 +219,246 @@ exports.createLoan = async (req, res) => {
         return loan;
       },
       {
-        maxWait: 2000, // wait up to 2s for the TX lock
-        timeout: 30000, // allow up to 30s for the entire TX
+        maxWait: 2000,
+        timeout: 30000,
       }
     );
 
-    // 6) Return success
-    return res.status(201).json({
-      message: "Loan created successfully",
-      data: created,
-      status: 201,
-    });
+    return res.status(201).json({ message: "Loan created", data: created });
   } catch (err) {
     console.error("Create Loan Error:", err);
-    return res.status(500).json({
-      error: err.message,
-      status: 500,
-    });
+    return res.status(500).json({ error: err.message });
   }
 };
 
-// ------------- updateLoan -------------
+// ====================
+// 🔄 UPDATE LOAN
+// ====================
 exports.updateLoan = async (req, res) => {
   try {
     const loanId = req.params.id;
     const payload = req.body;
 
-    // Fetch existing (incl schedule + subtype)
+    // 1) fetch existing (with payments)
     const existing = await prisma.loan.findUnique({
       where: { id: loanId },
-      include: {
-        loanType: true,
-        payments: true,
-        twoWheelerLoan: true,
-        agriLoan: true,
-        msmeLoan: true,
-      },
+      include: { payments: true },
     });
     if (!existing) {
       return res.status(404).json({ error: "Loan not found" });
     }
 
-    // Pull or default fields
-    const newAnnualPct =
-      payload.interestRate !== undefined
-        ? payload.interestRate
-        : existing.interestRate;
-    const newProductAmt = payload.productAmount ?? existing.productAmount;
-    const newDownPay = payload.downPayment ?? existing.downPayment;
-    const newPrincipal = newProductAmt - newDownPay;
+    // 2) new vs old
+    const newPct = payload.interestRate ?? existing.interestRate;
+    const newProd = payload.productAmount ?? existing.productAmount;
+    const newDown = payload.downPayment ?? existing.downPayment;
+    const newPrincipal = newProd - newDown;
     if (newPrincipal <= 0) {
-      return res
-        .status(400)
-        .json({ error: "Principal must be > 0 (productAmount-downPayment>" });
+      return res.status(400).json({ error: "Principal must be > 0" });
     }
 
     const newTenure = payload.tenureMonths ?? existing.tenureMonths;
-    const newFreq = payload.paymentFrequency || existing.paymentFrequency;
+    const newFreq = payload.paymentFrequency ?? existing.paymentFrequency;
     const newDueDay = payload.dueDay ?? existing.dueDay;
     const newStartDate = payload.startDate
       ? new Date(payload.startDate)
       : existing.startDate;
     const newLoanTypeId = payload.loanTypeId ?? existing.loanTypeId;
 
-    // compute EMI & schedule params
-    const rMonth = newAnnualPct / 100 / 12;
-    const n = newTenure;
-    const P = newPrincipal;
-    let newEMI, factor;
-    if (rMonth > 0) {
-      factor = Math.pow(1 + rMonth, n);
-      newEMI = parseFloat(((P * rMonth * factor) / (factor - 1)).toFixed(2));
-    } else {
-      newEMI = parseFloat((P / n).toFixed(2));
-    }
-    const newTotalAmt = parseFloat((newEMI * n).toFixed(2));
-    const newInterestAmt = parseFloat((newTotalAmt - P).toFixed(2));
-    const newPendingAmount = parseFloat(
-      (newTotalAmt - existing.totalPaidAmount).toFixed(2)
-    );
+    // 3) recalc EMI & total
+    const totalPayable =
+      newPrincipal * Math.pow(1 + newPct / 100, newTenure / 12);
+    const EMI = totalPayable / newTenure;
 
-    // schedule reschedule flag
-    const freqCfg = FREQUENCY_OFFSETS[newFreq] || FREQUENCY_OFFSETS.MONTHLY;
-    const mustReschedule =
+    // 4) schedule reset?
+    const mustReset =
       existing.paymentFrequency !== newFreq ||
       existing.tenureMonths !== newTenure ||
-      existing.interestRate !== newAnnualPct ||
+      existing.interestRate !== newPct ||
       existing.startDate.getTime() !== newStartDate.getTime() ||
       existing.dueDay !== newDueDay;
 
-    // permission
+    // 5) permissions
     const isAdmin = req.user.type === "ADMIN";
     const isEmpOk =
       req.user.type === "EMPLOYEE" &&
       (await checkVerifyPermission(req.user, "CREATE_LOAN"));
-    const verified = isAdmin || isEmpOk;
+    const newFileStatus = isAdmin || isEmpOk ? "ACTIVE" : existing.fileStatus;
 
-    // run tx
-    const updatedLoan = await prisma.$transaction(async (tx) => {
-      // 1) update Loan
-      const loan = await tx.loan.update({
-        where: { id: loanId },
-        data: {
-          loanType: { connect: { id: newLoanTypeId } },
-          productAmount: newProductAmt,
-          downPayment: newDownPay,
-          principalLoanAmount: P,
-          interestAmount: newInterestAmt,
-          totalAmount: newTotalAmt,
-          monthlyPayableAmount: newEMI,
-          pendingAmount: newPendingAmount,
-          interestRate: newAnnualPct,
-          tenureMonths: newTenure,
-          paymentFrequency: newFreq,
-          startDate: newStartDate,
-          dueDay: newDueDay,
-          endDate: setDate(offsetFn(newStartDate, freqCfg.step * n), newDueDay),
-          fileNo: payload.fileNo ?? existing.fileNo,
-          disbursedDate: payload.disbursedDate
-            ? new Date(payload.disbursedDate)
-            : existing.disbursedDate,
-          agreementDate: payload.agreementDate
-            ? new Date(payload.agreementDate)
-            : existing.agreementDate,
-          rtoCharges: payload.rtoCharges ?? existing.rtoCharges,
-          processingCharges:
-            payload.processingCharges ?? existing.processingCharges,
-          otherCharges: payload.otherCharges ?? existing.otherCharges,
-          ourPaymentType: payload.ourPaymentType ?? existing.ourPaymentType,
-          insuranceAmount: payload.insuranceAmount ?? existing.insuranceAmount,
-          insuranceDate: payload.insuranceDate
-            ? new Date(payload.insuranceDate)
-            : existing.insuranceDate,
-          insuranceValidTill: payload.insuranceValidTill
-            ? new Date(payload.insuranceValidTill)
-            : existing.insuranceValidTill,
-          insuranceAlert:
-            payload.insuranceAlert !== undefined
-              ? payload.insuranceAlert === "true"
-              : existing.insuranceAlert,
-          insuranceNumber: payload.insuranceNumber ?? existing.insuranceNumber,
-          insuranceCompany:
-            payload.insuranceCompany ?? existing.insuranceCompany,
-          comment: payload.comment ?? existing.comment,
-          branch: payload.branchId
-            ? { connect: { id: payload.branchId } }
-            : undefined,
-          isClosed: payload.isClosed ?? existing.isClosed,
-          actualEndDate: payload.actualEndDate
-            ? new Date(payload.actualEndDate)
-            : existing.actualEndDate,
-          defaultReason: payload.defaultReason ?? existing.defaultReason,
+    // 6) frequency helpers
+    const freqCfg = FREQUENCY_OFFSETS[newFreq] || FREQUENCY_OFFSETS.MONTHLY;
+    const { fn: offsetFn, step } = freqCfg;
 
-          fileStatus: verified ? "ACTIVE" : existing.fileStatus,
-        },
-      });
+    // 7) transaction
+    const updatedLoan = await prisma.$transaction(
+      async (tx) => {
+        // a) update loan
+        const loan = await tx.loan.update({
+          where: { id: loanId },
+          data: {
+            loanType: { connect: { id: newLoanTypeId } },
+            productAmount: newProd,
+            downPayment: newDown,
+            principalLoanAmount: newPrincipal,
+            interestAmount: parseFloat(
+              (totalPayable - newPrincipal).toFixed(2)
+            ),
+            totalAmount: parseFloat(totalPayable.toFixed(2)),
+            monthlyPayableAmount: parseFloat(EMI.toFixed(2)),
+            pendingAmount: parseFloat(
+              (totalPayable - existing.totalPaidAmount).toFixed(2)
+            ),
+            interestRate: newPct,
+            tenureMonths: newTenure,
+            paymentFrequency: newFreq,
+            startDate: newStartDate,
+            dueDay: newDueDay,
+            endDate: (() => {
+              let fd = setDate(newStartDate, newDueDay);
+              if (newStartDate.getDate() > newDueDay) {
+                fd = offsetFn(fd, step);
+              }
+              return offsetFn(fd, step * (newTenure - 1));
+            })(),
+            fileNo: payload.fileNo ?? existing.fileNo,
+            disbursedDate: payload.disbursedDate
+              ? new Date(payload.disbursedDate)
+              : existing.disbursedDate,
+            agreementDate: payload.agreementDate
+              ? new Date(payload.agreementDate)
+              : existing.agreementDate,
+            rtoCharges: payload.rtoCharges ?? existing.rtoCharges,
+            processingCharges:
+              payload.processingCharges ?? existing.processingCharges,
+            otherCharges: payload.otherCharges ?? existing.otherCharges,
+            ourPaymentType: payload.ourPaymentType ?? existing.ourPaymentType,
+            insuranceAmount:
+              payload.insuranceAmount ?? existing.insuranceAmount,
+            insuranceDate: payload.insuranceDate
+              ? new Date(payload.insuranceDate)
+              : existing.insuranceDate,
+            insuranceValidTill: payload.insuranceValidTill
+              ? new Date(payload.insuranceValidTill)
+              : existing.insuranceValidTill,
+            insuranceAlert:
+              payload.insuranceAlert === undefined
+                ? existing.insuranceAlert
+                : payload.insuranceAlert === "true",
+            insuranceNumber:
+              payload.insuranceNumber ?? existing.insuranceNumber,
+            insuranceCompany:
+              payload.insuranceCompany ?? existing.insuranceCompany,
+            comment: payload.comment ?? existing.comment,
+            branch: payload.branchId
+              ? { connect: { id: payload.branchId } }
+              : undefined,
+            fileStatus: newFileStatus,
+          },
+        });
 
-      // 2) Payments reset
-      if (mustReschedule) {
-        await tx.payment.deleteMany({ where: { loanId: loan.id } });
+        // b) reset schedule?
+        if (mustReset) {
+          await tx.eMI.deleteMany({ where: { loanId } });
 
-        // rebuild schedule
-        let bal = P;
-        const sch = [];
-        const fn = freqCfg.fn;
-        const stp = freqCfg.step;
-        let firstDue = setDate(fn(newStartDate, stp), newDueDay);
+          let bal = newPrincipal;
+          const newSchedule = [];
+          let firstDue = setDate(newStartDate, newDueDay);
+          if (newStartDate.getDate() > newDueDay)
+            firstDue = offsetFn(firstDue, step);
 
-        for (let i = 0; i < n; i++) {
-          const dt = fn(firstDue, stp * i);
-          const intC = parseFloat((bal * rMonth).toFixed(2));
-          const prC = parseFloat((newEMI - intC).toFixed(2));
-          bal = parseFloat((bal - prC).toFixed(2));
+          for (let i = 0; i < newTenure; i++) {
+            const dueDate = offsetFn(firstDue, step * i);
+            const intPort = parseFloat((bal * (newPct / 100 / 12)).toFixed(2));
+            const priPort = parseFloat((EMI - intPort).toFixed(2));
+            bal = parseFloat((bal - priPort).toFixed(2));
 
-          sch.push({
-            loanId: loan.id,
-            paymentFor: dt,
-            paymentDate: dt,
-            emiPayAmount: newEMI,
-            principalAmt: prC,
-            interestAmt: intC,
-            amountPaidSoFar: 0,
-            fineAmount: 0,
-            status: "UNPAID",
-            paymentStatus: "PENDING",
-            isDelayed: false,
-            isForeclosure: false,
+            newSchedule.push({
+              loanId: loan.id,
+              paymentFor: dueDate,
+              paymentDate: dueDate,
+              emiPayAmount: parseFloat(EMI.toFixed(2)),
+              principalAmt: priPort,
+              interestAmt: intPort,
+              amountPaidSoFar: 0,
+              fineAmount: 0,
+              status: "UNPAID",
+              paymentStatus: "PENDING",
+              isDelayed: false,
+              isForeclosure: false,
+            });
+          }
+          await tx.eMI.createMany({ data: newSchedule });
+        }
+
+        // c) upsert subtype
+        const ltRec = await tx.loanType.findUnique({
+          where: { id: newLoanTypeId },
+        });
+        if (ltRec.name === "TWOWHEELER" && payload.details) {
+          await tx.twoWheelerLoan.upsert({
+            where: { loanId: loan.id },
+            create: {
+              loan: { connect: { id: loan.id } },
+              vehicleName: payload.details.vehicleName,
+              brand: { connect: { id: payload.details.brandId } },
+              model: { connect: { id: payload.details.modelId } },
+              registrationNumber: payload.details.registrationNumber,
+              chassisNumber: payload.details.chassisNumber,
+              engineNumber: payload.details.engineNumber,
+            },
+            update: {
+              vehicleName: payload.details.vehicleName,
+              brand: { connect: { id: payload.details.brandId } },
+              model: { connect: { id: payload.details.modelId } },
+              registrationNumber: payload.details.registrationNumber,
+              chassisNumber: payload.details.chassisNumber,
+              engineNumber: payload.details.engineNumber,
+            },
+          });
+        } else if (ltRec.name === "AGRICULTURE" && payload.details) {
+          await tx.agricultureLoan.upsert({
+            where: { loanId: loan.id },
+            create: {
+              loan: { connect: { id: loan.id } },
+              equipment: { connect: { id: payload.details.equipmentId } },
+              usageArea: payload.details.usageArea,
+              isSeasonal: payload.details.isSeasonal || false,
+            },
+            update: {
+              equipment: { connect: { id: payload.details.equipmentId } },
+              usageArea: payload.details.usageArea,
+              isSeasonal: payload.details.isSeasonal || false,
+            },
+          });
+        } else if (ltRec.name === "MSME" && payload.details) {
+          await tx.mSMELoan.upsert({
+            where: { loanId: loan.id },
+            create: { loanId: loan.id, ...payload.details },
+            update: { ...payload.details },
           });
         }
-        await tx.payment.createMany({ data: sch });
+
+        // d) audit
+        await logAction({
+          action: "UPDATED_LOAN",
+          table: "Loan",
+          targetId: loan.id,
+          metadata: loan,
+          loginActivityId: req.user.loginActivityId,
+          admin: isAdmin ? { connect: { id: req.user.adminId } } : undefined,
+          employee: !isAdmin
+            ? { connect: { id: req.user.employeeId } }
+            : undefined,
+          prisma: tx,
+        });
+
+        return loan;
+      },
+      {
+        maxWait: 2000,
+        timeout: 30000,
       }
-
-      // 3) upsert subtype (same logic)
-
-      const lt = await tx.loanType.findUnique({ where: { id: newLoanTypeId } });
-      if (lt.name === "TWOWHEELER" && payload.details) {
-        await tx.twoWheelerLoan.upsert({
-          where: { loanId: loan.id },
-          create: {
-            loan: { connect: { id: loan.id } },
-            vehicleName: payload.details.vehicleName,
-            brand: { connect: { id: payload.details.brandId } },
-            model: { connect: { id: payload.details.modelId } },
-            registrationNumber: payload.details.rcNumber,
-            chassisNumber: payload.details.chassisNumber,
-            engineNumber: payload.details.engineNumber,
-          },
-          update: {
-            vehicleName: payload.details.vehicleName,
-            brand: { connect: { id: payload.details.brandId } },
-            model: { connect: { id: payload.details.modelId } },
-            registrationNumber: payload.details.rcNumber,
-            chassisNumber: payload.details.chassisNumber,
-            engineNumber: payload.details.engineNumber,
-          },
-        });
-      } else if (lt.name === "AGRICULTURE" && payload.details) {
-        await tx.agricultureLoan.upsert({
-          where: { loanId: loan.id },
-          create: { loanId: loan.id, ...payload.details },
-          update: { ...payload.details },
-        });
-      } else if (lt.name === "MSME" && payload.details) {
-        await tx.mSMELoan.upsert({
-          where: { loanId: loan.id },
-          create: { loanId: loan.id, ...payload.details },
-          update: { ...payload.details },
-        });
-      }
-
-      // 4) Audit
-      await logAction({
-        action: "UPDATED_LOAN",
-        table: "Loan",
-        targetId: loan.id,
-        metadata: loan,
-        loginActivityId: req.user.loginActivityId,
-        admin: req.user.adminId
-          ? { connect: { id: req.user.adminId } }
-          : undefined,
-        employee: req.user.employeeId
-          ? { connect: { id: req.user.employeeId } }
-          : undefined,
-        prisma: tx,
-      });
-
-      return loan;
-    });
+    );
 
     return res.json({
       message: "Loan updated successfully",
@@ -486,7 +466,7 @@ exports.updateLoan = async (req, res) => {
     });
   } catch (err) {
     console.error("Update Loan Error:", err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 };
 
@@ -497,6 +477,7 @@ exports.listLoansByUser = async (req, res) => {
     const loans = await prisma.loan.findMany({
       where: { userId },
       include: {
+        emi: true,
         payments: true,
         loanType: true,
         twoWheelerLoan: true,
