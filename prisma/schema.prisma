@@ -76,7 +76,7 @@ model Admin {
   actionLogs             ActionLog[]
   users                  User[]
   loans                  Loan[]
-  ceaseHistoriesAssigned CeaseHistory[]       @relation("AssignedBy")
+  ceaseHistoriesAssigned CeaseHistory[]       @relation("AssignedByAdmin")
   requestedUpdates       UserUpdateRequest[]  @relation("RequestedByAdmin")
   verifiedPayments       Payment[]            @relation("VerifiedByAdmin")
   payments               Payment[]
@@ -123,6 +123,7 @@ model Employee {
   loans                    Loan[]
   verifiedPayments         Payment[]            @relation("VerifiedByEmployee")
   requestedUpdates         UserUpdateRequest[]  @relation("RequestedByEmployee")
+  ceaseHistoriesAssigned   CeaseHistory[]       @relation("AssignedByEmployee")
   ceaseHistoriesAssignedTo CeaseHistory[]       @relation("CeaseAssignedTo")
   ceaseHistoriesCeasedBy   CeaseHistory[]       @relation("CeasedBy")
   payments                 Payment[]
@@ -354,6 +355,7 @@ enum FileStatus {
   LEGAL_ACTION // Under legal processing
   WRITTEN_OFF // Loan marked as bad debt/loss
   UNDER_COLLECTION // Sent to recovery team or agents
+  FORECLOSURE_IN_PROGRESS // Under foreclosure process
 }
 
 model Loan {
@@ -392,7 +394,6 @@ model Loan {
   isDefaulted          Boolean    @default(false)
   totalDelayDays       Int        @default(0)
   defaultReason        String?
-
   insuranceAmount    Float?
   insuranceDate      DateTime?
   insuranceValidTill DateTime?
@@ -438,7 +439,7 @@ model EMI {
   principalPaid   Decimal @default(0)
   interestPaid    Decimal @default(0)
 
-  status        String @default("UNPAID")
+  status String @default("UNPAID")
 
   isForeclosure        Boolean   @default(false)
   isDelayed            Boolean   @default(false)
@@ -455,14 +456,14 @@ model EMI {
 }
 
 model Payment {
-  id            String      @id @default(uuid())
+  id            String       @id @default(uuid())
   loanId        String
   emiId         String?
-  amount        Decimal?    @default(0)
-  paymentDate   DateTime    @default(now())
+  amount        Decimal?     @default(0)
+  paymentDate   DateTime     @default(now())
   paymentMode   PaymentMode?
   transactionId String?
-  status        String      @default("PENDING") // PENDING, PAID, UNVERIFIED
+  status        String       @default("PENDING") // PENDING, PAID, UNVERIFIED
 
   verified             Boolean   @default(false)
   verifiedAt           DateTime?
@@ -471,31 +472,37 @@ model Payment {
 
   adminId            String?
   employeeId         String?
-  emi                EMI?       @relation(fields: [emiId], references: [id])
+  emi                EMI?      @relation(fields: [emiId], references: [id])
   verifiedByAdmin    Admin?    @relation("VerifiedByAdmin", fields: [verifiedByAdminId], references: [id])
   verifiedByEmployee Employee? @relation("VerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])
   admin              Admin?    @relation(fields: [adminId], references: [id])
   employee           Employee? @relation(fields: [employeeId], references: [id])
   loan               Loan      @relation(fields: [loanId], references: [id])
 }
-
 model CeaseHistory {
-  id           String    @id @default(uuid())
-  loanId       String
-  assignedById String? // Admin who assigned
-  assignedToId String? // Employee assigned to cease
-  ceasedById   String? // Employee who actually ceased
-  ceaseDate    DateTime?
-  location     String?
-  comment      String?
-  releaseDate  DateTime? // Optional if released
+  id                   String    @id @default(uuid())
+  loanId               String
+  assignedByAdminId    String?
+  assignedByEmployeeId String?
+  assignedToId         String?
+  ceasedById           String?
+  ceaseDate            DateTime?
+  location             String?
+  comment              String?
+  releaseDate          DateTime?
+  releaseReason        String?
+  status               String    @default("PENDING") // PENDING, COMPLETED, RELEASED
 
-  loan       Loan      @relation(fields: [loanId], references: [id])
-  assignedBy Admin?    @relation("AssignedBy", fields: [assignedById], references: [id])
-  assignedTo Employee? @relation("CeaseAssignedTo", fields: [assignedToId], references: [id])
-  ceasedBy   Employee? @relation("CeasedBy", fields: [ceasedById], references: [id])
+  loan                 Loan      @relation(fields: [loanId], references: [id])
+  assignedByAdmin      Admin?    @relation("AssignedByAdmin", fields: [assignedByAdminId], references: [id])
+  assignedByEmployee   Employee? @relation("AssignedByEmployee", fields: [assignedByEmployeeId], references: [id])
+  assignedTo           Employee? @relation("CeaseAssignedTo", fields: [assignedToId], references: [id])
+  ceasedBy             Employee? @relation("CeasedBy", fields: [ceasedById], references: [id])
 
-  createdAt DateTime @default(now())
+  files                File[]    @relation("CeaseFiles")    // Files for cease evidence
+  releaseFiles         File[]    @relation("ReleaseFiles")  // Files for release evidence
+
+  createdAt            DateTime  @default(now())
 }
 
 enum PaymentMode {
@@ -517,7 +524,8 @@ model TwoWheelerLoan {
   brandId   String
   modelId   String
   variantId String?
-
+  hypothecationTerminated Boolean @default(false)
+  terminationRequests TerminationRequest[]
   registrationNumber String  @unique
   chassisNumber      String  @unique
   engineNumber       String
@@ -609,11 +617,14 @@ model TerminationRequest {
 
   createdAt  DateTime @default(now())
   createdBy  String?
+   twoWheelerLoanId String?
   adminId    String?
   employeeId String?
 
   admin    Admin?    @relation(fields: [adminId], references: [id])
   employee Employee? @relation(fields: [employeeId], references: [id])
+  twoWheelerLoan  TwoWheelerLoan?   @relation(fields: [twoWheelerLoanId], references: [id])
+
 }
 
 model File {
@@ -623,9 +634,12 @@ model File {
   resourceType String
   format       String
   createdAt    DateTime @default(now())
-
   terminationRequest  TerminationRequest[]
-  photo               User[]               @relation("Photo")
-  proofOfIncomeImages User[]               @relation("ProofOfIncomeImages")
-  photoIDImages       PhotoID[]            @relation("PhotoIDImages")
+
+  ceaseHistories    CeaseHistory[] @relation("CeaseFiles")     // Evidence for cease events
+  releaseCeaseHistories CeaseHistory[] @relation("ReleaseFiles") // Evidence for release events
+
+  photo               User[]    @relation("Photo")
+  proofOfIncomeImages User[]    @relation("ProofOfIncomeImages")
+  photoIDImages       PhotoID[] @relation("PhotoIDImages")
 }

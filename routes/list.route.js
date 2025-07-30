@@ -24,12 +24,10 @@ const {
   getUsageAreas,
   updateUsageArea,
   deleteUsageArea,
-  getBranches,
-  createBranch,
-  updateBranch,
-  deleteBranch,
 } = require("../controllers/list.controller");
 const { ro } = require("date-fns/locale");
+const { authMiddleware, onlyAdminOrEmployee } = require("../middleware/auth");
+const { createBranch, updateBranch, deleteBranch, getBranches, getBranchEmployees, getBranchLoans, getBranchStatistics, getBranch } = require("../controllers/branch.controller");
 
 // Public lookup endpoints
 router.get("/genders", getAllGenders);
@@ -38,39 +36,43 @@ router.get("/address-categories", getAllAddressCategories);
 
 // branch
 router.get("/branch", getBranches);
-router.post("/branch", createBranch);
-router.put("/branch/:id", updateBranch);
-router.delete("/branch/:id", deleteBranch);
+router.get("/branch/:id", authMiddleware, onlyAdminOrEmployee, getBranch);
+router.post("/branch", authMiddleware, onlyAdminOrEmployee, createBranch);
+router.put("/branch/:id", authMiddleware, onlyAdminOrEmployee, updateBranch);
+router.delete("/branch/:id", authMiddleware, onlyAdminOrEmployee, deleteBranch);
+router.get("/branch/:id/employees", authMiddleware, onlyAdminOrEmployee, getBranchEmployees);
+router.get("/branch/:id/loans", authMiddleware, onlyAdminOrEmployee, getBranchLoans);
+router.get("/branch/:id/statistics", authMiddleware, onlyAdminOrEmployee, getBranchStatistics);
 
 // Vehicle Brand
-router.post("/brands", createBrand);
+router.post("/brands", authMiddleware, onlyAdminOrEmployee, createBrand);
 router.get("/brands", getBrands);
-router.put("/brands/:id", updateBrand);
-router.delete("/brands/:id", deleteBrand);
+router.put("/brands/:id", authMiddleware, onlyAdminOrEmployee, updateBrand);
+router.delete("/brands/:id", authMiddleware, onlyAdminOrEmployee, deleteBrand);
 
 // Vehicle Model
-router.post("/models", createModel);
+router.post("/models", authMiddleware, onlyAdminOrEmployee, createModel);
 router.get("/models", getModels);
-router.put("/models/:id", updateModel);
-router.delete("/models/:id", deleteModel);
+router.put("/models/:id", authMiddleware, onlyAdminOrEmployee, updateModel);
+router.delete("/models/:id", authMiddleware, onlyAdminOrEmployee, deleteModel);
 
 // Vehicle Variant
-router.post("/variants", createVariant);
+router.post("/variants", authMiddleware, onlyAdminOrEmployee, createVariant);
 router.get("/variants", getVariants);
-router.put("/variants/:id", updateVariant);
-router.delete("/variants/:id", deleteVariant);
+router.put("/variants/:id", authMiddleware, onlyAdminOrEmployee, updateVariant);
+router.delete("/variants/:id", authMiddleware, onlyAdminOrEmployee, deleteVariant);
 
 // Equipment
-router.post("/equipment", createEquipment);
+router.post("/equipment", authMiddleware, onlyAdminOrEmployee, createEquipment);
 router.get("/equipment", getEquipment);
-router.put("/equipment/:id", updateEquipment);
-router.delete("/equipment/:id", deleteEquipment);
+router.put("/equipment/:id", authMiddleware, onlyAdminOrEmployee, updateEquipment);
+router.delete("/equipment/:id", authMiddleware, onlyAdminOrEmployee, deleteEquipment);
 
 // Usage Area
-router.post("/usage-areas", createUsageArea);
+router.post("/usage-areas", authMiddleware, onlyAdminOrEmployee, createUsageArea);
 router.get("/usage-areas", getUsageAreas);
-router.put("/usage-areas/:id", updateUsageArea);
-router.delete("/usage-areas/:id", deleteUsageArea);
+router.put("/usage-areas/:id", authMiddleware, onlyAdminOrEmployee, updateUsageArea);
+router.delete("/usage-areas/:id", authMiddleware, onlyAdminOrEmployee, deleteUsageArea);
 
 
 module.exports = router;
