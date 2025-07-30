@@ -9,14 +9,17 @@ const {
   onlyAdminOrEmployee,
   adminOnly,
 } = require("../middleware/auth");
+const { createCease, completeCease, releaseCeasedAsset, getLoanCeaseHistory, getCeaseById, getAllCeaseHistories } = require("../controllers/cease.controller");
 
 /** ─── LOAN CRUD ───────────────────────────────────── */
-router.get("/",           authMiddleware, onlyAdminOrEmployee, loanController.listLoans);
-router.get("/download",   authMiddleware, onlyAdminOrEmployee, loanController.listLoansDownload);
-router.get("/:id",        authMiddleware, onlyAdminOrEmployee, loanController.getLoanById);
 router.post("/",          authMiddleware, onlyAdminOrEmployee, loanController.createLoan);
 router.put("/:id",        authMiddleware, onlyAdminOrEmployee, loanController.updateLoan);
 router.get("/user/:userId", authMiddleware, adminOnly,         loanController.listLoansByUser);
+router.get("/close/:id", authMiddleware, adminOnly,         loanController.closeLoan);
+router.get("/pending", authMiddleware, adminOnly, loanController.getPendingLoanDetails);
+router.get("/",           authMiddleware, onlyAdminOrEmployee, loanController.listLoans);
+router.get("/download",   authMiddleware, onlyAdminOrEmployee, loanController.listLoansDownload);
+router.get("/:id",        authMiddleware, onlyAdminOrEmployee, loanController.getLoanById);
 
 /** ─── PAYMENT ROUTES ──────────────────────────────── */
 
@@ -25,6 +28,13 @@ router.get(
   "/payment/pending/:loanId", authMiddleware,
   onlyAdminOrEmployee,
   paymentController.getPendingPaymentsByLoanId
+);
+
+router.post(
+  "/payment",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  paymentController.makePayment
 );
 
 // 2) Get a single installment by its paymentId
@@ -43,14 +53,13 @@ router.post(
   paymentController.payPaymentById
 );
 
-// 4) Bulk apply a payment across earliest outstanding installments
-router.post(
-  "/payment",
+// 4) Get all unverified payments for a loan
+router.get(
+  "/payment/unverified",
   authMiddleware,
   onlyAdminOrEmployee,
-  paymentController.makePayment
+  paymentController.getUnverifiedPayments
 );
-
 // 5) Verify a (partial or full) payment record
 router.post(
   "/payment/:paymentId/verify",
@@ -74,5 +83,25 @@ router.post(
   onlyAdminOrEmployee,
   paymentController.postForeclosurePayment
 );
+
+
+/** --------------- Cease Routes -------------------- */
+// Create cease request (assign asset cease)
+router.post('/cease/:loanId', authMiddleware, onlyAdminOrEmployee, createCease);
+
+// Mark cease as completed by assigned employee
+router.post('/cease/:id/complete', authMiddleware, onlyAdminOrEmployee, completeCease);
+
+// Release ceased asset
+router.post('/cease/:id/release', authMiddleware, onlyAdminOrEmployee, releaseCeasedAsset);
+
+// Get all cease histories for a loan
+router.get('/cease/:loanId', authMiddleware, onlyAdminOrEmployee, getLoanCeaseHistory);
+
+// Get one cease record with all details
+router.get('/cease/:id', authMiddleware, onlyAdminOrEmployee, getCeaseById);
+
+// In your ceaseHistory router:
+router.get("/cease", authMiddleware, onlyAdminOrEmployee, getAllCeaseHistories);
 
 module.exports = router;

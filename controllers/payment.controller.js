@@ -513,6 +513,63 @@ exports.verifyPayment = async (req, res) => {
 };
 
 
+// GET /api/payments/pending-verification?page=1&limit=20&loanId=...&userId=...
+exports.getUnverifiedPayments = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, loanId, userId, status } = req.query;
+
+    const where = {
+      verified: false,
+      ...(loanId ? { loanId } : {}),
+      ...(userId ? { loan: { userId } } : {}),
+      ...(status ? { status } : { status: "VERIFICATION_PENDING" }),
+    };
+
+    const payments = await prisma.payment.findMany({
+      where,
+      skip: (parseInt(page) - 1) * parseInt(limit),
+      take: parseInt(limit),
+      orderBy: { paymentDate: "desc" },
+      include: {
+        loan: {
+          select: {
+            fileNo: true,
+            userId: true,
+            loanTypeId: true,
+            user: {
+              select: {
+                firstName: true,
+                middleName: true,
+                lastName: true,
+                phone: true,
+              }
+            },
+            loanType: { select: { name: true } },
+          }
+        },
+        emi: true,
+        admin: { select: { name: true } },
+        employee: { select: { name: true } },
+      },
+    });
+
+    const total = await prisma.payment.count({ where });
+
+    res.json({
+      status: 200,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      data: payments,
+    });
+  } catch (err) {
+    console.error("getUnverifiedPayments error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+
 // ---------------------------
 // 📉 FORECLOSURE CALCULATIONS
 // ---------------------------

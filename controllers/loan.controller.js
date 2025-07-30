@@ -781,6 +781,12 @@ exports.getLoanById = async (req, res) => {
       include: {
         user: true,
         loanType: true,
+        emi: true,
+        ceaseHistories: true,
+        admin : true,
+        employee: true,
+        guarantors: true,
+        guarantorDetails: true,
         payments: true,
         twoWheelerLoan: {
           include: {
@@ -809,38 +815,5 @@ exports.getLoanById = async (req, res) => {
     res
       .status(500)
       .json({ error: "Failed to fetch loan details", status: 500 });
-  }
-};
-exports.getLoanHistory = async (req, res) => {
-  try {
-    const { loanId } = req.params;
-    const loan = await prisma.loan.findUnique({
-      where: { id: loanId },
-      include: {
-        payments: { orderBy: { paymentDate: "asc" } },
-        emi: { orderBy: { paymentFor: "asc" } },
-        ceaseHistories: true,
-      },
-    });
-    if (!loan) return res.status(404).json({ error: "Loan not found" });
-    res.json({ loan });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-exports.downloadNOC = async (req, res) => {
-  try {
-    const { loanId } = req.params;
-    const loan = await prisma.loan.findUnique({ where: { id: loanId } });
-    if (!loan || !loan.isClosed) {
-      return res.status(400).json({ error: "Loan not closed or not found" });
-    }
-    // Generate or fetch NOC file (PDF or template)
-    // For now, send a placeholder response
-    res.setHeader('Content-Type', 'application/pdf');
-    res.send(/* PDF Buffer */);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
 };
