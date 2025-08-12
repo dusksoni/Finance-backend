@@ -43,12 +43,6 @@ exports.createBranch = async (req, res) => {
         region: {
           connect: { id: regionId },
         },
-        state: {
-          connect: { id: region.stateId },
-        },
-        city: {
-          connect: { id: region.cityId },
-        },
       },
     });
 
@@ -84,18 +78,6 @@ exports.getBranches = async (req, res) => {
         id: true,
         name: true,
         address: true,
-        city: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        state: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
         region: {
           select: {
             id: true,
@@ -145,18 +127,7 @@ exports.getBranch = async (req, res) => {
         id: true,
         name: true,
         address: true,
-        city: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        state: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
+       
         region: {
           select: {
             id: true,

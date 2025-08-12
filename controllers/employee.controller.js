@@ -208,7 +208,7 @@ exports.deleteEmployee = async (req, res) => {
   try {
     const employee = await prisma.employee.findUnique({ where: { id } });
     if (!employee || employee.isDeleted)
-      return res.status(404).json({ error: "Not found" });
+      return res.status(404).json({ error: "Not found", status: 404 });
 
     await prisma.employee.update({
       where: { id },
@@ -224,9 +224,9 @@ exports.deleteEmployee = async (req, res) => {
       metadata: { name: employee.name, email: employee.email },
     });
 
-    res.json({ message: "Employee deleted successfully" });
+    res.status(200).json({ message: "Employee deleted successfully", status: 200 });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, status: 500});
   }
 };
 
@@ -237,7 +237,7 @@ exports.blockedEmployee = async (req, res) => {
   try {
     const employee = await prisma.employee.findUnique({ where: { id } });
     if (!employee || employee.isDeleted)
-      return res.status(404).json({ error: "Not found" });
+      return res.status(404).json({ error: "Not found", status: 404 });
 
     const updated = await prisma.employee.update({
       where: { id },
@@ -258,7 +258,7 @@ exports.blockedEmployee = async (req, res) => {
       data: updated,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, status: 500 });
   }
 };
 

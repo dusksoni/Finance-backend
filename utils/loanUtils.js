@@ -1,11 +1,70 @@
 const axios = require("axios");
 const moment = require("moment");
-const { encrypt, decrypt } = require("../utils/yourEncryptHelpers");
+const { encrypt, decrypt } = require("../utils/encryptionUtils");
 
-const SECRET_KEY = process.env.SECRET_KEY_TERMINATE;
-const CLIENT_ID = process.env.CLIENT_ID_TERMINATE;
-const USER_PWD = process.env.USER_PWD_TERMINATE;
-const TERMINATION_URL = "https://vahan.parivahan.gov.in/vahanHypothecationWS/v1/termination";
+async function processPostPayment({
+  tx,
+  emiId,              // Optional: pass if this payment is for a specific EMI
+  loanId,
+  paymentAmount,       // Amount verified/paid
+  addToEmi = true,     // Set false if only want to update loan/hypothecation
+  forceFullUpdate = false, // For foreclosure
+  userContext = {},
+}) {
+  // 1. Update EMI if required
+  let emi = null;
+  let emiStatus = null;
+  if (emiId && addToEmi) {
+    emi = await tx.eMI.findUnique({ where: { id: emiId } });
+    const newPaidSoFar = Number(emi.amountPaidSoFar) + Number(paymentAmount);
+    const isFullyPaid = newPaidSoFar >= Number(emi.emiPayAmount) + Number(emi.fineAmount || 0);
+    emiStatus = isFullyPaid ? "PAID" : "PARTIAL";
+
+    await tx.eMI.update({
+      where: { id: emiId },
+      data: {
+        amountPaidSoFar: newPaidSoFar,
+        status: emiStatus,
+      }
+    });
+  }
+
+  // 2. Update Loan summary
+  await tx.loan.update({
+    where: { id: loanId },
+    data: {
+      totalPaidAmount: { increment: paymentAmount },
+      pendingAmount: { decrement: paymentAmount },
+    }
+  });
+
+  // 3. Loan closure & hypothecation (unless partial only)
+  let hypothecationResult = null;
+  if (forceFullUpdate || await shouldCloseLoan(tx, loanId)) {
+    const closedLoan = await tx.loan.update({
+      where: { id: loanId },
+      data: { isClosed: true, fileStatus: "CLOSED", actualEndDate: new Date() },
+      include: { twoWheelerLoan: true }
+    });
+
+    if (closedLoan.twoWheelerLoan) {
+      hypothecationResult = await tryAutoTerminateHypothecation({
+        prismaOrTx: tx,
+        twoWheelerLoanId: closedLoan.twoWheelerLoan.id,
+        regnNo: closedLoan.twoWheelerLoan.registrationNumber,
+        chassisNo: closedLoan.twoWheelerLoan.chassisNumber,
+        terminationDt: new Date(),
+        doc: null,
+        userContext,
+      });
+    }
+  }
+
+  return { emiStatus, hypothecationResult };
+}
+
+
+
 
 /**
  * Returns true if all EMIs for a loan are PAID or pendingAmount is 0
@@ -18,6 +77,17 @@ async function shouldCloseLoan(prismaOrTx, loanId) {
   const loan = await prismaOrTx.loan.findUnique({ where: { id: loanId } });
   return loan.pendingAmount <= 0;
 }
+
+
+
+
+
+
+const SECRET_KEY = process.env.SECRET_KEY_TERMINATE;
+const CLIENT_ID = process.env.CLIENT_ID_TERMINATE;
+const USER_PWD = process.env.USER_PWD_TERMINATE;
+const TERMINATION_URL = "https://vahan.parivahan.gov.in/vahanHypothecationWS/v1/termination";
+
 
 /**
  * Terminate hypothecation for a TwoWheelerLoan
@@ -104,6 +174,7 @@ async function tryAutoTerminateHypothecation({
 }
 
 module.exports = {
+  processPostPayment,
   shouldCloseLoan,
   tryAutoTerminateHypothecation,
 };

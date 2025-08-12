@@ -224,10 +224,10 @@ exports.createLoan = async (req, res) => {
       }
     );
 
-    return res.status(201).json({ message: "Loan created", data: created });
+    return res.status(201).json({ message: "Loan created", data: created, status: 201 });
   } catch (err) {
     console.error("Create Loan Error:", err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message, status: 500 });
   }
 };
 
@@ -781,26 +781,19 @@ exports.getLoanById = async (req, res) => {
       include: {
         user: true,
         loanType: true,
-        emi: true,
+        emi: {
+          orderBy: { paymentFor: "asc" }, // ✅ sort EMIs here
+        },
         ceaseHistories: true,
-        admin : true,
+        admin: true,
         employee: true,
         guarantors: true,
-        guarantorDetails: true,
-        payments: true,
+        payments: true, // (optional) you can sort these too, see below
         twoWheelerLoan: {
-          include: {
-            brand: true,
-            model: true,
-          },
+          include: { brand: true, model: true },
         },
-        agriLoan: {
-          include: {
-            equipment: true,
-          },
-        },
+        agriLoan: { include: { equipment: true } },
         msmeLoan: true,
-
         branch: true,
       },
     });
@@ -812,8 +805,6 @@ exports.getLoanById = async (req, res) => {
     res.status(200).json({ data: loan, status: 200 });
   } catch (err) {
     console.error("Get Loan By ID Error:", err);
-    res
-      .status(500)
-      .json({ error: "Failed to fetch loan details", status: 500 });
+    res.status(500).json({ error: "Failed to fetch loan details", status: 500 });
   }
 };

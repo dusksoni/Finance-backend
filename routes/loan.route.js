@@ -15,7 +15,7 @@ const { createCease, completeCease, releaseCeasedAsset, getLoanCeaseHistory, get
 router.post("/",          authMiddleware, onlyAdminOrEmployee, loanController.createLoan);
 router.put("/:id",        authMiddleware, onlyAdminOrEmployee, loanController.updateLoan);
 router.get("/user/:userId", authMiddleware, adminOnly,         loanController.listLoansByUser);
-router.get("/close/:id", authMiddleware, adminOnly,         loanController.closeLoan);
+router.put("/close/:id", authMiddleware, adminOnly,         loanController.closeLoan);
 router.get("/pending", authMiddleware, adminOnly, loanController.getPendingLoanDetails);
 router.get("/",           authMiddleware, onlyAdminOrEmployee, loanController.listLoans);
 router.get("/download",   authMiddleware, onlyAdminOrEmployee, loanController.listLoansDownload);
@@ -31,15 +31,21 @@ router.get(
 );
 
 router.post(
-  "/payment",
+  "/payment/:loanId",
   authMiddleware,
   onlyAdminOrEmployee,
   paymentController.makePayment
 );
 
-// 2) Get a single installment by its paymentId
+// 2) Get a single installment by its emiId
 router.get(
-  "/payment/:paymentId",
+  "/payment/emi/:emiId",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  paymentController.getEmiById
+);
+router.get(
+  "/payment/:id",
   authMiddleware,
   onlyAdminOrEmployee,
   paymentController.getPaymentById
@@ -47,7 +53,7 @@ router.get(
 
 // 3) Pay a specific installment (full or partial)
 router.post(
-  "/payment/:paymentId/pay",
+  "/payment/emi/:emiId/pay",
   authMiddleware,
   onlyAdminOrEmployee,
   paymentController.payPaymentById

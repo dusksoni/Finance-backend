@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { createEmployee, employeeLogin, putEmployee, deleteEmployee, blockedEmployee, updatePassword, getActivityLogs, getLoginHistory, getUsers } = require("../controllers/employee.controller");
+const { createEmployee, employeeLogin, putEmployee, deleteEmployee, blockedEmployee, updatePassword, getActivityLogs, getLoginHistory, getUsers, getLoans } = require("../controllers/employee.controller");
 const { getPermissions } = require("../controllers/auth.controller");
 const { authMiddleware, adminOnly, onlyAdminOrEmployee } = require("../middleware/auth");
 

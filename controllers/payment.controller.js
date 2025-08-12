@@ -2,12 +2,15 @@
 const { differenceInDays } = require("date-fns");
 const prisma = require("../lib/prisma");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
-const { shouldCloseLoan, tryAutoTerminateHypothecation } = require("../utils/loanUtils");
-
+const {
+  shouldCloseLoan,
+  tryAutoTerminateHypothecation,
+  processPostPayment,
+} = require("../utils/loanUtils");
 
 // --- Utility: calculate fine for any pending principal & dueDate ---
 function calculateFine(dueDate, pendingPrincipal) {
-  const today = new Date();
+  const today = new Date("2026-07-31T12:02:43+05:30");
   const daysLate = Math.max(differenceInDays(today, dueDate), 0);
 
   if (!pendingPrincipal || isNaN(pendingPrincipal)) {
@@ -26,7 +29,9 @@ function calculateFine(dueDate, pendingPrincipal) {
     pct = 5 + extraMonths * 5; // 5% + 5% for each month after 30 days
   }
 
-  const fineAmt = parseFloat(((pct / 100) * Number(pendingPrincipal)).toFixed(2));
+  const fineAmt = parseFloat(
+    ((pct / 100) * Number(pendingPrincipal)).toFixed(2)
+  );
   return { daysLate, fineAmt, pct };
 }
 
@@ -36,7 +41,8 @@ function calculateFine(dueDate, pendingPrincipal) {
 exports.getPendingPaymentsByLoanId = async (req, res) => {
   try {
     const { loanId } = req.params;
-    const today = new Date();
+    const today = new Date("2026-07-31T12:02:43+05:30");
+    console.log(today);
 
     const installments = await prisma.eMI.findMany({
       where: {
@@ -49,8 +55,13 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
 
     let grandTotal = 0;
     const pending = installments.map((inst) => {
-      const { daysLate, fineAmt, pct } = calculateFine(inst.paymentFor, inst.emiPayAmount - inst.amountPaidSoFar);
-      const totalDue = parseFloat((inst.emiPayAmount - inst.amountPaidSoFar + fineAmt).toFixed(2));
+      const { daysLate, fineAmt, pct } = calculateFine(
+        inst.paymentFor,
+        inst.emiPayAmount - inst.amountPaidSoFar
+      );
+      const totalDue = parseFloat(
+        (inst.emiPayAmount - inst.amountPaidSoFar + fineAmt).toFixed(2)
+      );
       grandTotal += totalDue;
       return {
         emiId: inst.id,
@@ -66,7 +77,7 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
       };
     });
 
-    return res.json({ loanId, pending, grandTotal });
+    return res.json({ data: { loanId, pending, grandTotal }, status: 200 });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: err.message });
@@ -85,211 +96,163 @@ exports.makePayment = async (req, res) => {
 
     amountPaid = Number(amountPaid);
     if (!amountPaid || amountPaid <= 0) {
-      return res.status(400).json({ error: "amountPaid must be more than 0" });
+      return res
+        .status(400)
+        .json({ error: "amountPaid must be more than 0", status: 400 });
     }
 
     paymentDate = paymentDate ? new Date(paymentDate) : new Date();
 
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Get unpaid or partially paid EMIs in order
-      const installments = await tx.eMI.findMany({
-        where: {
-          loanId,
-          status: { in: ["UNPAID", "PARTIAL"] },
-        },
-        orderBy: { paymentFor: "asc" },
-        include: {
-          loan: {
-            include: {
-              user: true,
-              loanType: true,
-              branch: true,
-            }
-          }
-        }
-      });
-
-      let remaining = amountPaid;
-      const updated = [];
-      let lastPayment = null;
-
-      for (const emi of installments) {
-        if (remaining <= 0) break;
-
-        const duePrincipal = Number(emi.emiPayAmount) - Number(emi.amountPaidSoFar);
-
-        const { fineAmt, daysLate } = calculateFine(emi.paymentFor, duePrincipal);
-        const totalDue = duePrincipal + fineAmt;
-
-        const payAmt = Math.min(remaining, totalDue);
-        remaining -= payAmt;
-
-        const newPaidSoFar = Number(emi.amountPaidSoFar) + payAmt;
-        const isFullyPaid = newPaidSoFar >= Number(emi.emiPayAmount) + fineAmt;
-        const newStatus = isFullyPaid ? "PAID" : "PARTIAL";
-        const verified =
-          paymentMode === "CASH"
-            ? req.user.type === "ADMIN"
-              ? true
-              : checkVerifyPermission(req.user, "PAYMENT_VERIFY")
-              ? true
-              : false
-            : true;
-
-        // 2. Create Payment
-        const payment = await tx.payment.create({
-          data: {
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // 1. Get unpaid or partially paid EMIs in order
+        const installments = await tx.eMI.findMany({
+          where: {
             loanId,
-            emi: { connect: { id: emi.id } },
-            amount: payAmt,
-            paymentMode,
-            transactionId:
-              paymentMode === "ONLINE" || paymentMode === "UPI" ? transactionId : null,
-            paymentDate,
-            status: verified ? "PAID" : "VERIFICATION_PENDING",
-            verified: verified,
-            verifiedAt: verified ? new Date() : null,
-            verifiedByAdminId:
-              req.user.type === "ADMIN" ? req.user.id : null,
-            verifiedByEmployeeId:
-              req.user.type === "EMPLOYEE" ? req.user.id : null,
-            admin: req.user.type === "ADMIN" ? { connect: { id: req.user.id } } : undefined,
-            employee: req.user.type === "EMPLOYEE" ? { connect: { id: req.user.id } } : undefined,
+            status: { in: ["UNPAID", "PARTIAL"] },
           },
+          orderBy: { paymentFor: "asc" },
           include: {
             loan: {
               include: {
                 user: true,
                 loanType: true,
                 branch: true,
-                twoWheelerLoan: true, // for auto-termination
-              }
-            },
-            emi: true,
-            admin: true,
-            employee: true,
-          }
-        });
-
-        lastPayment = payment;
-
-        // 3. Update EMI
-        await tx.eMI.update({
-          where: { id: emi.id },
-          data: {
-            amountPaidSoFar: newPaidSoFar,
-            fineAmount: fineAmt,
-            delayDays: daysLate,
-            verified: verified,
-            status: verified ? newStatus : "VERIFICATION_PENDING",
-            payments: {
-              connect: { id: payment.id },
+              },
             },
           },
         });
-        if(verified){
-          // 4. Update Loan Summary
-          await tx.loan.update({
-            where: { id: loanId },
+
+        let remaining = amountPaid;
+        const updated = [];
+        let lastPayment = null;
+
+        for (const emi of installments) {
+          if (remaining <= 0) break;
+
+          const duePrincipal =
+            Number(emi.emiPayAmount) - Number(emi.amountPaidSoFar);
+
+          const { fineAmt, daysLate } = calculateFine(
+            emi.paymentFor,
+            duePrincipal
+          );
+          const totalDue = duePrincipal + fineAmt;
+
+          const payAmt = Math.min(remaining, totalDue);
+          remaining -= payAmt;
+
+          const newPaidSoFar = Number(emi.amountPaidSoFar) + payAmt;
+          const isFullyPaid =
+            newPaidSoFar >= Number(emi.emiPayAmount) + fineAmt;
+          const newStatus = isFullyPaid ? "PAID" : "PARTIAL";
+          const verified =
+            paymentMode === "CASH"
+              ? req.user.type === "ADMIN"
+                ? true
+                : (await checkVerifyPermission(req.user, "PAYMENT_VERIFY")) // Add await here
+                ? true
+                : false
+              : true;
+
+          // 2. Create Payment
+          const payment = await tx.payment.create({
             data: {
-              totalPaidAmount: { increment: payAmt },
-              pendingAmount: { decrement: payAmt },
+              loanId,
+              emiId: emi.id,
+              amount: payAmt,
+              paymentMode,
+              transactionId:
+                paymentMode === "ONLINE" || paymentMode === "UPI"
+                  ? transactionId
+                  : null,
+              paymentDate,
+              status: verified ? "PAID" : "VERIFICATION_PENDING",
+              verified,
+              verifiedAt: verified ? new Date() : null,
+              verifiedByAdminId: req.user.type === "ADMIN" ? req.user.id : null,
+              verifiedByEmployeeId:
+                req.user.type === "EMPLOYEE" ? req.user.id : null,
+              adminId: req.user.type === "ADMIN" ? req.user.id : undefined,
+              employeeId:
+                req.user.type === "EMPLOYEE" ? req.user.id : undefined,
             },
+            include: {
+              loan: {
+                include: {
+                  user: true,
+                  loanType: true,
+                  branch: true,
+                  twoWheelerLoan: true,
+                },
+              },
+              emi: true,
+              admin: true,
+              employee: true,
+            },
+          });
+
+          lastPayment = payment;
+
+          // 3. Update EMI
+          await tx.eMI.update({
+            where: { id: emi.id },
+            data: {
+              amountPaidSoFar: newPaidSoFar,
+              fineAmount: fineAmt,
+              delayDays: daysLate,
+              verified: verified,
+              status: verified ? newStatus : "VERIFICATION_PENDING",
+              payments: {
+                connect: { id: payment.id },
+              },
+            },
+          });
+
+          // 4. Only update loan/closure logic if payment is verified
+          if (verified) {
+            await processPostPayment({
+              tx,
+              emiId: emi.id,
+              loanId,
+              paymentAmount: payAmt,
+              updateEmiStatus: false, // Already updated EMI above
+              userContext: {
+                adminId: req.user?.adminId,
+                employeeId: req.user?.employeeId,
+                type: req.user?.type,
+                loginActivityId: req.user?.loginActivityId,
+              },
+            });
+          }
+
+          updated.push({
+            emiId: emi.id,
+            paidAmount: payAmt,
+            emiStatus: newStatus,
+            fineApplied: fineAmt,
+            daysLate,
           });
         }
 
-        updated.push({
-          emiId: emi.id,
-          paidAmount: payAmt,
-          emiStatus: newStatus,
-          fineApplied: fineAmt,
-          daysLate,
-        });
-      }
-
-      // 5. Check if loan should be closed and handle hypothecation termination
-      let hypothecationResult = null;
-      if (await shouldCloseLoan(tx, loanId)) {
-        // Mark loan as closed
-        const closedLoan = await tx.loan.update({
-          where: { id: loanId },
-          data: { isClosed: true, fileStatus: "CLOSED", actualEndDate: new Date() },
-          include: { twoWheelerLoan: true }
-        });
-
-        // If this is a two-wheeler, auto-terminate hypothecation
-        if (closedLoan.twoWheelerLoan) {
-          hypothecationResult = await tryAutoTerminateHypothecation({
-            prismaOrTx: tx,
-            twoWheelerLoanId: closedLoan.twoWheelerLoan.id,
-            regnNo: closedLoan.twoWheelerLoan.registrationNumber,
-            chassisNo: closedLoan.twoWheelerLoan.chassisNumber,
-            terminationDt: new Date(),
-            doc: null, // or doc file info if available
-            userContext: {
-              adminId: req.user?.adminId,
-              employeeId: req.user?.employeeId,
-              type: req.user?.type,
-              loginActivityId: req.user?.loginActivityId,
-            },
-          });
-        }
-      }
-
-      // 6. Prepare invoice data for the last paid EMI/payment
-      let invoice = null;
-      if (lastPayment) {
-        const user = lastPayment.loan.user;
-        const loan = lastPayment.loan;
-        const emi = lastPayment.emi;
-        invoice = {
-          invoiceNo: lastPayment.id,
-          paymentDate: lastPayment.paymentDate,
-          paymentMode: lastPayment.paymentMode,
-          amount: lastPayment.amount,
-          status: lastPayment.status,
-          transactionId: lastPayment.transactionId,
-          emiId: emi?.id || null,
-          emiDueDate: emi?.paymentFor || null,
-          emiAmount: emi?.emiPayAmount || null,
-          principal: emi?.principalAmt || null,
-          interest: emi?.interestAmt || null,
-          user: {
-            name: [user.firstName, user.middleName, user.lastName].filter(Boolean).join(" "),
-            phone: user.phone,
-            email: user.email,
-            address: user.address,
-          },
-          loan: {
-            fileNo: loan.fileNo,
-            loanType: loan.loanType?.name,
-            branch: loan.branch?.name || "-",
-          },
-          handledBy: lastPayment.admin
-            ? lastPayment.admin.name
-            : lastPayment.employee
-            ? lastPayment.employee.name
-            : "-",
+        return {
+          message: "Payment processed",
+          usedAmount: amountPaid - remaining,
+          unallocatedAmount: remaining,
+          updatedInstallments: updated,
         };
-      }
+      },
+      { timeout: 20000 }
+    );
 
-      return {
-        message: "Payment processed",
-        usedAmount: amountPaid - remaining,
-        unallocatedAmount: remaining,
-        updatedInstallments: updated,
-        invoice,
-        hypothecationResult, // Result of auto-termination, if it was run
-      };
-    });
-
-    return res.status(200).json(result);
+    return res.status(200).json({ data: result, status: 200 });
   } catch (err) {
     console.error("Payment Error:", err);
-    return res.status(500).json({ error: err.message || "Payment failed" });
+    return res
+      .status(500)
+      .json({ error: err.message || "Payment failed", status: 500 });
   }
 };
-
 
 // ----------------------------------
 // ▶️ GET PAY A SPECIFIC INSTALLMENT ID
@@ -300,6 +263,29 @@ exports.getPaymentById = async (req, res) => {
     const { paymentId } = req.params;
     const inst = await prisma.payment.findUnique({
       where: { id: paymentId },
+      include: {
+        loan: true,
+      },
+    });
+    if (!inst) {
+      return res.status(404).json({ error: "Payment not found" });
+    }
+
+    return res.json({ status: 200, data: inst });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+// ----------------------------------
+// ▶️ GET PAY A SPECIFIC INSTALLMENT ID
+// ----------------------------------
+
+exports.getEmiById = async (req, res) => {
+  try {
+    const { emiId } = req.params;
+    const inst = await prisma.eMI.findUnique({
+      where: { id: emiId },
       include: {
         loan: {
           select: {
@@ -327,22 +313,25 @@ exports.getPaymentById = async (req, res) => {
     const totalDue = parseFloat((outstandingPrincipal + fineAmt).toFixed(2));
 
     return res.json({
-      paymentId: inst.id,
-      loanId: inst.loanId,
-      paymentFor: inst.paymentFor,
-      paymentDate: inst.paymentDate,
-      emiPayAmount: inst.emiPayAmount,
-      amountPaidSoFar: inst.amountPaidSoFar,
-      outstandingPrincipal,
-      interestRate: inst.loan.interestRate,
-      finePercentage: pct,
-      fineAmount: fineAmt,
-      daysLate,
-      totalDue,
-      status: inst.status,
-      paymentStatus: inst.paymentStatus,
-      paymentMode: inst.paymentMode,
-      transactionId: inst.transactionId,
+      data: {
+        emiId: inst.id,
+        loanId: inst.loanId,
+        paymentFor: inst.paymentFor,
+        paymentDate: inst.paymentDate,
+        emiPayAmount: inst.emiPayAmount,
+        amountPaidSoFar: inst.amountPaidSoFar,
+        outstandingPrincipal,
+        interestRate: inst.loan.interestRate,
+        finePercentage: pct,
+        fineAmount: fineAmt,
+        daysLate,
+        totalDue,
+        status: inst.status,
+        paymentStatus: inst.paymentStatus,
+        paymentMode: inst.paymentMode,
+        transactionId: inst.transactionId,
+      },
+      status: 200,
     });
   } catch (err) {
     console.error(err);
@@ -355,7 +344,7 @@ exports.getPaymentById = async (req, res) => {
 // ----------------------------------
 exports.payPaymentById = async (req, res) => {
   try {
-    const { paymentId } = req.params;
+    const { emiId } = req.params;
     let { amount, paymentMode, transactionId, paymentDate } = req.body;
     amount = Number(amount);
     if (!amount || amount <= 0) {
@@ -363,53 +352,72 @@ exports.payPaymentById = async (req, res) => {
     }
     paymentDate = paymentDate ? new Date(paymentDate) : new Date();
 
-    // fetch that installment
-    const inst = await prisma.payment.findUnique({ where: { id: paymentId } });
-    if (!inst) return res.status(404).json({ error: "Payment not found" });
+    const inst = await prisma.eMI.findUnique({ where: { id: emiId } });
+    if (!inst) return res.status(404).json({ error: "EMI not found" });
 
-    // calculate outstanding portion & fine
-    const duePrincipal = inst.emiPayAmount - inst.amountPaidSoFar;
-    const { fineAmt } = calculateFine(inst.paymentFor, duePrincipal);
+    // Outstanding principal for this EMI
+    const duePrincipal =
+      Number(inst.emiPayAmount) - Number(inst.amountPaidSoFar);
+    const { fineAmt, daysLate } = calculateFine(inst.paymentFor, duePrincipal);
     const totalDue = duePrincipal + fineAmt;
 
-    if (amount > totalDue) amount = totalDue; // cap at totalDue
+    // Cap payment at total due
+    if (amount > totalDue) amount = totalDue;
 
-    const newPaidSoFar = inst.amountPaidSoFar + amount;
-    const isFullyPaid = newPaidSoFar >= inst.emiPayAmount + fineAmt;
+    const newPaidSoFar = Number(inst.amountPaidSoFar) + amount;
+    const isFullyPaid = newPaidSoFar >= Number(inst.emiPayAmount) + fineAmt;
     const newStatus = isFullyPaid ? "PAID" : "PARTIAL";
 
-    // update installment
-    await prisma.payment.update({
-      where: { id: paymentId },
-      data: {
-        amountPaidSoFar: newPaidSoFar,
-        fineAmount: fineAmt,
-        delayDays: calculateFine(inst.paymentFor, duePrincipal).daysLate,
-        status: newStatus,
-        paymentMode,
-        transactionId:
-          paymentMode === "ONLINE" || paymentMode === "UPI"
-            ? transactionId
-            : null,
-        paymentDate,
-      },
+    // TRANSACTION: create payment, update EMI, update loan
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create Payment record
+      const payment = await tx.payment.create({
+        data: {
+          loanId: inst.loanId,
+          emiId: emiId,
+          amount: amount,
+          paymentMode,
+          transactionId:
+            paymentMode === "ONLINE" || paymentMode === "UPI"
+              ? transactionId
+              : null,
+          paymentDate,
+          status: "PAID", // or "VERIFICATION_PENDING" if you want admin approval for cash
+          verified: paymentMode === "CASH" ? false : true,
+        },
+      });
+
+      // 2. Update EMI
+      await tx.eMI.update({
+        where: { id: emiId },
+        data: {
+          amountPaidSoFar: newPaidSoFar,
+          fineAmount: fineAmt,
+          delayDays: daysLate,
+          status: newStatus,
+          payments: { connect: { id: payment.id } },
+        },
+      });
+
+      // 3. Update Loan summary
+      await tx.loan.update({
+        where: { id: inst.loanId },
+        data: {
+          totalPaidAmount: { increment: amount },
+          pendingAmount: { decrement: amount },
+        },
+      });
+
+      return {
+        message: "Payment applied to installment",
+        paymentId: payment.id,
+        paid: amount,
+        emiId,
+        emiStatus: newStatus,
+      };
     });
 
-    // update loan summary
-    await prisma.loan.update({
-      where: { id: inst.loanId },
-      data: {
-        totalPaidAmount: { increment: amount },
-        pendingAmount: { decrement: amount },
-      },
-    });
-
-    return res.json({
-      message: "Payment applied to installment",
-      paymentId,
-      paid: amount,
-      status: newStatus,
-    });
+    return res.json(result);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: err.message });
@@ -426,8 +434,8 @@ exports.verifyPayment = async (req, res) => {
       where: { id: paymentId },
       include: {
         emi: true,
-        loan: { include: { twoWheelerLoan: true } }
-      }
+        loan: { include: { twoWheelerLoan: true } },
+      },
     });
     if (!inst || inst.verified) {
       return res.status(400).json({ error: "Already verified or not found" });
@@ -441,7 +449,7 @@ exports.verifyPayment = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    // Start transaction for safety
+    // Transaction for safety
     const result = await prisma.$transaction(async (tx) => {
       // 1. Mark payment as verified
       const updated = await tx.payment.update({
@@ -454,55 +462,22 @@ exports.verifyPayment = async (req, res) => {
         },
       });
 
-      // 2. Update EMI if this payment completes it
-      let emiUpdate = null;
-      if (inst.emiId) {
-        // Fetch updated EMI total paid so far (including this payment)
-        const emi = await tx.eMI.findUnique({ where: { id: inst.emiId } });
-        const totalPaid = Number(emi.amountPaidSoFar) + Number(inst.amount || 0);
-        if (totalPaid >= Number(emi.emiPayAmount) + Number(emi.fineAmount || 0)) {
-          emiUpdate = await tx.eMI.update({
-            where: { id: emi.id },
-            data: { status: "PAID" }
-          });
-        }
-      }
-
-      // 3. Update loan summary totals
-      await tx.loan.update({
-        where: { id: inst.loanId },
-        data: {
-          totalPaidAmount: { increment: inst.amount || 0 },
-          pendingAmount: { decrement: inst.amount || 0 },
+      // 2. Update EMI, Loan, closure etc using utility
+      const postResult = await processPostPayment({
+        tx,
+        emiId: inst.emiId,
+        loanId: inst.loanId,
+        paymentAmount: inst.amount,
+        updateEmiStatus: true, // In verify, update EMI (for partial/fully paid)
+        userContext: {
+          adminId: req.user?.adminId,
+          employeeId: req.user?.employeeId,
+          type: req.user?.type,
+          loginActivityId: req.user?.loginActivityId,
         },
       });
 
-      // 4. If all EMIs now PAID, close the loan (and auto-terminate hypothecation for 2W)
-      if (await shouldCloseLoan(tx, inst.loanId)) {
-        const closedLoan = await tx.loan.update({
-          where: { id: inst.loanId },
-          data: { isClosed: true, fileStatus: "CLOSED", actualEndDate: new Date() },
-          include: { twoWheelerLoan: true }
-        });
-        if (closedLoan.twoWheelerLoan) {
-          await tryAutoTerminateHypothecation({
-            prismaOrTx: tx,
-            twoWheelerLoanId: closedLoan.twoWheelerLoan.id,
-            regnNo: closedLoan.twoWheelerLoan.registrationNumber,
-            chassisNo: closedLoan.twoWheelerLoan.chassisNumber,
-            terminationDt: new Date(),
-            doc: null,
-            userContext: {
-              adminId: req.user?.adminId,
-              employeeId: req.user?.employeeId,
-              type: req.user?.type,
-              loginActivityId: req.user?.loginActivityId,
-            },
-          });
-        }
-      }
-
-      return { updated, emiUpdate };
+      return { updated, ...postResult };
     });
 
     return res.json({ message: "Verified", data: result });
@@ -511,7 +486,6 @@ exports.verifyPayment = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
-
 
 // GET /api/payments/pending-verification?page=1&limit=20&loanId=...&userId=...
 exports.getUnverifiedPayments = async (req, res) => {
@@ -542,10 +516,10 @@ exports.getUnverifiedPayments = async (req, res) => {
                 middleName: true,
                 lastName: true,
                 phone: true,
-              }
+              },
             },
             loanType: { select: { name: true } },
-          }
+          },
         },
         emi: true,
         admin: { select: { name: true } },
@@ -567,8 +541,6 @@ exports.getUnverifiedPayments = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
-
 
 // ---------------------------
 // 📉 FORECLOSURE CALCULATIONS
@@ -670,12 +642,12 @@ exports.postForeclosurePayment = async (req, res) => {
         .json({ error: "Insufficient amount for foreclosure" });
     }
 
-    // Start transaction
+    // Transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Lock loan: set fileStatus = "FORECLOSURE_IN_PROGRESS"
+      // 1. Lock loan
       await tx.loan.update({
         where: { id: loanId },
-        data: { fileStatus: "FORECLOSURE_IN_PROGRESS" }
+        data: { fileStatus: "FORECLOSURE_IN_PROGRESS" },
       });
 
       // 2. Mark all remaining payments as paid/foreclosure
@@ -694,22 +666,31 @@ exports.postForeclosurePayment = async (req, res) => {
             paymentDate,
           },
         });
+        // Also update corresponding EMIs if you keep fine/delay per EMI
+        await tx.eMI.update({
+          where: { id: p.emiId },
+          data: {
+            amountPaidSoFar: Number(p.pendingAmount), // or p.emiPayAmount
+            fineAmount: calculateFine(p.paymentFor, p.pendingAmount).fineAmt,
+            delayDays: calculateFine(p.paymentFor, p.pendingAmount).daysLate,
+            status: "PAID",
+          },
+        });
       }
 
-      // 3. Close loan and update stats
-      const closedLoan = await tx.loan.update({
-        where: { id: loanId },
-        data: {
-          isClosed: true,
-          fileStatus: "CLOSED", // finally closed
-          totalPaidAmount: { increment: totalRequired },
-          pendingAmount: 0,
-          totalPaidFine: { increment: totalFine },
-          totalPaidInterest: { increment: interestSavings },
-          totalPaidPrincipal: { increment: totalPrincipal },
-          actualEndDate: new Date(),
+      // 3. Update loan closure, auto-hypothecation, etc.
+      const postResult = await processPostPayment({
+        tx,
+        loanId,
+        paymentAmount: totalRequired,
+        updateEmiStatus: false, // Already set all EMIs as paid
+        userContext: {
+          adminId: req.user?.adminId,
+          employeeId: req.user?.employeeId,
+          type: req.user?.type,
+          loginActivityId: req.user?.loginActivityId,
         },
-        include: { twoWheelerLoan: true }
+        forceFullUpdate: true, // Always close loan and handle hypothecation
       });
 
       // 4. (Optional) Log action
@@ -723,29 +704,10 @@ exports.postForeclosurePayment = async (req, res) => {
             penaltyCharges,
             interestSavings,
             totalFine,
-            closedAt: new Date()
-          }
-        }
-      });
-
-      // 5. Auto-terminate hypothecation if two-wheeler
-      let hypothecationResult = null;
-      if (closedLoan.twoWheelerLoan) {
-        hypothecationResult = await tryAutoTerminateHypothecation({
-          prismaOrTx: tx,
-          twoWheelerLoanId: closedLoan.twoWheelerLoan.id,
-          regnNo: closedLoan.twoWheelerLoan.registrationNumber,
-          chassisNo: closedLoan.twoWheelerLoan.chassisNumber,
-          terminationDt: new Date(),
-          doc: null, // Pass doc info if available
-          userContext: {
-            adminId: req.user?.adminId,
-            employeeId: req.user?.employeeId,
-            type: req.user?.type,
-            loginActivityId: req.user?.loginActivityId,
+            closedAt: new Date(),
           },
-        });
-      }
+        },
+      });
 
       return {
         message: "Loan foreclosed",
@@ -753,7 +715,7 @@ exports.postForeclosurePayment = async (req, res) => {
         totalFine,
         interestSavings,
         penaltyCharges,
-        hypothecationResult
+        hypothecationResult: postResult.hypothecationResult,
       };
     });
 
@@ -764,15 +726,17 @@ exports.postForeclosurePayment = async (req, res) => {
   }
 };
 
-
-
 exports.reversePayment = async (req, res) => {
   try {
     const { paymentId } = req.params;
 
-    const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+    });
     if (!payment || payment.status === "REVERSED") {
-      return res.status(404).json({ error: "Payment not found or already reversed" });
+      return res
+        .status(404)
+        .json({ error: "Payment not found or already reversed" });
     }
 
     await prisma.$transaction(async (tx) => {
@@ -816,7 +780,7 @@ exports.getPaymentInvoice = async (req, res) => {
             user: true,
             loanType: true,
             branch: true,
-          }
+          },
         },
         emi: true,
         admin: true,
@@ -843,7 +807,9 @@ exports.getPaymentInvoice = async (req, res) => {
       principal: emi?.principalAmt || null,
       interest: emi?.interestAmt || null,
       user: {
-        name: [user.firstName, user.middleName, user.lastName].filter(Boolean).join(" "),
+        name: [user.firstName, user.middleName, user.lastName]
+          .filter(Boolean)
+          .join(" "),
         phone: user.phone,
         email: user.email,
         address: user.address,
