@@ -89,7 +89,12 @@ router.post(
   onlyAdminOrEmployee,
   paymentController.postForeclosurePayment
 );
-
+router.get(
+  "/payment/invoice/:paymentId",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  paymentController.getPaymentInvoice
+);
 
 /** --------------- Cease Routes -------------------- */
 // Create cease request (assign asset cease)

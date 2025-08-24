@@ -12,6 +12,7 @@ const {
 } = require("date-fns");
 const logAction = require("../utils/adminLogger");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
+const { calculateFine } = require("../utils/calculateFine");
 
 const FREQUENCY_OFFSETS = {
   MONTHLY: { fn: addMonths, step: 1 },
@@ -74,7 +75,6 @@ exports.createLoan = async (req, res) => {
     const { fn: offsetFn, step } =
       FREQUENCY_OFFSETS[paymentFrequency] || FREQUENCY_OFFSETS.MONTHLY;
 
-    let balance = P;
     const schedule = [];
 
     // Determine first due date
@@ -85,18 +85,14 @@ exports.createLoan = async (req, res) => {
 
     for (let i = 0; i < n; i++) {
       const dueDate = offsetFn(firstDue, step * i);
-      const interestPortion = parseFloat(
-        (balance * (interestRate / 100 / 12)).toFixed(2)
-      );
-      const principalPortion = parseFloat((EMI - interestPortion).toFixed(2));
-      balance = parseFloat((balance - principalPortion).toFixed(2));
+     
 
       schedule.push({
         paymentFor: dueDate,
         paymentDate: dueDate,
         emiPayAmount: EMI,
-        principalAmt: principalPortion,
-        interestAmt: interestPortion,
+        principalAmt: (principalLoanAmount / n).toFixed(2),
+        interestAmt: ((totalPayable - principalLoanAmount) / n).toFixed(2),
         amountPaidSoFar: 0,
         fineAmount: 0,
         status: "UNPAID",
@@ -772,26 +768,88 @@ exports.listLoansDownload = async (req, res) => {
   }
 };
 
+// loans.controller.js
+// assumes calculateFine(dueDate, baseAmount) is available in scope
 exports.getLoanById = async (req, res) => {
   try {
     const { id } = req.params;
+    const now = new Date();
+    const H24_MS = 24 * 60 * 60 * 1000;
 
+    // 1) Load OPEN EMIs metadata to decide whether to update
+    const openEmis = await prisma.eMI.findMany({
+      where: { loanId: id, status: { in: ["UNPAID", "PARTIAL"] } },
+      select: {
+        id: true,
+        paymentFor: true,
+        emiPayAmount: true,
+        amountPaidSoFar: true,
+        fineAmount: true,
+        delayDays: true,
+        updatedAt: true,
+        status: true,
+      }
+    });
+
+    // If there are open EMIs and last update was >= 24h ago, refresh fines
+    if (openEmis.length > 0) {
+      const lastUpdatedAt = openEmis[0].updatedAt;
+      const needsRefresh =
+        !lastUpdatedAt || now.getTime() - new Date(lastUpdatedAt).getTime() >= H24_MS;
+
+      if (needsRefresh) {
+        const updates = [];
+
+        for (const e of openEmis) {
+          // fine base = emiPayAmount - amountPaidSoFar (never negative)
+          const outstanding = Math.max(
+            Number(e.emiPayAmount || 0) - Number(e.amountPaidSoFar || 0),
+            0
+          );
+
+          const { daysLate, fineAmt } = calculateFine(e.paymentFor, outstanding);
+          const newFine = Number((Number(fineAmt) || 0).toFixed(2));
+          const newDelay = Number(daysLate || 0);
+          const isDelayed = newDelay > 0;
+
+          const storedFine = Number(e.fineAmount || 0);
+          const storedDelay = Number(e.delayDays || 0);
+
+          // only write if changed (saves writes & keeps updatedAt meaningful)
+          if (storedFine !== newFine || storedDelay !== newDelay || e.isDelayed !== isDelayed) {
+            updates.push(
+              prisma.eMI.update({
+                where: { id: e.id },
+                data: {
+                  fineAmount: newFine,
+                  delayDays: newDelay,
+                  isDelayed,
+                  // updatedAt updates automatically due to @updatedAt
+                },
+              })
+            );
+          }
+        }
+
+        if (updates.length > 0) {
+          await prisma.$transaction(updates, { timeout: 20000 });
+        }
+      }
+    }
+
+    // 2) Fetch full loan with everything you need (fresh after any updates)
     const loan = await prisma.loan.findUnique({
       where: { id },
       include: {
         user: true,
         loanType: true,
-        emi: {
-          orderBy: { paymentFor: "asc" }, // ✅ sort EMIs here
-        },
+        emi: { orderBy: { paymentFor: "asc" } },
         ceaseHistories: true,
         admin: true,
         employee: true,
         guarantors: true,
-        payments: true, // (optional) you can sort these too, see below
-        twoWheelerLoan: {
-          include: { brand: true, model: true },
-        },
+        payments: true,
+        twoWheelerLoan: { include: { brand: true, model: true } },
         agriLoan: { include: { equipment: true } },
         msmeLoan: true,
         branch: true,
@@ -802,9 +860,12 @@ exports.getLoanById = async (req, res) => {
       return res.status(404).json({ error: "Loan not found", status: 404 });
     }
 
-    res.status(200).json({ data: loan, status: 200 });
+    return res.status(200).json({ data: loan, status: 200 });
   } catch (err) {
     console.error("Get Loan By ID Error:", err);
-    res.status(500).json({ error: "Failed to fetch loan details", status: 500 });
+    return res
+      .status(500)
+      .json({ error: "Failed to fetch loan details", status: 500 });
   }
 };
+
