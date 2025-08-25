@@ -91,12 +91,14 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
         Number(inst.emiPayAmount || 0) - Number(inst.amountPaidSoFar || 0),
         0
       );
+      const fineAlreadyPaid = Number(inst.finePaid || 0);
       const { daysLate, fineAmt, pct } = calculateFine(
         inst.paymentFor,
         outstanding
       );
-      const totalDue = Number((outstanding + Number(fineAmt || 0)).toFixed(2));
-      grandTotal += totalDue;
+      const fineAssessed = Number((Number(fineAmt) || 0).toFixed(2));
+      const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
+      const totalDue = Number((outstanding + fineDue).toFixed(2));
 
       return {
         emiId: inst.id,
@@ -105,7 +107,9 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
         alreadyPaid: Number(inst.amountPaidSoFar),
         principalAmt: Number(inst.principalAmt),
         interestAmt: Number(inst.interestAmt),
-        fineAmount: Number((fineAmt || 0).toFixed(2)),
+        fineAssessed,
+        finePaid: fineAlreadyPaid,
+        fineDue,
         delayDays: daysLate,
         finePercentage: pct,
         totalDue,
@@ -130,7 +134,9 @@ exports.makePayment = async (req, res) => {
     const { loanId } = req.params;
     let { amountPaid, paymentMode, transactionId, paymentDate } = req.body;
 
-    amountPaid = Number(amountPaid);
+    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+
+    amountPaid = r2(Number(amountPaid));
     if (!amountPaid || amountPaid <= 0) {
       return res
         .status(400)
@@ -141,9 +147,10 @@ exports.makePayment = async (req, res) => {
 
     const result = await prisma.$transaction(
       async (tx) => {
-        // (A) refresh fines for all open EMIs if last update ≥ 24h (due up to today)
+        // (A) refresh fines for overdue open EMIs if last update ≥ 24h
         const today = new Date();
         const H24_MS = 24 * 60 * 60 * 1000;
+
         const lastOpen = await tx.eMI.findFirst({
           where: {
             loanId,
@@ -153,6 +160,7 @@ exports.makePayment = async (req, res) => {
           select: { updatedAt: true },
           orderBy: { updatedAt: "desc" },
         });
+
         if (!lastOpen || today - new Date(lastOpen.updatedAt) >= H24_MS) {
           const toRefresh = await tx.eMI.findMany({
             where: {
@@ -165,26 +173,30 @@ exports.makePayment = async (req, res) => {
               paymentFor: true,
               emiPayAmount: true,
               amountPaidSoFar: true,
+              finePaid: true,
               fineAmount: true,
               delayDays: true,
             },
           });
+
           const updates = [];
           for (const e of toRefresh) {
-            const outstanding = Math.max(
-              Number(e.emiPayAmount || 0) - Number(e.amountPaidSoFar || 0),
+            const emiPaidComponent = Math.max(
+              Number(e.amountPaidSoFar || 0) - Number(e.finePaid || 0),
               0
             );
-            const { daysLate, fineAmt } = calculateFine(
-              e.paymentFor,
-              outstanding
+            const emiDue = Math.max(
+              Number(e.emiPayAmount || 0) - emiPaidComponent,
+              0
             );
-            const newFine = Number((Number(fineAmt) || 0).toFixed(2));
+
+            const { daysLate, fineAmt } = calculateFine(e.paymentFor, emiDue);
+            const newFine = r2(fineAmt);
             const newDelay = Number(daysLate || 0);
             const isDelayed = newDelay > 0;
 
             if (
-              Number(e.fineAmount || 0) !== newFine ||
+              r2(e.fineAmount || 0) !== newFine ||
               Number(e.delayDays || 0) !== newDelay
             ) {
               updates.push(
@@ -195,56 +207,86 @@ exports.makePayment = async (req, res) => {
               );
             }
           }
-          if (updates.length)
-            await tx.$transaction(updates, { timeout: 20000 });
+          if (updates.length) await Promise.all(updates);
         }
 
-        // (B) fetch unpaid/partial EMIs in order (all, incl. future — fine will be 0 for future)
+        // (B) fetch unpaid/partial EMIs in order (future fine will be 0)
         const installments = await tx.eMI.findMany({
-          where: {
-            loanId,
-            status: { in: ["UNPAID", "PARTIAL"] },
-          },
+          where: { loanId, status: { in: ["UNPAID", "PARTIAL"] } },
           orderBy: { paymentFor: "asc" },
           include: {
-            loan: {
-              include: { user: true, loanType: true, branch: true },
-            },
+            loan: { include: { user: true, loanType: true, branch: true } },
           },
         });
 
-        let remaining = amountPaid;
+        let remaining = r2(amountPaid);
         const updated = [];
-        let lastPayment = null;
+        let totalUsed = 0;
 
         for (const emi of installments) {
           if (remaining <= 0) break;
 
-          const outstanding = Math.max(
-            Number(emi.emiPayAmount || 0) - Number(emi.amountPaidSoFar || 0),
+          // --- EMI outstanding uses only EMI-paid component (excludes finePaid)
+          const emiPaidComponent = Math.max(
+            Number(emi.amountPaidSoFar || 0) - Number(emi.finePaid || 0),
+            0
+          );
+          const emiDue = Math.max(
+            Number(emi.emiPayAmount || 0) - emiPaidComponent,
             0
           );
 
-          const { fineAmt, daysLate } = calculateFine(
-            emi.paymentFor,
-            outstanding
+          // Fine assessment
+          const { fineAmt, daysLate } = calculateFine(emi.paymentFor, emiDue);
+          const fineAssessed = r2(fineAmt);
+          const fineAlreadyPaid = r2(emi.finePaid || 0);
+          const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
+
+          // Nothing due?
+          if (emiDue <= 0 && fineDue <= 0) {
+            if (
+              emi.status !== "PAID" ||
+              r2(emi.fineAmount || 0) !== fineAssessed ||
+              Number(emi.delayDays || 0) !== Number(daysLate || 0)
+            ) {
+              await tx.eMI.update({
+                where: { id: emi.id },
+                data: {
+                  status: "PAID",
+                  fineAmount: fineAssessed,
+                  delayDays: daysLate,
+                  isDelayed: daysLate > 0,
+                },
+              });
+            }
+            continue;
+          }
+
+          // Allocation: fine → interest → principal
+          const toPay = Math.min(remaining, r2(emiDue + fineDue));
+          if (toPay <= 0) break;
+
+          const payToFine = Math.min(toPay, fineDue);
+          const payToEmi = r2(toPay - payToFine);
+
+          const interestOutstanding = Math.max(
+            Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+            0
           );
-          const fine = Number((Number(fineAmt) || 0).toFixed(2));
-          const totalDue = outstanding + fine;
-
-          const payAmt = Math.min(remaining, totalDue);
-          remaining -= payAmt;
-
-          const newPaidSoFar = Number(emi.amountPaidSoFar || 0) + payAmt;
-          const isFullyPaid =
-            newPaidSoFar >= Number(emi.emiPayAmount || 0) + fine;
-          const newStatus = isFullyPaid ? "PAID" : "PARTIAL";
+          const principalOutstanding = Math.max(
+            Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+            0
+          );
+          const payInterest = Math.min(payToEmi, interestOutstanding);
+          const payPrincipal = Math.min(
+            r2(payToEmi - payInterest),
+            principalOutstanding
+          );
 
           const verified =
             paymentMode === "CASH"
-              ? req.user.type === "ADMIN"
-                ? true
-                : await checkVerifyPermission(req.user, "VERIFY_PAYMENT") // ✅ unify
+              ? req.user.type === "ADMIN" ||
+                (await checkVerifyPermission(req.user, "VERIFY_PAYMENT"))
               : true;
 
           // Create Payment
@@ -252,7 +294,7 @@ exports.makePayment = async (req, res) => {
             data: {
               loanId,
               emiId: emi.id,
-              amount: payAmt,
+              amount: r2(payToFine + payToEmi),
               paymentMode,
               transactionId:
                 paymentMode === "ONLINE" || paymentMode === "UPI"
@@ -268,45 +310,65 @@ exports.makePayment = async (req, res) => {
               adminId: req.user.type === "ADMIN" ? req.user.id : undefined,
               employeeId:
                 req.user.type === "EMPLOYEE" ? req.user.id : undefined,
-            },
-            include: {
-              loan: {
-                include: {
-                  user: true,
-                  loanType: true,
-                  branch: true,
-                  twoWheelerLoan: true,
-                },
-              },
-              emi: true,
-              admin: true,
-              employee: true,
+              // If you add a JSON column:
+              // metadata: { paidToFine: payToFine, paidToInterest: payInterest, paidToPrincipal: payPrincipal }
             },
           });
-          lastPayment = payment;
 
-          // Update EMI (persist the fine & delay we used)
+          // --- UPDATE EMI (amountPaidSoFar = TOTAL paid incl. fine)
+          const newFinePaid = r2(fineAlreadyPaid + payToFine);
+          const newInterestPaid = r2(
+            Number(emi.interestPaid || 0) + payInterest
+          );
+          const newPrincipalPaid = r2(
+            Number(emi.principalPaid || 0) + payPrincipal
+          );
+
+          const newAmountPaidSoFar = r2(
+            Number(emi.amountPaidSoFar || 0) + payToFine + payToEmi // <- include fine
+          );
+          const newTotalPaid = r2(
+            Number(emi.totalPaid || 0) + payToFine + payToEmi
+          );
+
+          // Recompute dues with the same rule
+          const emiPaidComponentAfter = Math.max(
+            newAmountPaidSoFar - newFinePaid,
+            0
+          );
+          const emiDueAfter = Math.max(
+            Number(emi.emiPayAmount || 0) - emiPaidComponentAfter,
+            0
+          );
+          const fineDueAfter = Math.max(fineAssessed - newFinePaid, 0);
+
+          const newStatus =
+            emiDueAfter <= 0 && fineDueAfter <= 0 ? "PAID" : "PARTIAL";
+
           await tx.eMI.update({
             where: { id: emi.id },
             data: {
-              amountPaidSoFar: newPaidSoFar,
-              fineAmount: fine,
+              amountPaidSoFar: newAmountPaidSoFar, // TOTAL (fine + EMI)
+              finePaid: newFinePaid,               // fine bucket
+              interestPaid: newInterestPaid,
+              principalPaid: newPrincipalPaid,
+              totalPaid: newTotalPaid,             // optional aggregate, now equals amountPaidSoFar if you like
+              fineAmount: fineAssessed,            // latest assessed fine
               delayDays: daysLate,
               isDelayed: daysLate > 0,
-              verified: verified,
+              verified,
               status: verified ? newStatus : "VERIFICATION_PENDING",
               payments: { connect: { id: payment.id } },
             },
           });
 
-          // Only update loan/closure logic if payment is verified
           if (verified) {
             await processPostPayment({
               tx,
               emiId: emi.id,
               loanId,
-              paymentAmount: payAmt,
-              updateEmiStatus: false, // already updated EMI above
+              paymentAmount: r2(payToFine + payToEmi),
+              updateEmiStatus: false,
               userContext: {
                 adminId: req.user?.adminId,
                 employeeId: req.user?.employeeId,
@@ -316,19 +378,28 @@ exports.makePayment = async (req, res) => {
             });
           }
 
+          remaining = r2(remaining - (payToFine + payToEmi));
+          totalUsed = r2(totalUsed + (payToFine + payToEmi));
+
           updated.push({
             emiId: emi.id,
-            paidAmount: payAmt,
-            emiStatus: newStatus,
-            fineApplied: fine,
+            paidAmount: r2(payToFine + payToEmi),
+            paidToFine: payToFine,
+            paidToEmi: payToEmi,
+            paidToInterest: payInterest,
+            paidToPrincipal: payPrincipal,
+            emiStatus: verified ? newStatus : "VERIFICATION_PENDING",
             daysLate,
+            fineAssessed: fineAssessed,
+            fineRemaining: r2(fineDueAfter),
+            emiRemaining: r2(emiDueAfter),
           });
         }
 
         return {
           message: "Payment processed",
-          usedAmount: Number((amountPaid - remaining).toFixed(2)),
-          unallocatedAmount: Number(remaining.toFixed(2)),
+          usedAmount: totalUsed,
+          unallocatedAmount: remaining,
           updatedInstallments: updated,
         };
       },
@@ -343,6 +414,7 @@ exports.makePayment = async (req, res) => {
       .json({ error: err.message || "Payment failed", status: 500 });
   }
 };
+
 
 // ----------------------------------
 // ▶️ GET PAY A SPECIFIC INSTALLMENT ID
@@ -393,7 +465,7 @@ exports.getEmiById = async (req, res) => {
 
     // outstanding principal = EMI - already paid
     const outstandingPrincipal = parseFloat(
-     (Number(inst.emiPayAmount) - Number(inst.amountPaidSoFar)).toFixed(2)
+      (Number(inst.emiPayAmount) - Number(inst.amountPaidSoFar)).toFixed(2)
     );
     // compute fine based on outstanding principal
     const { daysLate, fineAmt, pct } = calculateFine(
@@ -437,37 +509,56 @@ exports.payPaymentById = async (req, res) => {
   try {
     const { emiId } = req.params;
     let { amount, paymentMode, transactionId, paymentDate } = req.body;
-    amount = Number(amount);
-    if (!amount || amount <= 0) {
+
+    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    amount = r2(Number(amount));
+    if (!amount || amount <= 0)
       return res.status(400).json({ error: "amount must be > 0" });
-    }
     paymentDate = paymentDate ? new Date(paymentDate) : new Date();
 
-    const inst = await prisma.eMI.findUnique({ where: { id: emiId } });
-    if (!inst) return res.status(404).json({ error: "EMI not found" });
+    const emi = await prisma.eMI.findUnique({ where: { id: emiId } });
+    if (!emi) return res.status(404).json({ error: "EMI not found" });
 
-    const duePrincipal =
-      Number(inst.emiPayAmount) - Number(inst.amountPaidSoFar);
-    const { fineAmt, daysLate } = calculateFine(inst.paymentFor, duePrincipal);
-    const totalDue = duePrincipal + fineAmt;
+    const emiDue = Math.max(
+      Number(emi.emiPayAmount || 0) - Number(emi.amountPaidSoFar || 0),
+      0
+    );
+    const { fineAmt, daysLate } = calculateFine(emi.paymentFor, emiDue);
+    const fineAssessed = r2(fineAmt);
+    const fineAlreadyPaid = r2(emi.finePaid || 0);
+    const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
 
-    if (amount > totalDue) amount = totalDue;
+    let remaining = Math.min(amount, r2(emiDue + fineDue));
+    const payToFine = Math.min(remaining, fineDue);
+    remaining = r2(remaining - payToFine);
 
-    const newPaidSoFar = Number(inst.amountPaidSoFar) + amount;
-    const isFullyPaid = newPaidSoFar >= Number(inst.emiPayAmount) + fineAmt;
-    const newStatus = isFullyPaid ? "PAID" : "PARTIAL";
-   const canSelfVerify =
-     paymentMode !== "CASH"
-       ? true
-       : (req.user?.type === "ADMIN") ||
-         (await checkVerifyPermission(req.user, "VERIFY_PAYMENT"));
+    const interestOutstanding = Math.max(
+      Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+      0
+    );
+    const principalOutstanding = Math.max(
+      Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+      0
+    );
+
+    const payToInterest = Math.min(remaining, interestOutstanding);
+    const payToPrincipal = Math.min(
+      r2(remaining - payToInterest),
+      principalOutstanding
+    );
+
+    const canSelfVerify =
+      paymentMode !== "CASH"
+        ? true
+        : req.user?.type === "ADMIN" ||
+          (await checkVerifyPermission(req.user, "VERIFY_PAYMENT"));
 
     const result = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.create({
         data: {
-          loanId: inst.loanId,
-          emiId: emiId,
-          amount: amount,
+          loanId: emi.loanId,
+          emiId,
+          amount: r2(payToFine + payToInterest + payToPrincipal),
           paymentMode,
           transactionId:
             paymentMode === "ONLINE" || paymentMode === "UPI"
@@ -477,51 +568,76 @@ exports.payPaymentById = async (req, res) => {
           status: canSelfVerify ? "PAID" : "VERIFICATION_PENDING",
           verified: !!canSelfVerify,
           verifiedAt: canSelfVerify ? new Date() : null,
-          verifiedByAdminId: req.user?.type === "ADMIN" && canSelfVerify ? req.user?.id : null,
-          verifiedByEmployeeId: req.user?.type === "EMPLOYEE" && canSelfVerify ? req.user?.id : null,
+          ...(req.user?.type === "ADMIN"
+            ? { verifiedByAdminId: req.user.id, adminId: req.user.id }
+            : {}),
+          ...(req.user?.type === "EMPLOYEE"
+            ? {
+                verifiedByEmployeeId: canSelfVerify ? req.user.id : null,
+                employeeId: req.user.id,
+              }
+            : {}),
+          // optional breakdown if you add a JSON column
+          // metadata: { paidToFine: payToFine, paidToInterest: payToInterest, paidToPrincipal: payToPrincipal }
         },
       });
+
+      const newFinePaid = r2(fineAlreadyPaid + payToFine);
+      const newInterestPaid = r2(Number(emi.interestPaid || 0) + payToInterest);
+      const newPrincipalPaid = r2(
+        Number(emi.principalPaid || 0) + payToPrincipal
+      );
+      const newAmountPaidSoFar = r2(
+        Number(emi.amountPaidSoFar || 0) + payToInterest + payToPrincipal
+      );
+      const newTotalPaid = r2(
+        Number(emi.totalPaid || 0) + payToFine + payToInterest + payToPrincipal
+      );
+
+      const emiDueAfter = Math.max(
+        Number(emi.emiPayAmount || 0) - newAmountPaidSoFar,
+        0
+      );
+      const fineDueAfter = Math.max(fineAssessed - newFinePaid, 0);
+      const newStatus =
+        emiDueAfter <= 0 && fineDueAfter <= 0 ? "PAID" : "PARTIAL";
 
       await tx.eMI.update({
         where: { id: emiId },
         data: {
-          amountPaidSoFar: newPaidSoFar,
-          fineAmount: fineAmt,
+          amountPaidSoFar: newAmountPaidSoFar,
+          finePaid: newFinePaid,
+          interestPaid: newInterestPaid,
+          principalPaid: newPrincipalPaid,
+          totalPaid: newTotalPaid,
+          fineAmount: fineAssessed,
           delayDays: daysLate,
+          isDelayed: daysLate > 0,
           status: canSelfVerify ? newStatus : "VERIFICATION_PENDING",
           payments: { connect: { id: payment.id } },
         },
       });
 
-      await tx.loan.update({
-        where: { id: inst.loanId },
-        data: {
-          totalPaidAmount: { increment: amount },
-          pendingAmount: { decrement: amount },
-        },
-      });
-
-    // align behavior with makePayment: only run post hooks if verified
-    if (canSelfVerify) {
-      await processPostPayment({
-        tx,
-        emiId,
-        loanId: inst.loanId,
-        paymentAmount: amount,
-        updateEmiStatus: false,
-        userContext: {
-          adminId: req.user?.adminId,
-          employeeId: req.user?.employeeId,
-          type: req.user?.type,
-          loginActivityId: req.user?.loginActivityId,
-        },
-      });
-    }
+      if (canSelfVerify) {
+        await processPostPayment({
+          tx,
+          emiId,
+          loanId: emi.loanId,
+          paymentAmount: r2(payToFine + payToInterest + payToPrincipal),
+          updateEmiStatus: false,
+          userContext: {
+            adminId: req.user?.adminId,
+            employeeId: req.user?.employeeId,
+            type: req.user?.type,
+            loginActivityId: req.user?.loginActivityId,
+          },
+        });
+      }
 
       return {
         message: "Payment applied to installment",
         paymentId: payment.id,
-        paid: amount,
+        paid: r2(payToFine + payToInterest + payToPrincipal),
         emiId,
         emiStatus: canSelfVerify ? newStatus : "VERIFICATION_PENDING",
       };
@@ -533,7 +649,6 @@ exports.payPaymentById = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
-
 
 // ---------------------------
 // ✅ VERIFY PAYMENT RECORD
@@ -1166,7 +1281,9 @@ exports.reversePayment = async (req, res) => {
       include: { emi: true, loan: true },
     });
     if (!payment || payment.status === "REVERSED") {
-      return res.status(404).json({ error: "Payment not found or already reversed" });
+      return res
+        .status(404)
+        .json({ error: "Payment not found or already reversed" });
     }
 
     await prisma.$transaction(async (tx) => {
@@ -1191,10 +1308,18 @@ exports.reversePayment = async (req, res) => {
           Number(emi.emiPayAmount || 0) - Number(emi.amountPaidSoFar || 0),
           0
         );
-        const newStatus = outstanding <= 0 ? "PAID" : (emi.amountPaidSoFar > 0 ? "PARTIAL" : "UNPAID");
+        const newStatus =
+          outstanding <= 0
+            ? "PAID"
+            : emi.amountPaidSoFar > 0
+            ? "PARTIAL"
+            : "UNPAID";
 
         if (emi.status !== newStatus) {
-          await tx.eMI.update({ where: { id: emi.id }, data: { status: newStatus } });
+          await tx.eMI.update({
+            where: { id: emi.id },
+            data: { status: newStatus },
+          });
         }
       }
 
@@ -1216,7 +1341,6 @@ exports.reversePayment = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 exports.getPaymentInvoice = async (req, res) => {
   try {
