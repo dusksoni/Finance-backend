@@ -1,3 +1,5 @@
+import { differenceInDays } from "date-fns";
+
 export function calculateFine(dueDate, pendingPrincipal) {
   const today = new Date();
   const daysLate = Math.max(differenceInDays(today, dueDate), 0);
