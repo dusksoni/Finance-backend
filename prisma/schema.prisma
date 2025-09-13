@@ -80,6 +80,7 @@ model Admin {
   requestedUpdates       UserUpdateRequest[]  @relation("RequestedByAdmin")
   verifiedPayments       Payment[]            @relation("VerifiedByAdmin")
   payments               Payment[]
+  ceaseContactAttempts   CeaseContactAttempt[]
 }
 
 model Role {
@@ -127,6 +128,7 @@ model Employee {
   ceaseHistoriesAssignedTo CeaseHistory[]       @relation("CeaseAssignedTo")
   ceaseHistoriesCeasedBy   CeaseHistory[]       @relation("CeasedBy")
   payments                 Payment[]
+  ceaseContactAttempts     CeaseContactAttempt[]
 }
 
 model LoginActivity {
@@ -348,6 +350,7 @@ enum FileStatus {
   ACTIVE // Loan is live, repayment ongoing
   OVERDUE // Payment due is late
   DEFAULTED // Repeated missed payments / declared default
+  CEASED_INITIATED // Product/assets ceased due to non-payment
   CEASED // Product/assets ceased due to non-payment
   RELEASED // Product/assets returned to customer
   CLOSED // Loan fully repaid and file closed
@@ -484,31 +487,89 @@ model Payment {
   employee           Employee? @relation(fields: [employeeId], references: [id])
   loan               Loan      @relation(fields: [loanId], references: [id])
 }
-model CeaseHistory {
-  id                   String    @id @default(uuid())
-  loanId               String
-  assignedByAdminId    String?
-  assignedByEmployeeId String?
-  assignedToId         String?
-  ceasedById           String?
-  ceaseDate            DateTime?
-  location             String?
-  comment              String?
-  releaseDate          DateTime?
-  releaseReason        String?
-  status               String    @default("PENDING") // PENDING, COMPLETED, RELEASED
 
-  loan                 Loan      @relation(fields: [loanId], references: [id])
-  assignedByAdmin      Admin?    @relation("AssignedByAdmin", fields: [assignedByAdminId], references: [id])
-  assignedByEmployee   Employee? @relation("AssignedByEmployee", fields: [assignedByEmployeeId], references: [id])
-  assignedTo           Employee? @relation("CeaseAssignedTo", fields: [assignedToId], references: [id])
-  ceasedBy             Employee? @relation("CeasedBy", fields: [ceasedById], references: [id])
-
-  files                File[]    @relation("CeaseFiles")    // Files for cease evidence
-  releaseFiles         File[]    @relation("ReleaseFiles")  // Files for release evidence
-
-  createdAt            DateTime  @default(now())
+enum ContactType {
+  CALL
+  VISIT
+  WHATSAPP
+  SMS
+  OTHER
 }
+
+enum CallOutcome {
+  PICKED
+  UNREACHABLE
+  SWITCHED_OFF
+  BUSY
+  NO_ANSWER
+  WRONG_NUMBER
+  NOT_APPLICABLE
+}
+
+// ===== Models =====
+
+model CeaseHistory {
+  id                     String    @id @default(uuid())
+  loanId                 String
+  assignedByAdminId      String?
+  assignedByEmployeeId   String?
+  assignedToId           String?
+  ceasedById             String?
+  ceaseDate              DateTime?
+  actualCeaseDate        DateTime?
+  ceaseLat               Float?
+  ceaseLng               Float?
+  ceaseAddress           String?
+
+  comment                String?
+  releaseDate            DateTime?
+  releaseReason          String?
+  status                 String    @default("PENDING") // PENDING, COMPLETED, RELEASED
+  priority               String    @default("MEDIUM")  // HIGH, MEDIUM, LOW
+  dueDate                DateTime?
+  assetCondition         String?
+
+  releasedByAdminId      String?
+  releasedByEmployeeId   String?
+
+  // relations
+  loan                   Loan      @relation(fields: [loanId], references: [id])
+  assignedByAdmin        Admin?    @relation("AssignedByAdmin", fields: [assignedByAdminId], references: [id])
+  assignedByEmployee     Employee? @relation("AssignedByEmployee", fields: [assignedByEmployeeId], references: [id])
+  assignedTo             Employee? @relation("CeaseAssignedTo", fields: [assignedToId], references: [id])
+  ceasedBy               Employee? @relation("CeasedBy", fields: [ceasedById], references: [id])
+
+  files                  File[]    @relation("CeaseFiles")
+  releaseFiles           File[]    @relation("ReleaseFiles")
+
+  // NEW: detailed log of attempts
+  contactAttempts        CeaseContactAttempt[]
+
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+}
+
+// NEW: separate attempts table
+model CeaseContactAttempt {
+  id                   String       @id @default(uuid())
+  ceaseHistoryId       String
+
+  contactAt            DateTime     @default(now())
+  contactType          ContactType  @default(CALL)
+  callOutcome          CallOutcome?
+  summary              String?
+
+  createdByAdminId     String?
+  createdByEmployeeId  String?
+
+  ceaseHistory         CeaseHistory @relation(fields: [ceaseHistoryId], references: [id])
+  createdByAdmin       Admin?       @relation(fields: [createdByAdminId], references: [id])
+  createdByEmployee    Employee?    @relation(fields: [createdByEmployeeId], references: [id])
+
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+}
+
 
 enum PaymentMode {
   ONLINE

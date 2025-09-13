@@ -9,7 +9,7 @@ const {
   onlyAdminOrEmployee,
   adminOnly,
 } = require("../middleware/auth");
-const { createCease, completeCease, releaseCeasedAsset, getLoanCeaseHistory, getCeaseById, getAllCeaseHistories } = require("../controllers/cease.controller");
+const { createCease, completeCease, releaseCeasedAsset, getLoanCeaseHistory, getCeaseById, getAllCeaseHistories, addCeaseContactAttempt } = require("../controllers/cease.controller");
 
 /** ─── LOAN CRUD ───────────────────────────────────── */
 router.post("/",          authMiddleware, onlyAdminOrEmployee, loanController.createLoan);
@@ -107,12 +107,14 @@ router.post('/cease/:id/complete', authMiddleware, onlyAdminOrEmployee, complete
 router.post('/cease/:id/release', authMiddleware, onlyAdminOrEmployee, releaseCeasedAsset);
 
 // Get all cease histories for a loan
-router.get('/cease/:loanId', authMiddleware, onlyAdminOrEmployee, getLoanCeaseHistory);
+router.get('/cease/loan/:loanId', authMiddleware, onlyAdminOrEmployee, getLoanCeaseHistory);
 
 // Get one cease record with all details
 router.get('/cease/:id', authMiddleware, onlyAdminOrEmployee, getCeaseById);
 
 // In your ceaseHistory router:
 router.get("/cease", authMiddleware, onlyAdminOrEmployee, getAllCeaseHistories);
+
+router.get("/cease/:id/contact-attempts", authMiddleware, onlyAdminOrEmployee, addCeaseContactAttempt);
 
 module.exports = router;
