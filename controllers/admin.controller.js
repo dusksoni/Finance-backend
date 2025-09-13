@@ -20,7 +20,7 @@ exports.adminLogin = async (req, res) => {
     
    const loginActivity = await prisma.LoginActivity.create({
       data: {
-        adminId: admin.id,
+        adminId: admin.id, 
         role: "ADMIN",
         deviceName,
         deviceType,
