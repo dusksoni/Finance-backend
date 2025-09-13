@@ -115,6 +115,6 @@ router.get('/cease/:id', authMiddleware, onlyAdminOrEmployee, getCeaseById);
 // In your ceaseHistory router:
 router.get("/cease", authMiddleware, onlyAdminOrEmployee, getAllCeaseHistories);
 
-router.get("/cease/:id/contact-attempts", authMiddleware, onlyAdminOrEmployee, addCeaseContactAttempt);
+router.post("/cease/:id/contact-attempt", authMiddleware, onlyAdminOrEmployee, addCeaseContactAttempt);
 
 module.exports = router;

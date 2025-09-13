@@ -76,11 +76,13 @@ model Admin {
   actionLogs             ActionLog[]
   users                  User[]
   loans                  Loan[]
-  ceaseHistoriesAssigned CeaseHistory[]       @relation("AssignedByAdmin")
-  requestedUpdates       UserUpdateRequest[]  @relation("RequestedByAdmin")
-  verifiedPayments       Payment[]            @relation("VerifiedByAdmin")
+  ceaseHistoriesAssigned CeaseHistory[]        @relation("AssignedByAdmin")
+  ceaseHistoriesReleased  CeaseHistory[]        @relation("ReleasedByAdmin")
+  requestedUpdates       UserUpdateRequest[]   @relation("RequestedByAdmin")
+  verifiedPayments       Payment[]             @relation("VerifiedByAdmin")
   payments               Payment[]
   ceaseContactAttempts   CeaseContactAttempt[]
+  // CeaseHistory           CeaseHistory[]
 }
 
 model Role {
@@ -111,24 +113,26 @@ model Employee {
   state   State?  @relation(fields: [stateId], references: [id])
   city    City?   @relation(fields: [cityId], references: [id])
 
-  createdAt                DateTime             @default(now())
-  updatedAt                DateTime             @updatedAt
-  isDeleted                Boolean              @default(false)
-  isBlocked                Boolean              @default(false)
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+  isDeleted                Boolean               @default(false)
+  isBlocked                Boolean               @default(false)
   branchId                 String?
-  branch                   Branch?              @relation(fields: [branchId], references: [id])
+  branch                   Branch?               @relation(fields: [branchId], references: [id])
   users                    User[]
   loginActivities          LoginActivity[]
   actionLogs               ActionLog[]
   terminationRequest       TerminationRequest[]
   loans                    Loan[]
-  verifiedPayments         Payment[]            @relation("VerifiedByEmployee")
-  requestedUpdates         UserUpdateRequest[]  @relation("RequestedByEmployee")
-  ceaseHistoriesAssigned   CeaseHistory[]       @relation("AssignedByEmployee")
-  ceaseHistoriesAssignedTo CeaseHistory[]       @relation("CeaseAssignedTo")
-  ceaseHistoriesCeasedBy   CeaseHistory[]       @relation("CeasedBy")
+  verifiedPayments         Payment[]             @relation("VerifiedByEmployee")
+  requestedUpdates         UserUpdateRequest[]   @relation("RequestedByEmployee")
+  ceaseHistoriesAssigned   CeaseHistory[]        @relation("AssignedByEmployee")
+  ceaseHistoriesAssignedTo CeaseHistory[]        @relation("CeaseAssignedTo")
+  ceaseHistoriesCeasedBy   CeaseHistory[]        @relation("CeasedBy")
+  ceaseHistoriesReleased    CeaseHistory[]        @relation("ReleasedByEmployee")
   payments                 Payment[]
   ceaseContactAttempts     CeaseContactAttempt[]
+  // CeaseHistory             CeaseHistory[]
 }
 
 model LoginActivity {
@@ -269,7 +273,7 @@ model Gender {
 }
 
 model Branch {
-  id        String  @id @default(uuid())
+  id        String   @id @default(uuid())
   name      String
   regionId  String
   address   String?
@@ -360,7 +364,7 @@ enum FileStatus {
   WRITTEN_OFF // Loan marked as bad debt/loss
   UNDER_COLLECTION // Sent to recovery team or agents
   FORECLOSURE_IN_PROGRESS // Under foreclosure process
-  FORECLOSED     // Foreclosure completed
+  FORECLOSED // Foreclosure completed
 }
 
 model Loan {
@@ -399,20 +403,20 @@ model Loan {
   isDefaulted          Boolean    @default(false)
   totalDelayDays       Int        @default(0)
   defaultReason        String?
-  insuranceAmount    Float?
-  insuranceDate      DateTime?
-  insuranceValidTill DateTime?
-  insuranceAlert     Boolean   @default(false)
-  insuranceNumber    String?
-  insuranceCompany   String?
-  comment            String?
-  isForeclosed       Boolean   @default(false)
-  foreclosedAt       DateTime?
-  createdBy          String?
-  adminId           String?
-  employeeId        String?
-  userId            String
-  branchId         String?
+  insuranceAmount      Float?
+  insuranceDate        DateTime?
+  insuranceValidTill   DateTime?
+  insuranceAlert       Boolean    @default(false)
+  insuranceNumber      String?
+  insuranceCompany     String?
+  comment              String?
+  isForeclosed         Boolean    @default(false)
+  foreclosedAt         DateTime?
+  createdBy            String?
+  adminId              String?
+  employeeId           String?
+  userId               String
+  branchId             String?
 
   branch         Branch?          @relation(fields: [branchId], references: [id])
   admin          Admin?           @relation(fields: [adminId], references: [id])
@@ -456,36 +460,36 @@ model EMI {
   verifiedByAdminId    String?
   verifiedByEmployeeId String?
 
-  loan Loan @relation(fields: [loanId], references: [id])
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt @default(now())
+  loan      Loan     @relation(fields: [loanId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   payments Payment[] // one-to-many: all payments linked to this EMI
 }
 
 model Payment {
-  id            String       @id @default(uuid())
-  loanId        String
-  emiId         String?
-  amount        Decimal?     @default(0)
-  paymentDate   DateTime     @default(now())
-  paymentMode   PaymentMode?
-  transactionId String?
-  status        String       @default("PENDING") // PENDING, PAID, UNVERIFIED
-  isForeclosure Boolean      @default(false)
-  verified      Boolean      @default(false)
-  verifiedAt    DateTime?
-  verifiedByAdminId String?
+  id                   String       @id @default(uuid())
+  loanId               String
+  emiId                String?
+  amount               Decimal?     @default(0)
+  paymentDate          DateTime     @default(now())
+  paymentMode          PaymentMode?
+  transactionId        String?
+  status               String       @default("PENDING") // PENDING, PAID, UNVERIFIED
+  isForeclosure        Boolean      @default(false)
+  verified             Boolean      @default(false)
+  verifiedAt           DateTime?
+  verifiedByAdminId    String?
   verifiedByEmployeeId String?
   metadata             Json?
-  adminId            String?
-  employeeId         String?
-  emi                EMI?      @relation(fields: [emiId], references: [id])
-  verifiedByAdmin    Admin?    @relation("VerifiedByAdmin", fields: [verifiedByAdminId], references: [id])
-  verifiedByEmployee Employee? @relation("VerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])
-  admin              Admin?    @relation(fields: [adminId], references: [id])
-  employee           Employee? @relation(fields: [employeeId], references: [id])
-  loan               Loan      @relation(fields: [loanId], references: [id])
+  adminId              String?
+  employeeId           String?
+  emi                  EMI?         @relation(fields: [emiId], references: [id])
+  verifiedByAdmin      Admin?       @relation("VerifiedByAdmin", fields: [verifiedByAdminId], references: [id])
+  verifiedByEmployee   Employee?    @relation("VerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])
+  admin                Admin?       @relation(fields: [adminId], references: [id])
+  employee             Employee?    @relation(fields: [employeeId], references: [id])
+  loan                 Loan         @relation(fields: [loanId], references: [id])
 }
 
 enum ContactType {
@@ -509,67 +513,69 @@ enum CallOutcome {
 // ===== Models =====
 
 model CeaseHistory {
-  id                     String    @id @default(uuid())
-  loanId                 String
-  assignedByAdminId      String?
-  assignedByEmployeeId   String?
-  assignedToId           String?
-  ceasedById             String?
-  ceaseDate              DateTime?
-  actualCeaseDate        DateTime?
-  ceaseLat               Float?
-  ceaseLng               Float?
-  ceaseAddress           String?
+  id                   String    @id @default(uuid())
+  loanId               String
+  assignedByAdminId    String?
+  assignedByEmployeeId String?
+  assignedToId         String?
+  ceasedById           String?
+  ceaseDate            DateTime?
+  actualCeaseDate      DateTime?
+  ceaseLat             Float?
+  ceaseLng             Float?
+  ceaseAddress         String?
 
-  comment                String?
-  releaseDate            DateTime?
-  releaseReason          String?
-  status                 String    @default("PENDING") // PENDING, COMPLETED, RELEASED
-  priority               String    @default("MEDIUM")  // HIGH, MEDIUM, LOW
-  dueDate                DateTime?
-  assetCondition         String?
+  comment        String?
+  releaseDate    DateTime?
+  releaseReason  String?
+  releaseNotes   String?
+  status         String    @default("PENDING") // PENDING, COMPLETED, RELEASED
+  priority       String    @default("MEDIUM") // HIGH, MEDIUM, LOW
+  dueDate        DateTime?
+  assetCondition String?
 
-  releasedByAdminId      String?
-  releasedByEmployeeId   String?
+  releasedByAdminId    String?
+  releasedByEmployeeId String?
 
   // relations
-  loan                   Loan      @relation(fields: [loanId], references: [id])
-  assignedByAdmin        Admin?    @relation("AssignedByAdmin", fields: [assignedByAdminId], references: [id])
-  assignedByEmployee     Employee? @relation("AssignedByEmployee", fields: [assignedByEmployeeId], references: [id])
-  assignedTo             Employee? @relation("CeaseAssignedTo", fields: [assignedToId], references: [id])
-  ceasedBy               Employee? @relation("CeasedBy", fields: [ceasedById], references: [id])
+  loan               Loan      @relation(fields: [loanId], references: [id])
+  assignedByAdmin    Admin?    @relation("AssignedByAdmin", fields: [assignedByAdminId], references: [id])
+  assignedByEmployee Employee? @relation("AssignedByEmployee", fields: [assignedByEmployeeId], references: [id])
+  releasedByAdmin    Admin?    @relation("ReleasedByAdmin", fields: [releasedByAdminId], references: [id])
+  releasedByEmployee Employee? @relation("ReleasedByEmployee", fields: [releasedByEmployeeId], references: [id])
+  assignedTo         Employee? @relation("CeaseAssignedTo", fields: [assignedToId], references: [id])
+  ceasedBy           Employee? @relation("CeasedBy", fields: [ceasedById], references: [id])
 
-  files                  File[]    @relation("CeaseFiles")
-  releaseFiles           File[]    @relation("ReleaseFiles")
+  files        File[] @relation("CeaseFiles")
+  releaseFiles File[] @relation("ReleaseFiles")
 
   // NEW: detailed log of attempts
-  contactAttempts        CeaseContactAttempt[]
+  contactAttempts CeaseContactAttempt[]
 
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // NEW: separate attempts table
 model CeaseContactAttempt {
-  id                   String       @id @default(uuid())
-  ceaseHistoryId       String
+  id             String @id @default(uuid())
+  ceaseHistoryId String
 
-  contactAt            DateTime     @default(now())
-  contactType          ContactType  @default(CALL)
-  callOutcome          CallOutcome?
-  summary              String?
+  contactAt           DateTime     @default(now())
+  contactType         ContactType  @default(CALL)
+  callOutcome         CallOutcome?
+  summary             String?
+  spokeTo             String?
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  durationSeconds     Int?
+  ceaseHistory        CeaseHistory @relation(fields: [ceaseHistoryId], references: [id])
+  createdByAdmin      Admin?       @relation(fields: [createdByAdminId], references: [id])
+  createdByEmployee   Employee?    @relation(fields: [createdByEmployeeId], references: [id])
 
-  createdByAdminId     String?
-  createdByEmployeeId  String?
-
-  ceaseHistory         CeaseHistory @relation(fields: [ceaseHistoryId], references: [id])
-  createdByAdmin       Admin?       @relation(fields: [createdByAdminId], references: [id])
-  createdByEmployee    Employee?    @relation(fields: [createdByEmployeeId], references: [id])
-
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
-
 
 enum PaymentMode {
   ONLINE
@@ -587,15 +593,15 @@ model TwoWheelerLoan {
   loanId      String  @unique
   vehicleName String?
 
-  brandId   String
-  modelId   String
-  variantId String?
-  hypothecationTerminated Boolean @default(false)
-  terminationRequests TerminationRequest[]
-  registrationNumber String  @unique
-  chassisNumber      String  @unique
-  engineNumber       String
-  rcNumber           String?
+  brandId                 String
+  modelId                 String
+  variantId               String?
+  hypothecationTerminated Boolean              @default(false)
+  terminationRequests     TerminationRequest[]
+  registrationNumber      String               @unique
+  chassisNumber           String               @unique
+  engineNumber            String
+  rcNumber                String?
 
   brand   VehicleBrand    @relation(fields: [brandId], references: [id])
   model   VehicleModel    @relation(fields: [modelId], references: [id])
@@ -681,28 +687,27 @@ model TerminationRequest {
   status        String?
   errorMessage  String?
 
-  createdAt  DateTime @default(now())
-  createdBy  String?
-   twoWheelerLoanId String?
-  adminId    String?
-  employeeId String?
+  createdAt        DateTime @default(now())
+  createdBy        String?
+  twoWheelerLoanId String?
+  adminId          String?
+  employeeId       String?
 
-  admin    Admin?    @relation(fields: [adminId], references: [id])
-  employee Employee? @relation(fields: [employeeId], references: [id])
-  twoWheelerLoan  TwoWheelerLoan?   @relation(fields: [twoWheelerLoanId], references: [id])
-
+  admin          Admin?          @relation(fields: [adminId], references: [id])
+  employee       Employee?       @relation(fields: [employeeId], references: [id])
+  twoWheelerLoan TwoWheelerLoan? @relation(fields: [twoWheelerLoanId], references: [id])
 }
 
 model File {
-  id           String   @id @default(uuid())
-  url          String
-  publicId     String
-  resourceType String
-  format       String
-  createdAt    DateTime @default(now())
-  terminationRequest  TerminationRequest[]
+  id                 String               @id @default(uuid())
+  url                String
+  publicId           String
+  resourceType       String
+  format             String
+  createdAt          DateTime             @default(now())
+  terminationRequest TerminationRequest[]
 
-  ceaseHistories    CeaseHistory[] @relation("CeaseFiles")     // Evidence for cease events
+  ceaseHistories        CeaseHistory[] @relation("CeaseFiles") // Evidence for cease events
   releaseCeaseHistories CeaseHistory[] @relation("ReleaseFiles") // Evidence for release events
 
   photo               User[]    @relation("Photo")

@@ -1,15 +1,4 @@
 const prisma = require("../lib/prisma");
-const {
-  addMonths,
-  setDate,
-  isAfter,
-  differenceInDays,
-  getMonth,
-  getYear,
-  startOfMonth,
-  isBefore,
-  addYears,
-} = require("date-fns");
 const logAction = require("../utils/adminLogger");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 
@@ -146,219 +135,197 @@ exports.createCease = async (req, res) => {
 exports.completeCease = async (req, res) => {
   try {
     const { id } = req.params; // CeaseHistory ID
-    const { 
-      files = [], 
-      actualCeaseDate, 
+    const {
+      files = [],
+      actualCeaseDate,
       ceaseAddress,
       ceaseLat,
       ceaseLng,
-      assetCondition
+      assetCondition,
     } = req.body;
 
-    // Validation
-    if (!id) {
-      return res.status(400).json({ 
-        status: 400, 
-        message: "CeaseHistory ID required" 
-      });
-    }
+    if (!id) return res.status(400).json({ status: 400, message: "CeaseHistory ID required" });
 
-    // Check if cease record exists
-    const ceaseRecord = await prisma.ceaseHistory.findUnique({
-      where: { id },
-    });
+    // Preload once, outside the transaction
+    const ceaseRecord = await prisma.ceaseHistory.findUnique({ where: { id } });
+    if (!ceaseRecord) return res.status(404).json({ status: 404, message: "Cease record not found" });
+    if (ceaseRecord.status === "COMPLETED")
+      return res.status(400).json({ status: 400, message: "This cease record is already marked as completed" });
+    if (ceaseRecord.status === "RELEASED")
+      return res.status(400).json({ status: 400, message: "Cannot complete a released cease record" });
 
-    if (!ceaseRecord) {
-      return res.status(404).json({ 
-        status: 404, 
-        message: "Cease record not found" 
-      });
-    }
+    const loanId = ceaseRecord.loanId; // <<— use this inside the tx
+    const actorEmployeeId = req?.user?.employeeId || null;
 
-    // Check if cease is already completed or released
-    if (ceaseRecord.status === "COMPLETED") {
-      return res.status(400).json({ 
-        status: 400, 
-        message: "This cease record is already marked as completed" 
-      });
-    }
-
-    if (ceaseRecord.status === "RELEASED") {
-      return res.status(400).json({ 
-        status: 400, 
-        message: "Cannot complete a released cease record" 
-      });
-    }
+    const parsedDate = actualCeaseDate ? new Date(actualCeaseDate) : new Date();
+    const parsedLat = (ceaseLat === "" || ceaseLat == null) ? undefined : Number(ceaseLat);
+    const parsedLng = (ceaseLng === "" || ceaseLng == null) ? undefined : Number(ceaseLng);
 
     const result = await prisma.$transaction(async (tx) => {
-      // Create new files (if any)
-      let fileRecords = [];
-      if (files.length) {
-        fileRecords = await Promise.all(
-          files.map(f => tx.file.create({
+      // 1) Create new files (sequential for robustness)
+      const createdFileRecords = [];
+      if (Array.isArray(files) && files.length) {
+        for (const f of files) {
+          const rec = await tx.file.create({
             data: {
-              url: f.secure_url, publicId: f.public_id,
-              resourceType: f.resource_type, format: f.format
-            }
-          }))
-        );
+              url: f.secure_url,
+              publicId: f.public_id,
+              resourceType: f.resource_type || "image",
+              format: f.format || null,
+            },
+          });
+          createdFileRecords.push(rec);
+        }
       }
 
-      // Get current files and append
-      const current = await tx.ceaseHistory.findUnique({
+      // 2) Existing file ids
+      const existing = await tx.ceaseHistory.findUnique({
         where: { id },
-        select: { files: { select: { id: true } } }
+        select: { files: { select: { id: true } } },
       });
+      const allFileIds = [
+        ...(existing?.files ?? []).map(x => x.id),
+        ...createdFileRecords.map(x => x.id),
+      ];
 
-      // Update cease (append new files to existing)
+      // 3) Update cease
+      const updateData = {
+        status: "COMPLETED",
+        assetCondition: assetCondition || undefined,
+        actualCeaseDate: parsedDate,
+        ceaseAddress: ceaseAddress || undefined,
+        ceaseLat: parsedLat,
+        ceaseLng: parsedLng,
+        ...(actorEmployeeId ? { ceasedBy: { connect: { id: actorEmployeeId } } } : {}),
+        ...(allFileIds.length ? { files: { connect: allFileIds.map(id => ({ id })) } } : {}),
+      };
+
       const updatedCease = await tx.ceaseHistory.update({
         where: { id },
-        data: {
-          status: "COMPLETED",
-          assetCondition: assetCondition || undefined,
-          actualCeaseDate: new Date(actualCeaseDate) || new Date(),
-          ceaseAddress: ceaseAddress || undefined,
-          ceaseLat: ceaseLat || undefined,
-          ceaseLng: ceaseLng || undefined,
-          ceasedBy: { connect: { id: req.user.employeeId } },
-          files: { connect: [...current.files, ...fileRecords].map(f => ({ id: f.id })) },
-        },
-        include: { files: true, ceasedBy: true }
+        data: updateData,
+        include: { files: true, ceasedBy: true },
       });
 
-      // Log action (optional)
+      // 4) Update loan status using the preloaded loanId
+      await tx.loan.update({
+        where: { id: loanId },
+        data: { fileStatus: "CEASED" }, // or "CEASED_COMPLETED" if you prefer
+      });
+
+      // 5) Log (use scalar ids to be consistent with your createCease)
       await tx.actionLog.create({
         data: {
           action: "COMPLETE_CEASE_REQUEST",
           targetId: id,
           table: "CeaseHistory",
           metadata: updatedCease,
-          employeeId: { connect: { id: req.user.employeeId } },
+          adminId: req.user?.adminId ?? null,
+          employeeId: actorEmployeeId,
         },
       });
 
       return updatedCease;
     });
 
-    res.json({ status: 200, message: "Cease marked as completed", data: result });
+    return res.json({ status: 200, message: "Cease marked as completed", data: result });
   } catch (error) {
-    res.status(500).json({ status: 500, message: "Cease completion failed", error: error.message });
+    return res.status(500).json({ status: 500, message: "Cease completion failed", error: error.message });
   }
 };
 
+
+
+// controllers/cease.controller.js
 exports.releaseCeasedAsset = async (req, res) => {
   try {
-    const { id } = req.params; // CeaseHistory ID
-    const { releaseReason, files = [] } = req.body;
+    const { id } = req.params;
+    const { releaseReason, releaseNotes, files = [] } = req.body;
 
-    if (!id) {
-      return res.status(400).json({ 
-        status: 400, 
-        message: "CeaseHistory ID required" 
-      });
-    }
-    
-    // Check if cease record exists
-    const ceaseRecord = await prisma.ceaseHistory.findUnique({
-      where: { id },
-    });
+    if (!id) return res.status(400).json({ status: 400, message: "CeaseHistory ID required" });
 
-    if (!ceaseRecord) {
-      return res.status(404).json({ 
-        status: 404, 
-        message: "Cease record not found" 
-      });
-    }
+    const ceaseRecord = await prisma.ceaseHistory.findUnique({ where: { id } });
+    if (!ceaseRecord) return res.status(404).json({ status: 404, message: "Cease record not found" });
+    if (ceaseRecord.status === "RELEASED")
+      return res.status(400).json({ status: 400, message: "This cease record is already released" });
+    if (ceaseRecord.status !== "COMPLETED")
+      return res.status(400).json({ status: 400, message: "Only completed cease records can be released" });
+    if (!releaseReason)
+      return res.status(400).json({ status: 400, message: "Release reason is required" });
 
-    // Check if cease is already released
-    if (ceaseRecord.status === "RELEASED") {
-      return res.status(400).json({ 
-        status: 400, 
-        message: "This cease record is already released" 
-      });
-    }
-
-    // Check if cease is completed (can only release completed cease)
-    if (ceaseRecord.status !== "COMPLETED") {
-      return res.status(400).json({ 
-        status: 400, 
-        message: "Only completed cease records can be released" 
-      });
-    }
-
-    if (!releaseReason) {
-      return res.status(400).json({ 
-        status: 400, 
-        message: "Release reason is required" 
-      });
-    }
+    const isAdmin = req.user?.type === "ADMIN";
+    const adminId = isAdmin ? req.user?.adminId ?? null : null;
+    const employeeId = !isAdmin ? req.user?.employeeId ?? null : null;
 
     const result = await prisma.$transaction(async (tx) => {
-      // Create new files for release (if any)
-      let fileRecords = [];
-      if (files.length) {
-        fileRecords = await Promise.all(
-          files.map(f => tx.file.create({
+      // create release files (optional)
+      const createdFileRecords = [];
+      if (Array.isArray(files) && files.length) {
+        for (const f of files) {
+          const rec = await tx.file.create({
             data: {
-              url: f.secure_url, publicId: f.public_id,
-              resourceType: f.resource_type, format: f.format
-            }
-          }))
-        );
+              url: f.secure_url,
+              publicId: f.public_id,
+              resourceType: f.resource_type || "image",
+              format: f.format || null,
+            },
+          });
+          createdFileRecords.push(rec);
+        }
       }
 
-      // Get current releaseFiles and append
+      // existing release files
       const current = await tx.ceaseHistory.findUnique({
         where: { id },
-        select: { releaseFiles: { select: { id: true } } }
+        select: { releaseFiles: { select: { id: true } }, loanId: true },
       });
 
-      // Determine who is releasing the asset
-      let releasedByAdminId = undefined;
-      let releasedByEmployeeId = undefined;
-      
-      if (req.user.type === "ADMIN") {
-        releasedByAdminId = { connect: { id: req.user.adminId } };
-      } else if (req.user.type === "EMPLOYEE") {
-        releasedByEmployeeId = { connect: { id: req.user.employeeId } };
-      }
+      const allReleaseFileIds = [
+        ...(current?.releaseFiles ?? []).map(x => x.id),
+        ...createdFileRecords.map(x => x.id),
+      ];
 
-      // Update cease (append release files to existing)
       const updatedCease = await tx.ceaseHistory.update({
         where: { id },
         data: {
           status: "RELEASED",
           releaseDate: new Date(),
           releaseReason,
-          releasedByAdminId,
-          releasedByEmployeeId,
-          updatedAt: new Date(),
-          releaseFiles: { connect: [...current.releaseFiles, ...fileRecords].map(f => ({ id: f.id })) },
+          releaseNotes,
+          releasedByAdminId: adminId,         // <-- scalar FK
+          releasedByEmployeeId: employeeId,   // <-- scalar FK
+          ...(allReleaseFileIds.length
+            ? { releaseFiles: { connect: allReleaseFileIds.map(fid => ({ id: fid })) } }
+            : {}),
         },
-        include: { releaseFiles: true, releasedByAdmin: true, releasedByEmployee: true }
+        include: { releaseFiles: true }, // no releasedByAdmin/Employee includes (not in schema)
       });
 
-      // Set loan file status to RELEASED
-      await tx.loan.update({ where: { id: updatedCease.loanId }, data: { fileStatus: "RELEASED" } });
+      // update loan status
+      await tx.loan.update({
+        where: { id: current.loanId },
+        data: { fileStatus: "RELEASED" },
+      });
 
-      // Log action
       await tx.actionLog.create({
         data: {
           action: "RELEASE_CEASED_ASSET",
           targetId: id,
           table: "CeaseHistory",
           metadata: updatedCease,
+          adminId,
+          employeeId,
         },
       });
 
       return updatedCease;
     });
 
-    res.json({ status: 200, message: "Asset released", data: result });
+    return res.json({ status: 200, message: "Asset released", data: result });
   } catch (error) {
-    res.status(500).json({ status: 500, message: "Release failed", error: error.message });
+    return res.status(500).json({ status: 500, message: "Release failed", error: error.message });
   }
 };
+
 
 // Create a contact attempt for a cease
 exports.addCeaseContactAttempt = async (req, res) => {
@@ -370,7 +337,6 @@ exports.addCeaseContactAttempt = async (req, res) => {
       callOutcome,          // "PICKED" | "UNREACHABLE" | "SWITCHED_OFF" | "NOT_ANSWERED" | null
       summary,              // free text
       spokeTo,              // free text: who you spoke to
-      phoneUsed,            // number used
       durationSeconds,      // call duration if any
     } = req.body;
 
@@ -388,7 +354,6 @@ exports.addCeaseContactAttempt = async (req, res) => {
         callOutcome: callOutcome || null,
         summary: summary || null,
         spokeTo: spokeTo || null,
-        phoneUsed: phoneUsed || null,
         durationSeconds: durationSeconds || null,
         createdByAdminId: adminId,
         createdByEmployeeId: employeeId,
@@ -484,7 +449,12 @@ exports.getCeaseById = async (req, res) => {
         assignedByEmployee: true,
         assignedTo: true,
         ceasedBy: true,
-        contactAttempts: true,
+        contactAttempts: {
+          include: {
+            createdByAdmin: true,
+            createdByEmployee: true,
+          },
+        },
       },
     });
     if (!cease)
