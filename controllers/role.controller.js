@@ -76,9 +76,13 @@ exports.createRole = async (req, res) => {
 // Update a role
 exports.updateRole = async (req, res) => {
   const { name, description, permissions } = req.body;
+  const roleId = parseInt(req.params.id, 10); // Ensure the ID is an integer
+  if (isNaN(roleId)) {
+    return res.status(400).json({ error: "Invalid role ID" });
+  }
   try {
-    await prisma.role.update({
-      where: { id: req.params.id },
+    const updatedRole = await prisma.role.update({
+      where: { id: roleId },
       data: { name, description, permissions },
     });
     await logAction({
@@ -86,10 +90,10 @@ exports.updateRole = async (req, res) => {
       loginActivityId: req.user.activity,
       action: "UPDATED ROLE",
       table: "Role",
-      targetId: req.params.id,
+      targetId: updatedRole.id,
       metadata: { name, description, permissions },
     });
-    res.status(200).json({ message: "Employee Updated" });
+    res.status(200).json({ message: "Role Updated", data: updatedRole });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

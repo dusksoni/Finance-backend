@@ -1,6 +1,7 @@
 const prisma = require("../lib/prisma");
 const twilio = require("twilio");
 const logAction = require("../utils/adminLogger");
+const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
@@ -297,6 +298,68 @@ exports.getAllUsers = async (req, res) => {
   } catch (err) {
     console.error("Get All Users Error:", err.message);
     res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getUserActivityLogs = async (req, res) => {
+  try {
+    const { id: userId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return res.status(404).json({ status: 404, message: "User not found" });
+    }
+
+    if (req.user?.type === "EMPLOYEE") {
+      const allowed = await checkVerifyPermission(req.user, "USER_ACTIVITY_VIEW", {
+        throwError: false,
+      });
+      if (!allowed) {
+        return res.status(403).json({ status: 403, message: "Access denied" });
+      }
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [logs, total] = await Promise.all([
+      prisma.actionLog.findMany({
+        where: { targetId: userId, table: "User" },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: Number(limit),
+        select: {
+          id: true,
+          action: true,
+          metadata: true,
+          createdAt: true,
+          admin: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          employee: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      }),
+      prisma.actionLog.count({ where: { targetId: userId, table: "User" } }),
+    ]);
+
+    res.json({
+      status: 200,
+      data: logs,
+      total,
+      page: Number(page),
+      limit: Number(limit),
+    });
+  } catch (error) {
+    console.error("Get user activity logs error:", error);
+    res.status(500).json({ status: 500, message: "Failed to fetch activity logs", error: error.message });
   }
 };
 

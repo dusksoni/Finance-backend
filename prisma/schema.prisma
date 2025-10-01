@@ -98,6 +98,9 @@ model Employee {
   name     String
   email    String @unique
   password String
+  photoUrlId String?
+
+  photoUrl      File? @relation("Photo", fields: [photoUrlId], references: [id])
 
   roleId String?
   role   Role?   @relation(fields: [roleId], references: [id])
@@ -713,4 +716,5 @@ model File {
   photo               User[]    @relation("Photo")
   proofOfIncomeImages User[]    @relation("ProofOfIncomeImages")
   photoIDImages       PhotoID[] @relation("PhotoIDImages")
+  employees         Employee[] @relation("Photo")
 }

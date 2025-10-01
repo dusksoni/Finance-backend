@@ -2,7 +2,38 @@ const prisma = require("../lib/prisma");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const logAction = require("../utils/adminLogger");
+const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const SECRET = process.env.SECRET_KEY;
+
+const selectEmployeeProfile = {
+  id: true,
+  name: true,
+  email: true,
+  isBlocked: true,
+  createdAt: true,
+  updatedAt: true,
+  role: {
+    select: {
+      id: true,
+      name: true,
+    },
+  },
+  region: {
+    select: {
+      id: true,
+      name: true,
+    },
+  },
+};
+
+const resolveEmployeeId = (req) => {
+  if (req?.user?.type === "EMPLOYEE" && req.user?.employeeId) {
+    return req.user.employeeId;
+  }
+  if (req.params?.id) return req.params.id;
+  if (req.body?.id) return req.body.id;
+  return null;
+};
 
 // 🔍 Get employee by ID
 exports.getEmployeeById = async (req, res) => {
@@ -16,6 +47,7 @@ exports.getEmployeeById = async (req, res) => {
         name: true,
         email: true,
         isBlocked: true,
+        photoUrl: true,
         region: {
           select: {
             id: true,
@@ -47,21 +79,188 @@ exports.getEmployeeById = async (req, res) => {
   }
 };
 
+exports.getSelfProfile = async (req, res) => {
+  try {
+    const employeeId = resolveEmployeeId(req);
+    if (!employeeId) {
+      return res.status(400).json({
+        status: 400,
+        message: "Unable to resolve employee id",
+      });
+    }
+
+    const employee = await prisma.employee.findUnique({
+      where: {
+        id: employeeId,
+        isDeleted: false,
+      },
+      select: selectEmployeeProfile,
+    });
+
+    if (!employee) {
+      return res
+        .status(404)
+        .json({ status: 404, message: "Employee not found" });
+    }
+
+    res.json({ status: 200, data: employee });
+  } catch (error) {
+    console.error("Employee self profile error:", error);
+    res.status(500).json({
+      status: 500,
+      message: "Failed to fetch employee profile",
+      error: error.message,
+    });
+  }
+};
+
+exports.updateSelfProfile = async (req, res) => {
+  try {
+    const employeeId = resolveEmployeeId(req);
+    if (!employeeId) {
+      return res.status(400).json({
+        success: false,
+        message: "Unable to resolve employee id",
+      });
+    }
+
+    const { name, email } = req.body;
+
+    const employee = await prisma.employee.findUnique({
+      where: {
+        id: employeeId,
+        isDeleted: false,
+      },
+    });
+
+    if (!employee) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Employee not found" });
+    }
+
+    if (email && email !== employee.email) {
+      const existingEmployee = await prisma.employee.findFirst({
+        where: {
+          email,
+          NOT: { id: employeeId },
+          isDeleted: false,
+        },
+      });
+
+      if (existingEmployee) {
+        return res.status(400).json({
+          success: false,
+          message: "Email is already in use",
+        });
+      }
+    }
+
+    const updated = await prisma.employee.update({
+      where: { id: employeeId },
+      data: {
+        ...(name ? { name } : {}),
+        ...(email ? { email } : {}),
+      },
+      select: selectEmployeeProfile,
+    });
+
+    await logAction({
+      employeeId,
+      loginActivityId: req.user?.loginActivityId,
+      action: "UPDATED_SELF_PROFILE",
+      table: "Employee",
+      targetId: employeeId,
+      metadata: {
+        ...(name ? { name } : {}),
+        ...(email ? { email } : {}),
+      },
+    });
+
+    res.json({ status: 200, message: "Profile updated", data: updated });
+  } catch (error) {
+    console.error("Update self profile error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update profile",
+      error: error.message,
+    });
+  }
+};
+
+exports.updateSelfPassword = async (req, res) => {
+  try {
+    const employeeId = resolveEmployeeId(req);
+    if (!employeeId) {
+      return res.status(400).json({
+        success: false,
+        message: "Unable to resolve employee id",
+      });
+    }
+
+    const { password } = req.body;
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    const employee = await prisma.employee.findUnique({
+      where: {
+        id: employeeId,
+        isDeleted: false,
+      },
+    });
+
+    if (!employee) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Employee not found" });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    await prisma.employee.update({
+      where: { id: employeeId },
+      data: { password: hashedPassword },
+    });
+
+    await logAction({
+      employeeId,
+      loginActivityId: req.user?.loginActivityId,
+      action: "UPDATED_SELF_PASSWORD",
+      table: "Employee",
+      targetId: employeeId,
+    });
+
+    res.json({ success: true, message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Employee password update error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update password",
+      error: error.message,
+    });
+  }
+};
+
 // CREATE EMPLOYEE
 exports.createEmployee = async (req, res) => {
   try {
-    const { name, email, password, roleId, regionId, branchId } = req.body;
+    const { name, email, password, roleId, regionId, branchId, photo } =
+      req.body;
 
     const existingEmployee = await prisma.employee.findUnique({
       where: { email, isDeleted: false },
     });
     if (existingEmployee)
-      return res
-        .status(400)
-        .json({
-          error: "Employee already exists with this email or phone number",
-          status: 400,
-        });
+      return res.status(400).json({
+        error: "Employee already exists with this email or phone number",
+        status: 400,
+      });
     if (!roleId)
       return res
         .status(400)
@@ -74,7 +273,7 @@ exports.createEmployee = async (req, res) => {
       : null;
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
+    const profilePhoto = photo ? await createFiles([photo]) : [];
     const employee = await prisma.employee.create({
       data: {
         name,
@@ -86,8 +285,11 @@ exports.createEmployee = async (req, res) => {
         state: region ? { connect: { id: region.stateId } } : null,
         branch: branchId ? { connect: { id: branchId } } : undefined,
         admin: { connect: { id: req.user.adminId } },
+        photoUrl: profilePhoto.length
+          ? { connect: { id: profilePhoto[0].id } }
+          : null,
       },
-      include: { role: true, region: true },
+      include: { role: true, region: true, branch: true, photo: true },
     });
 
     await logAction({
@@ -109,8 +311,17 @@ exports.createEmployee = async (req, res) => {
 exports.putEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, roleId, regionId, firstName, lastName, email, phone , branchId } =
-      req.body;
+    const {
+      name,
+      roleId,
+      regionId,
+      firstName,
+      lastName,
+      email,
+      phone,
+      branchId,
+      photo,
+    } = req.body;
 
     const employee = await prisma.employee.findUnique({ where: { id } });
     if (!employee) return res.status(404).json({ error: "Employee not found" });
@@ -124,6 +335,13 @@ exports.putEmployee = async (req, res) => {
       email,
       phone,
       branch: branchId ? { connect: { id: branchId } } : undefined,
+      ...(photo?.secure_url
+        ? {
+            photoUrl: photo.secure_url,
+            photoPublicId: photo.public_id,
+            photoFormat: photo.format,
+          }
+        : {}),
     };
 
     const updated = await prisma.employee.update({
@@ -154,16 +372,16 @@ exports.updatePassword = async (req, res) => {
 
     // Check if employee exists
     const employee = await prisma.employee.findUnique({
-      where: { 
+      where: {
         id: req.params.id,
-        isDeleted: false
+        isDeleted: false,
       },
     });
 
     if (!employee) {
       return res.status(404).json({
         success: false,
-        message: 'Employee not found',
+        message: "Employee not found",
       });
     }
 
@@ -181,22 +399,22 @@ exports.updatePassword = async (req, res) => {
     await prisma.actionLog.create({
       data: {
         adminId: req.user.id, // The admin who performed this action
-        action: 'UPDATE_PASSWORD',
+        action: "UPDATE_PASSWORD",
         targetId: employee.id,
-        table: 'Employee',
-        metadata: { employeeId: employee.id }
-      }
+        table: "Employee",
+        metadata: { employeeId: employee.id },
+      },
     });
 
     res.status(200).json({
       success: true,
-      message: 'Password updated successfully',
+      message: "Password updated successfully",
     });
   } catch (error) {
-    console.error('Update password error:', error);
+    console.error("Update password error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update password',
+      message: "Failed to update password",
       error: error.message,
     });
   }
@@ -224,9 +442,11 @@ exports.deleteEmployee = async (req, res) => {
       metadata: { name: employee.name, email: employee.email },
     });
 
-    res.status(200).json({ message: "Employee deleted successfully", status: 200 });
+    res
+      .status(200)
+      .json({ message: "Employee deleted successfully", status: 200 });
   } catch (err) {
-    res.status(500).json({ error: err.message, status: 500});
+    res.status(500).json({ error: err.message, status: 500 });
   }
 };
 
@@ -342,32 +562,58 @@ exports.getActivityLogs = async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
 
-    // Check if employee exists
+    const employeeId =
+      req.params.id || req.query.employeeId || resolveEmployeeId(req);
+
+    if (!employeeId) {
+      return res.status(400).json({
+        success: false,
+        message: "Unable to resolve employee id",
+      });
+    }
+
     const employee = await prisma.employee.findUnique({
-      where: { 
-        id: req.user.employeeId,
-        isDeleted: false
+      where: {
+        id: employeeId,
+        isDeleted: false,
       },
     });
 
     if (!employee) {
       return res.status(404).json({
         success: false,
-        message: 'Employee not found',
+        message: "Employee not found",
       });
+    }
+
+    const isSelf =
+      req.user?.type === "EMPLOYEE" && req.user?.employeeId === employeeId;
+
+    if (!isSelf && req.user?.type === "EMPLOYEE") {
+      const allowed = await checkVerifyPermission(
+        req.user,
+        "EMPLOYEE_ACTIVITY_VIEW",
+        { throwError: false }
+      );
+
+      if (!allowed) {
+        return res
+          .status(403)
+          .json({ success: false, message: "Access denied" });
+      }
     }
 
     // Get activity logs
     const logs = await prisma.actionLog.findMany({
-      where: { employeeId: req.params.id },
-      orderBy: { createdAt: 'desc' },
-      skip: parseInt(skip),
-      take: parseInt(limit),
+      where: { employeeId },
+      orderBy: { createdAt: "desc" },
+      skip: Number(skip),
+      take: Number(limit),
     });
 
     // Get total count
     const total = await prisma.actionLog.count({
-      where: { employeeId: req.params.id },
+      where: { employeeId },
     });
 
     res.status(200).json({
@@ -379,10 +625,10 @@ exports.getActivityLogs = async (req, res) => {
       data: logs,
     });
   } catch (error) {
-    console.error('Get activity logs error:', error);
+    console.error("Get activity logs error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to get activity logs',
+      message: "Failed to get activity logs",
       error: error.message,
     });
   }
@@ -394,32 +640,41 @@ exports.getLoginHistory = async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
 
-    // Check if employee exists
+    const employeeId =
+      req.params.id || req.query.employeeId || resolveEmployeeId(req);
+
+    if (!employeeId) {
+      return res.status(400).json({
+        success: false,
+        message: "Unable to resolve employee id",
+      });
+    }
+
     const employee = await prisma.employee.findUnique({
-      where: { 
-        id: req.user.employeeId,
-        isDeleted: false
+      where: {
+        id: employeeId,
+        isDeleted: false,
       },
     });
 
     if (!employee) {
       return res.status(404).json({
         success: false,
-        message: 'Employee not found',
+        message: "Employee not found",
       });
     }
 
     // Get login history
     const loginHistory = await prisma.loginActivity.findMany({
-      where: { employeeId: req.params.id },
-      orderBy: { loggedInAt: 'desc' },
-      skip: parseInt(skip),
-      take: parseInt(limit),
+      where: { employeeId },
+      orderBy: { loggedInAt: "desc" },
+      skip: Number(skip),
+      take: Number(limit),
     });
 
     // Get total count
     const total = await prisma.loginActivity.count({
-      where: { employeeId: req.params.id },
+      where: { employeeId },
     });
 
     res.status(200).json({
@@ -431,10 +686,10 @@ exports.getLoginHistory = async (req, res) => {
       data: loginHistory,
     });
   } catch (error) {
-    console.error('Get login history error:', error);
+    console.error("Get login history error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to get login history',
+      message: "Failed to get login history",
       error: error.message,
     });
   }
@@ -447,26 +702,26 @@ exports.getUsers = async (req, res) => {
 
     // Check if employee exists
     const employee = await prisma.employee.findUnique({
-      where: { 
+      where: {
         id: req.user.employeeId,
-        isDeleted: false
+        isDeleted: false,
       },
     });
 
     if (!employee) {
       return res.status(404).json({
         success: false,
-        message: 'Employee not found',
+        message: "Employee not found",
       });
     }
 
     // Get users
     const users = await prisma.user.findMany({
-      where: { 
+      where: {
         employeeId: req.params.id,
-        isBlocked: false
+        isBlocked: false,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       skip: parseInt(skip),
       take: parseInt(limit),
       select: {
@@ -479,17 +734,17 @@ exports.getUsers = async (req, res) => {
         loans: {
           select: {
             id: true,
-            fileStatus: true
-          }
-        }
-      }
+            fileStatus: true,
+          },
+        },
+      },
     });
 
     // Get total count
     const total = await prisma.user.count({
-      where: { 
+      where: {
         employeeId: req.params.id,
-        isBlocked: false
+        isBlocked: false,
       },
     });
 
@@ -502,10 +757,10 @@ exports.getUsers = async (req, res) => {
       data: users,
     });
   } catch (error) {
-    console.error('Get users error:', error);
+    console.error("Get users error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to get users',
+      message: "Failed to get users",
       error: error.message,
     });
   }
@@ -523,21 +778,21 @@ exports.getLoans = async (req, res) => {
 
     // Check if employee exists
     const employee = await prisma.employee.findUnique({
-      where: { 
+      where: {
         id: req.user.employeeId,
-        isDeleted: false
+        isDeleted: false,
       },
     });
 
     if (!employee) {
       return res.status(404).json({
         success: false,
-        message: 'Employee not found',
+        message: "Employee not found",
       });
     }
 
     const filters = { employeeId: req.params.id };
-    
+
     // Add status filter if provided
     if (status) {
       filters.fileStatus = status;
@@ -546,7 +801,7 @@ exports.getLoans = async (req, res) => {
     // Get loans
     const loans = await prisma.loan.findMany({
       where: filters,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       skip: parseInt(skip),
       take: parseInt(limit),
       select: {
@@ -560,16 +815,16 @@ exports.getLoans = async (req, res) => {
             id: true,
             firstName: true,
             lastName: true,
-            phone: true
-          }
+            phone: true,
+          },
         },
         loanType: {
           select: {
             id: true,
-            name: true
-          }
-        }
-      }
+            name: true,
+          },
+        },
+      },
     });
 
     // Get total count
@@ -586,10 +841,10 @@ exports.getLoans = async (req, res) => {
       data: loans,
     });
   } catch (error) {
-    console.error('Get loans error:', error);
+    console.error("Get loans error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to get loans',
+      message: "Failed to get loans",
       error: error.message,
     });
   }

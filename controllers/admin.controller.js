@@ -3,6 +3,15 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const SECRET = process.env.SECRET_KEY;
 
+const resolveAdminId = (req) => {
+  if (req?.user?.type === "ADMIN" && req.user?.adminId) {
+    return req.user.adminId;
+  }
+  if (req.params?.id) return req.params.id;
+  if (req.body?.id) return req.body.id;
+  return null;
+};
+
 exports.adminLogin = async (req, res) => {
   const { email, password, deviceName, deviceType, latitude, longitude } =
     req.body;
@@ -27,6 +36,7 @@ exports.adminLogin = async (req, res) => {
         latitude: latitude === "" ? null : parseFloat(latitude),
         longitude: longitude === "" ? null : parseFloat(longitude),
         ipAddress: ip,
+        loggedInAt: new Date().toISOString(),
       },
     });
     
@@ -41,15 +51,54 @@ exports.adminLogin = async (req, res) => {
   }
 };
 
+exports.getAdminProfile = async (req, res) => {
+  try {
+    const adminId = resolveAdminId(req);
+    if (!adminId) {
+      return res.status(400).json({
+        status: 400,
+        message: "Unable to resolve admin id",
+      });
+    }
+
+    const admin = await prisma.admin.findUnique({
+      where: { id: adminId },
+    });
+
+    if (!admin) {
+      return res.status(404).json({
+        status: 404,
+        message: "Admin not found",
+      });
+    }
+
+    const [firstName = "", ...rest] = (admin.name || "").trim().split(" ");
+    const lastName = rest.join(" ").trim();
+
+    res.status(200).json({
+      status: 200,
+      data: {
+        id: admin.id,
+        firstName,
+        lastName,
+        email: admin.email,
+        createdAt: admin.createdAt,
+        updatedAt: admin.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Get admin profile error:", error);
+    res.status(500).json({
+      status: 500,
+      message: "Failed to fetch admin profile",
+      error: error.message,
+    });
+  }
+};
+
 exports.updateAdmin = async (req, res) => {
   try {
-    const {
-      firstName,
-      lastName,
-      email,
-      phone,
-      isBlocked
-    } = req.body;
+    const { firstName, lastName, email } = req.body;
 
     // Check if admin exists
     let admin = await prisma.admin.findUnique({
@@ -66,14 +115,11 @@ exports.updateAdmin = async (req, res) => {
       });
     }
 
-    // Check if email or phone is already taken by another admin
-    if (email || phone) {
+    // Check if email is already taken by another admin
+    if (email) {
       const existingAdmin = await prisma.admin.findFirst({
         where: {
-          OR: [
-            email ? { email } : {},
-            phone ? { phone } : {},
-          ],
+          email,
           NOT: {
             id: req.params.id,
           },
@@ -84,7 +130,7 @@ exports.updateAdmin = async (req, res) => {
       if (existingAdmin) {
         return res.status(400).json({
           success: false,
-          message: 'Email or phone number is already taken',
+          message: 'Email is already taken',
         });
       }
     }
@@ -93,18 +139,19 @@ exports.updateAdmin = async (req, res) => {
     const updatedAdmin = await prisma.admin.update({
       where: { id: req.params.id },
       data: {
-        firstName,
-        lastName,
-        email,
-        phone,
-        isBlocked: isBlocked !== undefined ? isBlocked : admin.isBlocked
+        ...(firstName || lastName
+          ? {
+              name: [firstName, lastName].filter(Boolean).join(" ").trim() || admin.name,
+            }
+          : {}),
+        ...(email ? { email } : {}),
       },
     });
 
     // Log the action
     await prisma.actionLog.create({
       data: {
-        adminId: req.user.id, // The admin who performed this action
+        adminId: req.user?.adminId || req.user?.id || admin.id,
         action: 'UPDATE',
         targetId: updatedAdmin.id,
         table: 'Admin',
@@ -159,7 +206,7 @@ exports.updateAdminPassword = async (req, res) => {
     // Log the action
     await prisma.actionLog.create({
       data: {
-        adminId: req.user.id, // The admin who performed this action
+        adminId: req.user?.adminId || req.user?.id || admin.id,
         action: 'UPDATE_PASSWORD',
         targetId: admin.id,
         table: 'Admin',
@@ -186,11 +233,19 @@ exports.getActivityLogs = async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
 
+    const adminId = resolveAdminId(req);
+
+    if (!adminId) {
+      return res.status(400).json({
+        success: false,
+        message: "Unable to resolve admin id",
+      });
+    }
+
     // Check if admin exists
     const admin = await prisma.admin.findUnique({
-      where: { 
-        id: req.params.id,
-        isDeleted: false
+      where: {
+        id: adminId,
       },
     });
 
@@ -203,7 +258,7 @@ exports.getActivityLogs = async (req, res) => {
 
     // Get activity logs
     const logs = await prisma.actionLog.findMany({
-      where: { adminId: req.params.id },
+      where: { adminId },
       orderBy: { createdAt: 'desc' },
       skip: parseInt(skip),
       take: parseInt(limit),
@@ -211,7 +266,7 @@ exports.getActivityLogs = async (req, res) => {
 
     // Get total count
     const total = await prisma.actionLog.count({
-      where: { adminId: req.params.id },
+      where: { adminId },
     });
 
     res.status(200).json({
@@ -237,11 +292,19 @@ exports.getLoginHistory = async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
 
+    const adminId = resolveAdminId(req);
+
+    if (!adminId) {
+      return res.status(400).json({
+        success: false,
+        message: "Unable to resolve admin id",
+      });
+    }
+
     // Check if admin exists
     const admin = await prisma.admin.findUnique({
-      where: { 
-        id: req.params.id,
-        isDeleted: false
+      where: {
+        id: adminId,
       },
     });
 
@@ -254,7 +317,7 @@ exports.getLoginHistory = async (req, res) => {
 
     // Get login history
     const loginHistory = await prisma.loginActivity.findMany({
-      where: { adminId: req.params.id },
+      where: { adminId },
       orderBy: { loggedInAt: 'desc' },
       skip: parseInt(skip),
       take: parseInt(limit),
@@ -262,7 +325,7 @@ exports.getLoginHistory = async (req, res) => {
 
     // Get total count
     const total = await prisma.loginActivity.count({
-      where: { adminId: req.params.id },
+      where: { adminId },
     });
 
     res.status(200).json({
@@ -313,6 +376,8 @@ exports.getEmployees = async (req, res) => {
         id: true,
         name: true,
         isBlocked: true,
+        photoUrl: true,
+        photoFormat: true,
         region: {
           select: {
             id: true,
