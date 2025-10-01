@@ -634,10 +634,6 @@ exports.listLoans = async (req, res) => {
             { phone: { contains: search } },
           ],
         }),
-        details: {
-          ...(filterStateId && { stateId: filterStateId }),
-          ...(filterCityId && { cityId: filterCityId }),
-        },
       },
     };
 
@@ -648,11 +644,7 @@ exports.listLoans = async (req, res) => {
         take: parseInt(limit),
         orderBy: { createdAt: "desc" },
         include: {
-          user: {
-            include: {
-              details: true,
-            },
-          },
+          user: true,
           payments: true,
           loanType: true,
           twoWheelerLoan: true,

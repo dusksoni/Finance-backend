@@ -500,7 +500,7 @@ exports.getEmiById = async (req, res) => {
     return res.json({
       data: {
         emiId: inst.id,
-
+        payment: inst.payments,
         loanId: inst.loanId,
         paymentFor: inst.paymentFor,
         paymentDate: inst.paymentDate,
@@ -901,11 +901,13 @@ exports.getUnverifiedPayments = async (req, res) => {
     const { page = 1, limit = 20, loanId, userId, status } = req.query;
 
     const where = {
-      verified: false,
+      // verified: false,
       ...(loanId ? { loanId } : {}),
       ...(userId ? { loan: { is: { userId } } } : {}),
-      ...(status ? { status } : { status: "VERIFICATION_PENDING" }),
+      ...(status ? { status: status } : {}),
     };
+
+    console.log(where);
 
     const payments = await prisma.payment.findMany({
       where,
@@ -930,8 +932,8 @@ exports.getUnverifiedPayments = async (req, res) => {
           },
         },
         emi: true,
-        admin: { select: { name: true } },
-        employee: { select: { name: true } },
+        admin: true,
+        employee: true,
       },
     });
 
@@ -1148,7 +1150,7 @@ exports.postForeclosurePayment = async (req, res) => {
     if (!loan) return res.status(404).json({ error: "Loan not found" });
 
     const today = new Date();
-    const rMonthly = ((Number(loan.interestRate) || 0) / 100) / 12;
+    const rMonthly = (Number(loan.interestRate) || 0) / 100 / 12;
 
     // Remaining EMIs sorted by due date
     const remaining = loan.emi
@@ -1211,7 +1213,7 @@ exports.postForeclosurePayment = async (req, res) => {
       return {
         emiId: e.id,
         paymentFor: e.paymentFor,
-        emiDueOnly: r2(emiDueOnly),           // P+I still due for this EMI
+        emiDueOnly: r2(emiDueOnly), // P+I still due for this EMI
         fineAssessed: r2(fineAssessed),
         finePaidAlready: r2(finePaidAlready),
         fineDue: r2(fineDue),
@@ -1234,7 +1236,10 @@ exports.postForeclosurePayment = async (req, res) => {
     });
 
     // Build a schedule to expose "interest saved" for each future EMI
-    let openingBalance = futurePrincipalRows.reduce((s, x) => s + x.principalDue, 0);
+    let openingBalance = futurePrincipalRows.reduce(
+      (s, x) => s + x.principalDue,
+      0
+    );
     openingBalance = r2(openingBalance);
 
     let futureInterestTotal = 0;
@@ -1248,8 +1253,8 @@ exports.postForeclosurePayment = async (req, res) => {
         paymentFor: row.paymentFor,
         openingBalance: r2(openingBalance),
         principalCollectedNow: principalPortion, // collected now
-        interestSaved: interestPortion,          // NOT collected (saved)
-        hypotheticalEmi,                         // what would have been paid
+        interestSaved: interestPortion, // NOT collected (saved)
+        hypotheticalEmi, // what would have been paid
       };
 
       futureInterestTotal = r2(futureInterestTotal + interestPortion);
@@ -1328,11 +1333,11 @@ exports.postForeclosurePayment = async (req, res) => {
               coveredEmiIds,
               // Totals for UI summaries
               totals: {
-                principalCollectedNow: totalPrincipalOutstanding,        // overdues + future principal
-                interestCollectedNow: overdueInterestOutstanding,        // only overdues
-                interestSaved: futureInterestTotal,                      // only futures
+                principalCollectedNow: totalPrincipalOutstanding, // overdues + future principal
+                interestCollectedNow: overdueInterestOutstanding, // only overdues
+                interestSaved: futureInterestTotal, // only futures
                 fineCollectedNow: overdueFineDueTotal,
-                amountAppliedNow: foreclosureAmount,                     // = principal + interest(overdue) + fines
+                amountAppliedNow: foreclosureAmount, // = principal + interest(overdue) + fines
               },
             },
             ...(req.user?.type === "ADMIN"
@@ -1494,7 +1499,6 @@ exports.postForeclosurePayment = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
-
 
 exports.reversePayment = async (req, res) => {
   try {
@@ -1698,7 +1702,9 @@ exports.getPaymentInvoice = async (req, res) => {
         branch: loan.branch?.name || "-",
       },
       handledBy: payment.admin
-        ? payment.admin.name
+        ? [payment.admin.firstName, payment.admin.lastName]
+            .filter(Boolean)
+            .join(" ")
         : payment.employee
         ? payment.employee.name
         : "-",

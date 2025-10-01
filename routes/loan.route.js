@@ -45,7 +45,7 @@ router.get(
   paymentController.getEmiById
 );
 router.get(
-  "/payment/:id",
+  "/payment/getbyid/:id",
   authMiddleware,
   onlyAdminOrEmployee,
   paymentController.getPaymentById

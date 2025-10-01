@@ -76,10 +76,8 @@ exports.createRole = async (req, res) => {
 // Update a role
 exports.updateRole = async (req, res) => {
   const { name, description, permissions } = req.body;
-  const roleId = parseInt(req.params.id, 10); // Ensure the ID is an integer
-  if (isNaN(roleId)) {
-    return res.status(400).json({ error: "Invalid role ID" });
-  }
+  const roleId = req.params.id; // Ensure the ID is an integer
+  
   try {
     const updatedRole = await prisma.role.update({
       where: { id: roleId },
