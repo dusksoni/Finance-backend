@@ -14,7 +14,7 @@ const { getAllUsers } = require("../controllers/user.controller");
 const { getEmployeeById } = require("../controllers/employee.controller");
 
 router.post("/login", adminLogin);
-router.get("/employees", authMiddleware, adminOnly, getEmployees);
+router.get("/employees", authMiddleware, onlyAdminOrEmployee, getEmployees);
 router.get("/employees/:id", authMiddleware, onlyAdminOrEmployee, getEmployeeById);
 router.get("/users", authMiddleware, adminOnly, getAllUsers);
 router.get("/me", authMiddleware, adminOnly, getAdminProfile);

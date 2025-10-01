@@ -268,29 +268,30 @@ exports.createEmployee = async (req, res) => {
 
     const region = regionId
       ? await prisma.region.findUnique({
-          where: { id: regionId, isDeleted: false },
+          where: { id: regionId },
         })
       : null;
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const profilePhoto = photo ? await createFiles([photo]) : [];
-    const employee = await prisma.employee.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        role: { connect: { id: roleId } },
-        region: regionId ? { connect: { id: regionId } } : undefined,
-        city: region ? { connect: { id: region.cityId } } : null,
-        state: region ? { connect: { id: region.stateId } } : null,
-        branch: branchId ? { connect: { id: branchId } } : undefined,
-        admin: { connect: { id: req.user.adminId } },
-        photoUrl: profilePhoto.length
-          ? { connect: { id: profilePhoto[0].id } }
-          : null,
-      },
-      include: { role: true, region: true, branch: true, photo: true },
-    });
+    const data = {
+      name,
+      email,
+      password: hashedPassword,
+      admin: { connect: { id: req.user.adminId } },
+      ...(regionId ? { region: { connect: { id: regionId } } } : {}),
+      ...(roleId ? { role: { connect: { id: roleId } } } : {}),
+      ...(branchId ? { branch: { connect: { id: branchId } } } : {}),
+      ...(region ? { city: { connect: { id: region.cityId } } } : {}),
+      ...(region ? { state: { connect: { id: region.stateId } } } : {}),
+      ...(profilePhoto?.length
+        ? { photoUrl: { connect: { id: profilePhoto[0].id } } }
+        : {}),
+    };
+
+    // IMPORTANT: Do NOT spread req.body if it includes *_id or *_Id etc.
+    // e.g. avoid: data: { ...req.body, ...data }
+    const employee = await prisma.employee.create({ data });
 
     await logAction({
       adminId: req.user.adminId,

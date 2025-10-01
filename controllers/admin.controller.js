@@ -377,7 +377,6 @@ exports.getEmployees = async (req, res) => {
         name: true,
         isBlocked: true,
         photoUrl: true,
-        photoFormat: true,
         region: {
           select: {
             id: true,
