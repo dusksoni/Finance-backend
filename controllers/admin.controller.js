@@ -228,8 +228,11 @@ exports.updateAdminPassword = async (req, res) => {
 
 exports.getActivityLogs = async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
-    const skip = (page - 1) * limit;
+    const { page = 1, limit = 10, logId, loginActivityId } = req.query;
+    const parsedPage = Number(page);
+    const parsedLimit = Number(limit);
+    const pageNumber = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
+    const limitNumber = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.floor(parsedLimit) : 10;
 
     const adminId = resolveAdminId(req);
 
@@ -254,25 +257,46 @@ exports.getActivityLogs = async (req, res) => {
       });
     }
 
-    // Get activity logs
-    const logs = await prisma.actionLog.findMany({
-      where: { adminId },
+    const where = {
+      adminId,
+    };
+
+    if (logId) {
+      where.id = logId;
+    }
+
+    if (loginActivityId) {
+      where.loginActivityId = loginActivityId;
+    }
+
+    const queryOptions = {
+      where,
       orderBy: { createdAt: 'desc' },
-      skip: parseInt(skip),
-      take: parseInt(limit),
+      include: { loginActivity: true },
+    };
+
+    if (logId) {
+      queryOptions.skip = 0;
+      queryOptions.take = 1;
+    } else {
+      queryOptions.skip = Math.max(0, (pageNumber - 1) * limitNumber);
+      queryOptions.take = Math.max(1, limitNumber);
+    }
+
+    const logs = await prisma.actionLog.findMany(queryOptions);
+
+    const total = await prisma.actionLog.count({
+      where,
     });
 
-    // Get total count
-    const total = await prisma.actionLog.count({
-      where: { adminId },
-    });
+    const totalPages = limitNumber ? Math.ceil(total / limitNumber) || 1 : 1;
 
     res.status(200).json({
       success: true,
       count: logs.length,
       total,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page),
+      totalPages,
+      currentPage: pageNumber,
       data: logs,
     });
   } catch (error) {
@@ -285,10 +309,16 @@ exports.getActivityLogs = async (req, res) => {
   }
 };
 
+
+
 exports.getLoginHistory = async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
-    const skip = (page - 1) * limit;
+    const { page = 1, limit = 10, loginId } = req.query;
+    const parsedPage = Number(page);
+    const parsedLimit = Number(limit);
+    const pageNumber = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
+    const limitNumber = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.floor(parsedLimit) : 10;
+    const skip = Math.max(0, (pageNumber - 1) * limitNumber);
 
     const adminId = resolveAdminId(req);
 
@@ -313,25 +343,43 @@ exports.getLoginHistory = async (req, res) => {
       });
     }
 
-    // Get login history
-    const loginHistory = await prisma.loginActivity.findMany({
-      where: { adminId },
+    const where = {
+      adminId,
+    };
+
+    if (loginId) {
+      where.id = loginId;
+    }
+
+    const queryOptions = {
+      where,
       orderBy: { loggedInAt: 'desc' },
-      skip: parseInt(skip),
-      take: parseInt(limit),
-    });
+    };
+
+    if (loginId) {
+      queryOptions.skip = 0;
+      queryOptions.take = 1;
+    } else {
+      queryOptions.skip = skip;
+      queryOptions.take = Math.max(1, limitNumber);
+    }
+
+    // Get login history
+    const loginHistory = await prisma.loginActivity.findMany(queryOptions);
 
     // Get total count
     const total = await prisma.loginActivity.count({
-      where: { adminId },
+      where,
     });
+
+    const totalPages = limitNumber ? Math.ceil(total / limitNumber) || 1 : 1;
 
     res.status(200).json({
       success: true,
       count: loginHistory.length,
       total,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page),
+      totalPages,
+      currentPage: pageNumber,
       data: loginHistory,
     });
   } catch (error) {
@@ -343,7 +391,6 @@ exports.getLoginHistory = async (req, res) => {
     });
   }
 };
-
 
 
 exports.getEmployees = async (req, res) => {

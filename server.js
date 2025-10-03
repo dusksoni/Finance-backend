@@ -18,6 +18,7 @@ const cityRoute = require("./routes/city.routes");
 const regionRoute = require("./routes/region.routes");
 const listRoutes = require("./routes/list.route");
 const reportRoutes = require("./routes/report.route");
+const auditRoutes = require("./routes/audit.route");
 
 app.use(cors());
 app.use(express.json());
@@ -47,6 +48,7 @@ app.use("/api/state", stateRoute);
 app.use("/api/city", cityRoute);
 app.use("/api/region", regionRoute);
 app.use("/api/report", reportRoutes);
+app.use("/api/audit", auditRoutes);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () =>
