@@ -72,15 +72,11 @@ exports.getAdminProfile = async (req, res) => {
       });
     }
 
-    const [firstName = "", ...rest] = (admin.name || "").trim().split(" ");
-    const lastName = rest.join(" ").trim();
-
     res.status(200).json({
       status: 200,
       data: {
         id: admin.id,
-        firstName,
-        lastName,
+        name: admin.name,
         email: admin.email,
         createdAt: admin.createdAt,
         updatedAt: admin.updatedAt,
@@ -149,14 +145,15 @@ exports.updateAdmin = async (req, res) => {
     });
 
     // Log the action
-    await prisma.actionLog.create({
-      data: {
-        adminId: req.user?.adminId || req.user?.id || admin.id,
+    await logAction({
+        adminId: req.user.id, // The admin who performed this action
+        employeeId: req.user.employeeId,
+        loginActivityId: req.user.loginActivityId,
         action: 'UPDATE',
         targetId: updatedAdmin.id,
         table: 'Admin',
         metadata: { adminId: updatedAdmin.id }
-      }
+     
     });
 
     res.status(200).json({
@@ -204,14 +201,15 @@ exports.updateAdminPassword = async (req, res) => {
     });
 
     // Log the action
-    await prisma.actionLog.create({
-      data: {
-        adminId: req.user?.adminId || req.user?.id || admin.id,
+    await logAction({
+        adminId: req.user.id, // The admin who performed this action
+        employeeId: req.user.employeeId,
+        loginActivityId: req.user.loginActivityId,
         action: 'UPDATE_PASSWORD',
         targetId: admin.id,
         table: 'Admin',
         metadata: { adminId: admin.id }
-      }
+      
     });
 
     res.status(200).json({
@@ -358,7 +356,6 @@ exports.getEmployees = async (req, res) => {
   const isDeleted = req.query.isDeleted === "true" ? true : false;
 
   const where = {
-    adminId,
     isDeleted: isDeleted,
     OR: [
       { name: { contains: search, mode: "insensitive" } },

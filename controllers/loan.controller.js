@@ -205,10 +205,8 @@ exports.createLoan = async (req, res) => {
           targetId: loan.id,
           metadata: loan,
           loginActivityId: req.user.loginActivityId,
-          admin: isAdmin ? { connect: { id: req.user.adminId } } : undefined,
-          employee: !isAdmin
-            ? { connect: { id: req.user.employeeId } }
-            : undefined,
+          adminId: req.user.adminId,
+          employeeId: req.user.employeeId,
           prisma: tx,
         });
 
@@ -441,10 +439,8 @@ exports.updateLoan = async (req, res) => {
           targetId: loan.id,
           metadata: loan,
           loginActivityId: req.user.loginActivityId,
-          admin: isAdmin ? { connect: { id: req.user.adminId } } : undefined,
-          employee: !isAdmin
-            ? { connect: { id: req.user.employeeId } }
-            : undefined,
+          adminId: req.user.adminId,
+          employeeId: req.user.employeeId,
           prisma: tx,
         });
 
@@ -501,12 +497,8 @@ exports.closeLoan = async (req, res) => {
       targetId: id,
       metadata: loan,
       loginActivityId: req.user.loginActivityId,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : undefined,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : undefined,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
     res.json({ message: "Loan closed", data: loan });
   } catch (err) {

@@ -278,7 +278,9 @@ exports.createEmployee = async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      admin: { connect: { id: req.user.adminId } },
+      ...(req.user.adminId
+        ? { admin: { connect: { id: req.user.adminId } } }
+        : {}),
       ...(regionId ? { region: { connect: { id: regionId } } } : {}),
       ...(roleId ? { role: { connect: { id: roleId } } } : {}),
       ...(branchId ? { branch: { connect: { id: branchId } } } : {}),
@@ -294,7 +296,8 @@ exports.createEmployee = async (req, res) => {
     const employee = await prisma.employee.create({ data });
 
     await logAction({
-      adminId: req.user.adminId,
+      adminId: req.user.adminId || null,
+      employeeId: req.user?.employeeId || null,
       loginActivityId: req.user.loginActivityId,
       action: "CREATED EMPLOYEE",
       table: "Employee",
@@ -353,11 +356,12 @@ exports.putEmployee = async (req, res) => {
 
     await logAction({
       adminId: req.user.adminId,
+      employeeId: req.user.employeeId,
       loginActivityId: req.user.loginActivityId,
       action: "UPDATED EMPLOYEE",
       table: "Employee",
       targetId: id,
-      metadata: updateData,
+      metadata: updated,
     });
 
     res.status(200).json({ message: "Employee updated", data: updated });
@@ -397,14 +401,15 @@ exports.updatePassword = async (req, res) => {
     });
 
     // Log the action
-    await prisma.actionLog.create({
-      data: {
-        adminId: req.user.id, // The admin who performed this action
+    await logAction({
+        adminId: req.user.adminId, // The admin who performed this action
+        employeeId: req.user.employeeId,
+        loginActivityId: req.user.loginActivityId,
         action: "UPDATE_PASSWORD",
         targetId: employee.id,
         table: "Employee",
-        metadata: { employeeId: employee.id },
-      },
+        metadata: { id: employee.id },
+      
     });
 
     res.status(200).json({
@@ -436,6 +441,7 @@ exports.deleteEmployee = async (req, res) => {
 
     await logAction({
       adminId: req.user.adminId,
+      employeeId: req.user.employeeId,
       loginActivityId: req.user.loginActivityId,
       action: "DELETED EMPLOYEE",
       table: "Employee",
@@ -467,6 +473,7 @@ exports.blockedEmployee = async (req, res) => {
 
     await logAction({
       adminId: req.user.adminId,
+      employeeId: req.user.employeeId,
       loginActivityId: req.user.loginActivityId,
       action: isBlocked ? "BLOCKED EMPLOYEE" : "UNBLOCKED EMPLOYEE",
       table: "Employee",
@@ -586,21 +593,15 @@ exports.getActivityLogs = async (req, res) => {
         message: "Employee not found",
       });
     }
-
-    const isSelf =
-      req.user?.type === "EMPLOYEE" && req.user?.employeeId === employeeId;
-
-    if (!isSelf && req.user?.type === "EMPLOYEE") {
+    if (req.user?.type === "EMPLOYEE") {
       const allowed = await checkVerifyPermission(
-        req.user,
+        req.user?.employeeId,
         "EMPLOYEE_ACTIVITY_VIEW",
         { throwError: false }
       );
 
       if (!allowed) {
-        return res
-          .status(403)
-          .json({ success: false, message: "Access denied" });
+        return res.status(200).json({ status: 200, message: "Access denied" });
       }
     }
 

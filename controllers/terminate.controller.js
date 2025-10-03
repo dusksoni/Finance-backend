@@ -78,15 +78,9 @@ exports.terminateHypothecation = async (req, res) => {
       action: "TERMINATED VEHICLE LOAN",
       table: "TerminationRequest",
       targetId: terminationRequest.id,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : null,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : null,
-      loginActivity: req.user.loginActivityId
-        ? { connect: { id: req.user.loginActivityId } }
-        : null,
+      adminId: req.user.adminId,
+      employeeId: req.user?.employeeId,
+      loginActivityId: req.user.loginActivityId,
       metadata: {
         requestPayload,
         encryptedData,

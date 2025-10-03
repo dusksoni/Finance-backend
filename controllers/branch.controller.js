@@ -1,4 +1,5 @@
 const prisma = require("../lib/prisma");
+const logAction = require("../utils/adminLogger");
 
 // ========== branch ==========
 exports.createBranch = async (req, res) => {
@@ -46,14 +47,15 @@ exports.createBranch = async (req, res) => {
       },
     });
 
-    await prisma.actionLog.create({
-      data: {
+     await logAction({
         adminId: req.user.id, // The admin who performed this action
+        employeeId: req.user.employeeId,
+        loginActivityId: req.user.loginActivityId,
         action: "CREATE",
         targetId: branch.id,
         table: "Branch",
         metadata: branch,
-      },
+      
     });
     res.status(201).json({ data: branch, status: 201 });
   } catch (err) {
@@ -315,14 +317,15 @@ exports.deleteBranch = async (req, res) => {
     });
 
     // Log the action
-    await prisma.actionLog.create({
-      data: {
+    await logAction({
         adminId: req.user.id, // The admin who performed this action
+        employeeId: req.user.employeeId,
+        loginActivityId: req.user.loginActivityId,
         action: "DELETE",
         targetId: branch.id,
         table: "Branch",
         metadata: { branchId: branch.id },
-      },
+      
     });
 
     res.status(200).json({

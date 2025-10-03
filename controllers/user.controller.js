@@ -164,13 +164,9 @@ exports.createUser = async (req, res) => {
       table: "User",
       targetId: user.id,
       metadata: user,
-      loginActivity: req.user.loginActivityId
-        ? { connect: { id: req.user.loginActivityId } }
-        : null,
-      admin: req.user?.adminId ? { connect: { id: req.user.adminId } } : null,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : null,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
 
     res.status(201).json({ message: "User created successfully", data: user });
@@ -540,13 +536,9 @@ exports.updateUser = async (req, res) => {
         table: "User",
         targetId: updatedUser.id,
         metadata: req.body,
-        loginActivity: req.user?.loginActivityId
-          ? { connect: { id: req.user.loginActivityId } }
-          : null,
-        admin: req.user?.adminId ? { connect: { id: req.user.adminId } } : null,
-        employee: req.user?.employeeId
-          ? { connect: { id: req.user.employeeId } }
-          : null,
+       loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
       });
 
       return res.status(200).json({
@@ -607,13 +599,9 @@ exports.updateUser = async (req, res) => {
       table: "UserUpdateRequest",
       targetId: updateRequest.id,
       metadata: requestPayload,
-      loginActivity: req.user?.loginActivityId
-        ? { connect: { id: req.user.loginActivityId } }
-        : null,
-      admin: req.user?.adminId ? { connect: { id: req.user.adminId } } : null,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : null,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
 
     return res.status(202).json({
@@ -659,10 +647,9 @@ exports.approveUserUpdate = async (req, res) => {
       table: "User",
       targetId: request.userId,
       metadata: request.changes,
-      loginActivity: req.user.loginActivityId
-        ? { connect: { id: req.user.loginActivityId } }
-        : null,
-      admin: req.user?.adminId ? { connect: { id: req.user.adminId } } : null,
+     loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
 
     res.json({
@@ -702,10 +689,9 @@ exports.rejectUserUpdate = async (req, res) => {
       table: "User",
       targetId: request.userId,
       metadata: request.changes,
-      loginActivity: req.user.loginActivityId
-        ? { connect: { id: req.user.loginActivityId } }
-        : null,
-      admin: req.user?.adminId ? { connect: { id: req.user.adminId } } : null,
+     loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
 
     res.json({

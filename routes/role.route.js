@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const { authMiddleware, adminOnly } = require("../middleware/auth");
+const { authMiddleware, adminOnly, onlyAdminOrEmployee } = require("../middleware/auth");
 const roleController = require("../controllers/role.controller");
 
 // Protect all with admin access
-router.use(authMiddleware, adminOnly);
+router.use(authMiddleware, onlyAdminOrEmployee);
 
 router.get("/", roleController.listRoles);
 router.get("/:id", roleController.getRoleById);

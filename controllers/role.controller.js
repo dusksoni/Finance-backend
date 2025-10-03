@@ -60,11 +60,12 @@ exports.createRole = async (req, res) => {
 
     await logAction({
       adminId: req.user.adminId,
+      employeeId: req.user.employeeId,
       loginActivityId: req.user.activity,
       action: "CREATED ROLE",
       table: "Role",
       targetId: newRole.id,
-      metadata: { name, description, permissions },
+      metadata: newRole,
     });
 
     res.status(201).json({ message: "Employee Created" });
@@ -85,11 +86,12 @@ exports.updateRole = async (req, res) => {
     });
     await logAction({
       adminId: req.user.adminId,
+      employeeId: req.user.employeeId,
       loginActivityId: req.user.activity,
       action: "UPDATED ROLE",
       table: "Role",
       targetId: updatedRole.id,
-      metadata: { name, description, permissions },
+      metadata: updatedRole,
     });
     res.status(200).json({ message: "Role Updated", data: updatedRole });
   } catch (err) {
@@ -104,6 +106,7 @@ exports.deleteRole = async (req, res) => {
 
     await logAction({
       adminId: req.user.adminId,
+      employeeId: req.user.employeeId,
       loginActivityId: req.user.activity,
       action: "DELETED ROLE",
       table: "Role",

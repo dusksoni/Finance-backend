@@ -14,12 +14,8 @@ exports.createState = async (req, res) => {
       targetId: state.id,
       metadata: state,
       loginActivityId: req.user.loginActivityId,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : undefined,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : undefined,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
 
     res.status(201).json({ message: "State created", data: state });
@@ -40,12 +36,8 @@ exports.updateState = async (req, res) => {
       targetId: id,
       metadata: state,
       loginActivityId: req.user.loginActivityId,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : undefined,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : undefined,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
 
     res.json({ message: "State updated", data: state });
@@ -65,12 +57,8 @@ exports.deleteState = async (req, res) => {
       targetId: id,
       metadata: deleted,
       loginActivityId: req.user.loginActivityId,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : undefined,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : undefined,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
 
     res.json({ message: "State deleted" });
@@ -112,12 +100,8 @@ exports.createCity = async (req, res) => {
       targetId: city.id,
       metadata: city,
       loginActivityId: req.user.loginActivityId,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : undefined,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : undefined,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
 
     res.status(201).json({ message: "City created", data: city });
@@ -141,12 +125,8 @@ exports.updateCity = async (req, res) => {
       targetId: id,
       metadata: city,
       loginActivityId: req.user.loginActivityId,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : undefined,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : undefined,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
 
     res.json({ message: "City updated", data: city });
@@ -166,12 +146,8 @@ exports.deleteCity = async (req, res) => {
       targetId: id,
       metadata: deleted,
       loginActivityId: req.user.loginActivityId,
-      admin: req.user?.adminId
-        ? { connect: { id: req.user.adminId } }
-        : undefined,
-      employee: req.user?.employeeId
-        ? { connect: { id: req.user.employeeId } }
-        : undefined,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
     });
 
     res.json({ message: "City deleted" });

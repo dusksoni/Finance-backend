@@ -18,8 +18,8 @@ router.get("/employees", authMiddleware, onlyAdminOrEmployee, getEmployees);
 router.get("/employees/:id", authMiddleware, onlyAdminOrEmployee, getEmployeeById);
 router.get("/users", authMiddleware, adminOnly, getAllUsers);
 router.get("/me", authMiddleware, adminOnly, getAdminProfile);
-router.get("/me/activity", authMiddleware, adminOnly, getActivityLogs);
-router.get("/me/login-history", authMiddleware, adminOnly, getLoginHistory);
+router.get("/me/activity", authMiddleware, onlyAdminOrEmployee, getActivityLogs);
+router.get("/me/login-history", authMiddleware, onlyAdminOrEmployee, getLoginHistory);
 router.put("/admin/:id", authMiddleware, adminOnly, updateAdmin);
 router.put("/admin/:id/password", authMiddleware, adminOnly, updateAdminPassword);
 
