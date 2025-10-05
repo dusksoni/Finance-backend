@@ -1,4 +1,5 @@
 const prisma = require("../lib/prisma");
+const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const logAction = require("../utils/adminLogger");
 
 // List all roles
@@ -54,6 +55,11 @@ exports.createRole = async (req, res) => {
       return res.status(400).json({ error: "Role already in use" });
     }
 
+    const hasPermission = await checkVerifyPermission(req.user, "ROLE_CREATE");
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Permission denied", status: 403 });
+    }
+
     const newRole = await prisma.role.create({
       data: { name, description, permissions },
     });
@@ -80,6 +86,10 @@ exports.updateRole = async (req, res) => {
   const roleId = req.params.id; // Ensure the ID is an integer
   
   try {
+    const hasPermission = await checkVerifyPermission(req.user, "ROLE_UPDATE");
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Permission denied", status: 403 });
+    }
     const updatedRole = await prisma.role.update({
       where: { id: roleId },
       data: { name, description, permissions },
@@ -102,6 +112,10 @@ exports.updateRole = async (req, res) => {
 // Delete a role
 exports.deleteRole = async (req, res) => {
   try {
+    const hasPermission = await checkVerifyPermission(req.user, "ROLE_DELETE");
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Permission denied", status: 403 });
+    }
     const deleted = await prisma.role.delete({ where: { id: req.params.id } });
 
     await logAction({
