@@ -12,7 +12,7 @@ const prisma = require("../lib/prisma");
 */
 async function checkVerifyPermission(user, permission, options = {}) {
   // Return false if user data is incomplete
-  if (!user || !user.type || !user.id) {
+  if (!user || !user.type) {
     return false;
   }
   
@@ -23,16 +23,11 @@ async function checkVerifyPermission(user, permission, options = {}) {
   } else if (user.type === "EMPLOYEE") {
     // For employees, check their role permissions
     const employee = await prisma.employee.findUnique({
-      where: { id: user.id },
+      where: { id: user.employeeId },
       include: {
-        role: {
-          include: {
-            permissions: true,
-          },
-        },
+        role: true
       },
     });
-
     // Check if the employee has the required permission
     const hasPermission = employee?.role?.permissions?.includes(permission);
     

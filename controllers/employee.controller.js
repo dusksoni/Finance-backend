@@ -256,6 +256,15 @@ exports.createEmployee = async (req, res) => {
     const existingEmployee = await prisma.employee.findUnique({
       where: { email, isDeleted: false },
     });
+    const hasPermission = checkVerifyPermission(
+      req.user,
+      "EMPLOYEE_CREATE"
+    );
+
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Permission denied", status: 403 });
+    }
+
     if (existingEmployee)
       return res.status(400).json({
         error: "Employee already exists with this email or phone number",
@@ -329,6 +338,14 @@ exports.putEmployee = async (req, res) => {
 
     const employee = await prisma.employee.findUnique({ where: { id } });
     if (!employee) return res.status(404).json({ error: "Employee not found" });
+    const hasPermission = checkVerifyPermission(
+      req.user,
+      "EMPLOYEE_EDIT"
+    );
+
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Permission denied", status: 403 });
+    }
 
     const updateData = {
       name,
@@ -389,6 +406,17 @@ exports.updatePassword = async (req, res) => {
         message: "Employee not found",
       });
     }
+    console.log(req.user)
+
+    const hasPermission = await checkVerifyPermission(
+      req.user,
+      "EMPLOYEE_EDIT_PASSWORD"
+    );
+
+
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Forbidden. Access denied.", status: 403 });
+    }
 
     // Hash password
     const salt = await bcrypt.genSalt(10);
@@ -402,14 +430,13 @@ exports.updatePassword = async (req, res) => {
 
     // Log the action
     await logAction({
-        adminId: req.user.adminId, // The admin who performed this action
-        employeeId: req.user.employeeId,
-        loginActivityId: req.user.loginActivityId,
-        action: "UPDATE_PASSWORD",
-        targetId: employee.id,
-        table: "Employee",
-        metadata: { id: employee.id },
-      
+      adminId: req.user.adminId, // The admin who performed this action
+      employeeId: req.user.employeeId,
+      loginActivityId: req.user.loginActivityId,
+      action: "UPDATE_PASSWORD",
+      targetId: employee.id,
+      table: "Employee",
+      metadata: { id: employee.id },
     });
 
     res.status(200).json({
@@ -481,9 +508,10 @@ exports.blockedEmployee = async (req, res) => {
       metadata: { name: employee.name },
     });
 
-    res.json({
+    res.status(200).json({
       message: `Employee ${isBlocked ? "blocked" : "unblocked"} successfully`,
       data: updated,
+      status: 200,
     });
   } catch (err) {
     res.status(500).json({ error: err.message, status: 500 });
@@ -523,11 +551,13 @@ exports.employeeLogin = async (req, res) => {
       },
     });
     if (!employee || !(await bcrypt.compare(password, employee.password))) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      return res
+        .status(401)
+        .json({ error: "Invalid credentials", status: 401 });
     }
 
     if (employee.isBlocked)
-      return res.status(400).json({ error: "Account is blocked" });
+      return res.status(400).json({ error: "Account is blocked", status: 400 });
 
     const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
 
@@ -568,8 +598,14 @@ exports.getActivityLogs = async (req, res) => {
     const { page = 1, limit = 10, logId, loginActivityId } = req.query;
     const parsedPage = Number(page);
     const parsedLimit = Number(limit);
-    const pageNumber = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
-    const limitNumber = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.floor(parsedLimit) : 10;
+    const pageNumber =
+      Number.isFinite(parsedPage) && parsedPage > 0
+        ? Math.floor(parsedPage)
+        : 1;
+    const limitNumber =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.floor(parsedLimit)
+        : 10;
 
     const employeeId =
       req.params.id || req.query.employeeId || resolveEmployeeId(req);
@@ -596,7 +632,7 @@ exports.getActivityLogs = async (req, res) => {
     }
     if (req.user?.type === "EMPLOYEE") {
       const allowed = await checkVerifyPermission(
-        req.user?.employeeId,
+        req.user,
         "EMPLOYEE_ACTIVITY_VIEW",
         { throwError: false }
       );
@@ -665,8 +701,14 @@ exports.getLoginHistory = async (req, res) => {
     const { page = 1, limit = 10, loginId } = req.query;
     const parsedPage = Number(page);
     const parsedLimit = Number(limit);
-    const pageNumber = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
-    const limitNumber = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.floor(parsedLimit) : 10;
+    const pageNumber =
+      Number.isFinite(parsedPage) && parsedPage > 0
+        ? Math.floor(parsedPage)
+        : 1;
+    const limitNumber =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.floor(parsedLimit)
+        : 10;
     const skip = Math.max(0, (pageNumber - 1) * limitNumber);
 
     const employeeId =
@@ -741,7 +783,6 @@ exports.getLoginHistory = async (req, res) => {
     });
   }
 };
-
 
 exports.getUsers = async (req, res) => {
   try {
