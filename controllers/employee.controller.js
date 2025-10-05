@@ -39,6 +39,10 @@ const resolveEmployeeId = (req) => {
 exports.getEmployeeById = async (req, res) => {
   try {
     const { id } = req.params;
+    const hasPermission = checkVerifyPermission(req.user, "EMPLOYEE_VIEW");
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Permission denied", status: 403 });
+    }
 
     const employee = await prisma.employee.findUnique({
       where: { id },
@@ -256,10 +260,7 @@ exports.createEmployee = async (req, res) => {
     const existingEmployee = await prisma.employee.findUnique({
       where: { email, isDeleted: false },
     });
-    const hasPermission = checkVerifyPermission(
-      req.user,
-      "EMPLOYEE_CREATE"
-    );
+    const hasPermission = checkVerifyPermission(req.user, "EMPLOYEE_CREATE");
 
     if (!hasPermission) {
       return res.status(403).json({ error: "Permission denied", status: 403 });
@@ -338,10 +339,7 @@ exports.putEmployee = async (req, res) => {
 
     const employee = await prisma.employee.findUnique({ where: { id } });
     if (!employee) return res.status(404).json({ error: "Employee not found" });
-    const hasPermission = checkVerifyPermission(
-      req.user,
-      "EMPLOYEE_EDIT"
-    );
+    const hasPermission = checkVerifyPermission(req.user, "EMPLOYEE_EDIT");
 
     if (!hasPermission) {
       return res.status(403).json({ error: "Permission denied", status: 403 });
@@ -406,16 +404,17 @@ exports.updatePassword = async (req, res) => {
         message: "Employee not found",
       });
     }
-    console.log(req.user)
+    console.log(req.user);
 
     const hasPermission = await checkVerifyPermission(
       req.user,
       "EMPLOYEE_EDIT_PASSWORD"
     );
 
-
     if (!hasPermission) {
-      return res.status(403).json({ error: "Forbidden. Access denied.", status: 403 });
+      return res
+        .status(403)
+        .json({ error: "Forbidden. Access denied.", status: 403 });
     }
 
     // Hash password
@@ -457,6 +456,10 @@ exports.updatePassword = async (req, res) => {
 exports.deleteEmployee = async (req, res) => {
   const { id } = req.params;
   try {
+    const hasPermission = checkVerifyPermission(req.user, "EMPLOYEE_DELETE");
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Permission denied", status: 403 });
+    }
     const employee = await prisma.employee.findUnique({ where: { id } });
     if (!employee || employee.isDeleted)
       return res.status(404).json({ error: "Not found", status: 404 });
@@ -489,6 +492,13 @@ exports.blockedEmployee = async (req, res) => {
   const { id } = req.params;
   const { isBlocked } = req.body;
   try {
+    const hasPermission = checkVerifyPermission(
+      req.user,
+      "EMPLOYEE_BLOCK"
+    );
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Permission denied", status: 403 });
+    }
     const employee = await prisma.employee.findUnique({ where: { id } });
     if (!employee || employee.isDeleted)
       return res.status(404).json({ error: "Not found", status: 404 });
@@ -855,11 +865,6 @@ exports.getUsers = async (req, res) => {
   }
 };
 
-/**
- * Get employee's loans
- * @route GET /api/employees/:id/loans
- * @access Private/Admin
- */
 exports.getLoans = async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
