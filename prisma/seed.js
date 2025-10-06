@@ -130,6 +130,14 @@ async function main() {
       numberTypeEg: "MH12 20110001234",
       validation: "^[A-Z]{2}[0-9]{2}s?[0-9]{11}$",
     },
+    {
+      name: "PASSPORT",
+      description: "Indian Passport number (1 letter followed by 7 digits)",
+      minLength: 8,
+      maxLength: 8,
+      numberTypeEg: "Z1234567",
+      validation: "^[A-Z][0-9]{7}$",
+    },
   ];
 
   await Promise.all(
@@ -172,7 +180,7 @@ async function main() {
     )
   );
 
-   // 💳 Loan Types
+  // 💳 Loan Types
   const loanTypes = [
     {
       name: "TWOWHEELER",
