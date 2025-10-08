@@ -363,13 +363,11 @@ exports.getUserActivityLogs = async (req, res) => {
     });
   } catch (error) {
     console.error("Get user activity logs error:", error);
-    res
-      .status(500)
-      .json({
-        status: 500,
-        message: "Failed to fetch activity logs",
-        error: error.message,
-      });
+    res.status(500).json({
+      status: 500,
+      message: "Failed to fetch activity logs",
+      error: error.message,
+    });
   }
 };
 
@@ -447,14 +445,12 @@ exports.updateUser = async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const isAdmin = req.user?.type?.includes("ADMIN");
-    // File upload helper
+    // helper: create files, returns [{ id }]
     const createFiles = async (files = []) =>
       Promise.all(
-        files.map(async (file) => {
-          if (file.id) {
-            return { id: file.id }; // already exists
-          }
+        (files || []).map(async (file) => {
+          if (!file) return null;
+          if (file.id) return { id: file.id }; // already exists (db id)
           const newFile = await prisma.file.create({
             data: {
               url: file.secure_url,
@@ -465,33 +461,80 @@ exports.updateUser = async (req, res) => {
           });
           return { id: newFile.id };
         })
+      ).then(arr => arr.filter(Boolean));
+
+    // Build region filter safely
+    const regionWhere = { stateId };
+    if (cityId) regionWhere.cityId = cityId;
+
+    const region = await prisma.region.findFirst({ where: regionWhere });
+    if (!region) {
+      return res.status(400).json({ error: "Region not found for state/city" });
+    }
+
+    const parsedDOB =
+      dateOfBirth ? new Date(dateOfBirth) : null;
+    const dobValid = parsedDOB && !isNaN(parsedDOB.getTime()) ? parsedDOB : null;
+
+    const isDefaulterBool =
+      typeof isDefaulter === "boolean"
+        ? isDefaulter
+        : String(isDefaulter).toLowerCase() === "true";
+
+    const creditScoreNum =
+      creditScore === undefined || creditScore === null
+        ? null
+        : Number(creditScore);
+
+    // Use a transaction for consistency
+    const result = await prisma.$transaction(async (tx) => {
+      const profilePhoto = photo ? await createFiles([photo]) : [];
+      const proofIncomeFileLinks = await createFiles(proofOfIncomeImages);
+
+      // Normalize photoIds: for each item, either update existing or create new,
+      // and ALWAYS return { id } for connect.
+      const formattedPhotoIds = await Promise.all(
+        (photoIds || []).map(async (pid) => {
+          const imagesToConnect = await createFiles(pid.images || []);
+
+          if (pid.id) {
+            // update existing PhotoID
+            const updated = await tx.photoID.update({
+              where: { id: pid.id },
+              data: {
+                photoIdNumber: pid.photoIdNumber ?? undefined,
+                // set then connect to replace images (if that's desired)
+                images: imagesToConnect?.length
+                  ? { set: [], connect: imagesToConnect }
+                  : undefined,
+                // use relation field consistently
+                ...(pid.photoIdTypeId
+                  ? { photoIdType: { connect: { id: pid.photoIdTypeId } } }
+                  : {}),
+              },
+              select: { id: true },
+            });
+            return { id: updated.id };
+          }
+
+          // create new PhotoID
+          const created = await tx.photoID.create({
+            data: {
+              photoIdNumber: pid.photoIdNumber,
+              ...(pid.photoIdTypeId
+                ? { photoIdType: { connect: { id: pid.photoIdTypeId } } }
+                : {}),
+              images: imagesToConnect?.length
+                ? { connect: imagesToConnect }
+                : undefined,
+            },
+            select: { id: true },
+          });
+          return { id: created.id };
+        })
       );
 
-    const profilePhoto = photo ? await createFiles([photo]) : [];
-    const proofIncomeFileLinks = await createFiles(proofOfIncomeImages);
-    const formattedPhotoIds = await Promise.all(
-      photoIds.map(async (pid) => ({
-        photoIdNumber: pid.photoIdNumber,
-        photoIdTypeId: pid.photoIdTypeId,
-        images: {
-          connect: await createFiles(pid.images),
-        },
-      }))
-    );
-    console.log(isAdmin);
-    if (isAdmin) {
-      const region = await prisma.region.findFirst({
-        where: { stateId, cityId },
-        select: { id: true },
-      });
-
-      if (!region) {
-        return res
-          .status(400)
-          .json({ error: "Region not found for state and city" });
-      }
-
-      const updatedUser = await prisma.user.update({
+      const updatedUser = await tx.user.update({
         where: { id },
         data: {
           firstName,
@@ -500,44 +543,43 @@ exports.updateUser = async (req, res) => {
           relationFirstName,
           relationMiddleName,
           relationLastName,
-          dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+          dateOfBirth: dobValid,
           phone,
           pincode,
           email,
-          isDefaulter: isDefaulter === "true",
+          isDefaulter: isDefaulterBool,
           proofOfIncome,
-          creditScore,
+          creditScore: creditScoreNum,
           profession,
           address,
           cityText,
           country,
           maritalStatus,
           qualification,
-          relationType: relationTypeId
-            ? { connect: { id: relationTypeId } }
-            : undefined,
-          // genderId: genderId || null,
-          addressCategory: addressCategoryId
-            ? { connect: { id: addressCategoryId } }
-            : undefined,
-          state: stateId ? { connect: { id: stateId } } : undefined,
-          city: cityId ? { connect: { id: cityId } } : undefined,
-          region: { connect: { id: region.id } },
-          proofOfIncomeImages: {
-            set: [],
-            connect: proofIncomeFileLinks,
-          },
-          photo: profilePhoto.length
+
+          relationType: relationTypeId ? { connect: { id: relationTypeId } } : undefined,
+          gender:        genderId      ? { connect: { id: genderId } }       : undefined,
+          addressCategory: addressCategoryId ? { connect: { id: addressCategoryId } } : undefined,
+          state:         stateId       ? { connect: { id: stateId } }        : undefined,
+          city:          cityId        ? { connect: { id: cityId } }         : undefined,
+          region:        { connect: { id: region.id } },
+
+          // Replace all proofOfIncomeImages with provided set
+          ...(proofIncomeFileLinks?.length
+            ? { proofOfIncomeImages: { set: [], connect: proofIncomeFileLinks } }
+            : {}),
+
+          photo: profilePhoto?.length
             ? { connect: { id: profilePhoto[0].id } }
             : undefined,
-          photoIds: {
-            create: formattedPhotoIds,
-          },
+
+          // Connect (and only connect) the PhotoIDs we created/updated above
+          ...(formattedPhotoIds?.length
+            ? { photoIds: { connect: formattedPhotoIds } }
+            : {}),
         },
         include: {
-          photoIds: {
-            include: { images: true, photoIdType: true },
-          },
+          photoIds: { include: { images: true, photoIdType: true } },
           photo: true,
           proofOfIncomeImages: true,
         },
@@ -553,79 +595,21 @@ exports.updateUser = async (req, res) => {
         employeeId: req.user?.employeeId,
       });
 
-      return res.status(200).json({
-        status: 200,
-        message: "User updated successfully",
-        data: updatedUser,
-      });
-    }
-    console.log("object");
-    // Employee: Submit update request instead
-    const requestPayload = {
-      firstName,
-      middleName,
-      lastName,
-      relationFirstName,
-      relationMiddleName,
-      relationLastName,
-      dateOfBirth,
-      phone,
-      pincode,
-      email,
-      isDefaulter: isDefaulter === "true",
-      proofOfIncome,
-      creditScore,
-      profession,
-      address,
-      cityText,
-      country,
-      maritalStatus,
-      qualification,
-      ...(genderId && { genderId }),
-      ...(relationTypeId && { relationTypeId }),
-      ...(addressCategoryId && { addressCategoryId }),
-      ...(stateId && { stateId }),
-      ...(cityId && { cityId }),
-      ...(profilePhoto.length && { photoId: profilePhoto[0].id }),
-      ...(proofIncomeFileLinks.length && {
-        proofOfIncomeImageIds: proofIncomeFileLinks.map((f) => f.id),
-      }),
-      ...(photoIds.length && {
-        photoIds: formattedPhotoIds,
-      }),
-    };
+      return updatedUser;
+    },
+  { maxWait: 10_000, timeout: 30_000 } );
 
-    const updateRequest = await prisma.userUpdateRequest.create({
-      data: {
-        userId: id,
-        changes: requestPayload,
-        requestedByAdminId: req.user?.adminId || null,
-        requestedByEmployeeId: req.user?.employeeId || null,
-        loginActivityId: req.user?.loginActivityId || null,
-        status: "PENDING",
-      },
-    });
-
-    await logAction({
-      action: "REQUESTED USER UPDATE",
-      table: "UserUpdateRequest",
-      targetId: updateRequest.id,
-      metadata: requestPayload,
-      loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
-    });
-
-    return res.status(202).json({
-      status: 202,
-      message: "Update request submitted for approval",
-      data: updateRequest,
+    return res.status(200).json({
+      status: 200,
+      message: "User updated successfully",
+      data: result,
     });
   } catch (err) {
-    console.error("User update error:", err.message);
+    console.error("User update error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 exports.approveUserUpdate = async (req, res) => {
   const { requestId } = req.params;
