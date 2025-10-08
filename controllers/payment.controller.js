@@ -298,7 +298,7 @@ exports.makePayment = async (req, res) => {
           const verified =
             paymentMode === "CASH"
               ? req.user.type === "ADMIN" ||
-                (await checkVerifyPermission(req.user, "VERIFY_PAYMENT"))
+                (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"))
               : true;
 
           // create Payment
@@ -582,7 +582,7 @@ exports.payPaymentById = async (req, res) => {
       paymentMode !== "CASH"
         ? true
         : req.user?.type === "ADMIN" ||
-          (await checkVerifyPermission(req.user, "VERIFY_PAYMENT"));
+          (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
 
     // --- Keep the transaction TINY; post-processing happens AFTER commit ---
     const txResult = await prisma.$transaction(
@@ -751,7 +751,7 @@ exports.verifyPayment = async (req, res) => {
     const isAdmin = req.user.type === "ADMIN";
     const isEmployee =
       req.user.type === "EMPLOYEE" &&
-      (await checkVerifyPermission(req.user, "VERIFY_PAYMENT"));
+      (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
     if (!isAdmin && !isEmployee) {
       return res.status(403).json({ error: "Unauthorized" });
     }
@@ -1297,7 +1297,7 @@ exports.postForeclosurePayment = async (req, res) => {
           paymentMode !== "CASH"
             ? true
             : req.user?.type === "ADMIN" ||
-              (await checkVerifyPermission(req.user, "VERIFY_PAYMENT"));
+              (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
 
         // A) Create ONE payment record for the whole foreclosure
         const coveredEmiIds = [

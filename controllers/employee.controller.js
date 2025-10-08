@@ -39,10 +39,7 @@ const resolveEmployeeId = (req) => {
 exports.getEmployeeById = async (req, res) => {
   try {
     const { id } = req.params;
-    const hasPermission = checkVerifyPermission(req.user, "EMPLOYEE_VIEW");
-    if (!hasPermission) {
-      return res.status(403).json({ error: "Permission denied", status: 403 });
-    }
+   
 
     const employee = await prisma.employee.findUnique({
       where: { id },
