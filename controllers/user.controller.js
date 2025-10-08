@@ -53,6 +53,8 @@ exports.createUser = async (req, res) => {
             })),
           },
         },
+        email: email,
+        phone: phone,
       },
       select: {
         id: true,
@@ -69,7 +71,7 @@ exports.createUser = async (req, res) => {
 
     if (matches.length > 0) {
       return res.status(400).json({
-        error: "User already exists with this document",
+        error: "User already exists with this document or contact",
         users: matches,
       });
     }
@@ -98,26 +100,26 @@ exports.createUser = async (req, res) => {
           })
         )
       ).then((created) => created.map((f) => ({ id: f.id })));
-
     const proofIncomeImages = await createFiles(proofOfIncomeImages);
-    const profilePhoto = photo ? await createFiles([photo]) : [];
+    const profilePhoto =
+      photo && typeof photo === "object" && Object.keys(photo).length > 0
+        ? await createFiles([photo])
+        : [];
 
     const user = await prisma.user.create({
       data: {
         firstName,
         middleName,
         lastName,
-        relationType: { connect: { id: relationTypeId } },
-        addressCategory: {
-          connect: { id: addressCategoryId },
-        },
+        relationTypeId: relationTypeId,
+        addressCategoryId: addressCategoryId,
         relationFirstName,
         relationMiddleName,
         relationLastName,
         dateOfBirth,
         phone,
         pincode,
-        gender: { connect: { id: genderId } },
+        genderId: genderId,
         maritalStatus,
         email,
         isDefaulter: isDefaulter === "true" ? true : false,
@@ -128,18 +130,14 @@ exports.createUser = async (req, res) => {
         cityText,
         country,
         qualification,
-        state: { connect: { id: stateId } },
-        city: { connect: { id: cityId } },
-        region: { connect: { id: region.id } },
+        stateId: stateId,
+        cityId: cityId,
+        regionId: region.id,
         createdBy: req.user?.type || "unknown",
-        admin: req.user?.adminId ? { connect: { id: req.user.adminId } } : null,
-        employee: req.user?.employeeId
-          ? { connect: { id: req.user.employeeId } }
-          : null,
+        adminId: req.user?.adminId || null,
+        employeeId: req.user?.employeeId || null,
         proofOfIncomeImages: { connect: proofIncomeImages },
-        photo: profilePhoto.length
-          ? { connect: { id: profilePhoto[0].id } }
-          : null,
+        photoId: profilePhoto.length ? profilePhoto[0].id : null,
         photoIds: {
           create: await Promise.all(
             photoIds.map(async (pid) => ({
@@ -156,6 +154,14 @@ exports.createUser = async (req, res) => {
         photoIds: { include: { images: true } },
         proofOfIncomeImages: true,
         photo: true,
+        region: true,
+        state: true,
+        city: true,
+        gender: true,
+        addressCategory: true,
+        relationType: true,
+        employee: true,
+        admin: true,
       },
     });
 
@@ -229,9 +235,7 @@ exports.getAllUsers = async (req, res) => {
           : []),
 
         ...(phone ? [{ phone: { contains: phone } }] : []),
-        ...(email
-          ? [{ email: { contains: email, mode: "insensitive" } }]
-          : []),
+        ...(email ? [{ email: { contains: email, mode: "insensitive" } }] : []),
         ...(isDefaulter !== undefined
           ? [{ isDefaulter: isDefaulter === "true" }]
           : []),
@@ -308,9 +312,13 @@ exports.getUserActivityLogs = async (req, res) => {
     }
 
     if (req.user?.type === "EMPLOYEE") {
-      const allowed = await checkVerifyPermission(req.user, "USER_ACTIVITY_VIEW", {
-        throwError: false,
-      });
+      const allowed = await checkVerifyPermission(
+        req.user,
+        "USER_ACTIVITY_VIEW",
+        {
+          throwError: false,
+        }
+      );
       if (!allowed) {
         return res.status(403).json({ status: 403, message: "Access denied" });
       }
@@ -355,10 +363,15 @@ exports.getUserActivityLogs = async (req, res) => {
     });
   } catch (error) {
     console.error("Get user activity logs error:", error);
-    res.status(500).json({ status: 500, message: "Failed to fetch activity logs", error: error.message });
+    res
+      .status(500)
+      .json({
+        status: 500,
+        message: "Failed to fetch activity logs",
+        error: error.message,
+      });
   }
 };
-
 
 exports.getUserById = async (req, res) => {
   try {
@@ -373,21 +386,20 @@ exports.getUserById = async (req, res) => {
             photoIdType: true,
           },
         },
-         city: true,
-          gender: true,
-          addressCategory: true,
-          relationType: true,
-          employee: true,
-          photo: true,
-          state: true,
-          region: true,
-          proofOfIncomeImages: true,
-          loans: {
-            include: {
-              loanType: true,
-             
-            },
+        city: true,
+        gender: true,
+        addressCategory: true,
+        relationType: true,
+        employee: true,
+        photo: true,
+        state: true,
+        region: true,
+        proofOfIncomeImages: true,
+        loans: {
+          include: {
+            loanType: true,
           },
+        },
       },
     });
 
@@ -481,7 +493,7 @@ exports.updateUser = async (req, res) => {
 
       const updatedUser = await prisma.user.update({
         where: { id },
-        data:{
+        data: {
           firstName,
           middleName,
           lastName,
@@ -502,8 +514,8 @@ exports.updateUser = async (req, res) => {
           maritalStatus,
           qualification,
           relationType: relationTypeId
-          ? { connect: { id: relationTypeId } }
-          : undefined,
+            ? { connect: { id: relationTypeId } }
+            : undefined,
           // genderId: genderId || null,
           addressCategory: addressCategoryId
             ? { connect: { id: addressCategoryId } }
@@ -536,9 +548,9 @@ exports.updateUser = async (req, res) => {
         table: "User",
         targetId: updatedUser.id,
         metadata: req.body,
-       loginActivityId: req.user.loginActivityId,
-      adminId: req.user?.adminId,
-      employeeId: req.user?.employeeId,
+        loginActivityId: req.user.loginActivityId,
+        adminId: req.user?.adminId,
+        employeeId: req.user?.employeeId,
       });
 
       return res.status(200).json({
@@ -647,7 +659,7 @@ exports.approveUserUpdate = async (req, res) => {
       table: "User",
       targetId: request.userId,
       metadata: request.changes,
-     loginActivityId: req.user.loginActivityId,
+      loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
     });
@@ -689,7 +701,7 @@ exports.rejectUserUpdate = async (req, res) => {
       table: "User",
       targetId: request.userId,
       metadata: request.changes,
-     loginActivityId: req.user.loginActivityId,
+      loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
     });
