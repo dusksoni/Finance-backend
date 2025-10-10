@@ -162,10 +162,10 @@ exports.createLoan = async (req, res) => {
         if (lt.name === "TWOWHEELER") {
           await tx.twoWheelerLoan.create({
             data: {
-              loan: { connect: { id: loan.id } },
+              loanId: loan.id,
               vehicleName: details.vehicleName,
-              brand: { connect: { id: details.brandId } },
-              model: { connect: { id: details.modelId } },
+              brandId: details.brandId,
+              modelId: details.modelId,
               registrationNumber: details.registrationNumber,
               chassisNumber: details.chassisNumber,
               engineNumber: details.engineNumber,
@@ -175,7 +175,7 @@ exports.createLoan = async (req, res) => {
           await tx.agricultureLoan.create({
             data: {
               loan: { connect: { id: loan.id } },
-              equipment: { connect: { id: details.equipmentId } },
+              equipment: {connect: {id: details.equipmentId}},
               usageArea: details.usageArea,
               isSeasonal: details.isSeasonal || false,
             },
@@ -183,7 +183,7 @@ exports.createLoan = async (req, res) => {
         } else if (lt.name === "MSME") {
           await tx.mSMELoan.create({
             data: {
-              loan: { connect: { id: loan.id } },
+              loanId: loan.id ,
               businessName: details.businessName,
               registrationNumber: details.registrationNumber,
               businessType: details.businessType,

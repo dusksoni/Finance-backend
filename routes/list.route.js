@@ -20,10 +20,7 @@ const {
   getEquipment,
   updateEquipment,
   deleteEquipment,
-  createUsageArea,
-  getUsageAreas,
-  updateUsageArea,
-  deleteUsageArea,
+  
 } = require("../controllers/list.controller");
 const { ro } = require("date-fns/locale");
 const { authMiddleware, onlyAdminOrEmployee } = require("../middleware/auth");
@@ -68,11 +65,6 @@ router.get("/equipment", getEquipment);
 router.put("/equipment/:id", authMiddleware, onlyAdminOrEmployee, updateEquipment);
 router.delete("/equipment/:id", authMiddleware, onlyAdminOrEmployee, deleteEquipment);
 
-// Usage Area
-router.post("/usage-areas", authMiddleware, onlyAdminOrEmployee, createUsageArea);
-router.get("/usage-areas", getUsageAreas);
-router.put("/usage-areas/:id", authMiddleware, onlyAdminOrEmployee, updateUsageArea);
-router.delete("/usage-areas/:id", authMiddleware, onlyAdminOrEmployee, deleteUsageArea);
 
 
 module.exports = router;

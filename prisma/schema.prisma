@@ -641,11 +641,11 @@ model AgricultureLoan {
   id          String  @id @default(uuid())
   loanId      String  @unique
   equipmentId String
-  usageAreaId String?
+  usageArea String?
   isSeasonal  Boolean @default(false)
 
   equipment Equipment  @relation(fields: [equipmentId], references: [id])
-  usageArea UsageArea? @relation(fields: [usageAreaId], references: [id])
+  // usageArea UsageArea? @relation(fields: [usageAreaId], references: [id])
 
   loan Loan @relation(fields: [loanId], references: [id])
 }
@@ -656,11 +656,11 @@ model Equipment {
   loans AgricultureLoan[]
 }
 
-model UsageArea {
-  id    String            @id @default(uuid())
-  name  String            @unique
-  loans AgricultureLoan[]
-}
+// model UsageArea {
+//   id    String            @id @default(uuid())
+//   name  String            @unique
+//   loans AgricultureLoan[]
+// }
 
 model MSMELoan {
   id                 String  @id @default(uuid())
