@@ -15,14 +15,20 @@ const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const { calculateFine } = require("../utils/calculateFine");
 
 const FREQUENCY_OFFSETS = {
-  MONTHLY: { fn: addMonths, step: 1 },
-  QUARTERLY: { fn: addMonths, step: 3 },
-  HALF_YEARLY: { fn: addMonths, step: 6 },
-  YEARLY: { fn: addYears, step: 1 },
+  MONTHLY: { fn: addMonths, step: 1, months: 1 },
+  QUARTERLY: { fn: addMonths, step: 3, months: 3 },
+  HALF_YEARLY: { fn: addMonths, step: 6, months: 6 },
+  YEARLY: { fn: addYears, step: 1, months: 12 },
+};
+const FREQUENCY_MONTHS = {
+  MONTHLY: 1,
+  QUARTERLY: 3,
+  HALF_YEARLY: 6,
+  YEARLY: 12,
 };
 
 // ====================
-// 🟢 CREATE LOAN
+// 🟢 CREATE LOAN (fixed)
 // ====================
 exports.createLoan = async (req, res) => {
   try {
@@ -32,12 +38,12 @@ exports.createLoan = async (req, res) => {
       productAmount,
       downPayment = 0,
       principalLoanAmount,
-      interestRate, // Annual %, e.g. 14
-      tenureMonths, // number of installments
-      startDate, // JS date string
-      dueDay = 5, // day-of-month
+      interestRate,          // Annual %, e.g. 14
+      tenureMonths,          // total months
+      startDate,             // JS/ISO date
+      dueDay = 5,            // day-of-month
       paymentFrequency = "MONTHLY",
-      details, // subtype payload
+      details,               // subtype payload
       fileNo,
       disbursedDate,
       agreementDate,
@@ -57,6 +63,8 @@ exports.createLoan = async (req, res) => {
       penaltyPercentage,
     } = req.body;
 
+    const round2 = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
+
     // 1) Validate principal & tenure
     const P = Number(principalLoanAmount);
     if (!P || P <= 0) {
@@ -66,39 +74,78 @@ exports.createLoan = async (req, res) => {
     if (!n || n < 1) {
       return res.status(400).json({ error: "tenureMonths must be >= 1" });
     }
+    const annualRate = Number(interestRate);
+    if (Number.isNaN(annualRate) || annualRate < 0) {
+      return res.status(400).json({ error: "interestRate must be >= 0" });
+    }
 
-    // 2) EMI calculation (annual compounding)
-    const totalPayable = P * Math.pow(1 + interestRate / 100, n / 12);
-    const EMI = totalPayable / n;
+    // 2) Totals using annual compounding over n months
+    const totalPayableRaw = P * Math.pow(1 + annualRate / 100, n / 12);
+    const totalPayable = round2(totalPayableRaw);
+    const totalInterest = round2(totalPayable - P);
 
-    // 3) Build schedule (same frequency logic)
+    // Per-month equal split (used to aggregate into buckets)
+    const monthlyPrincipal = P / n;
+    const monthlyInterest = (totalPayable - P) / n;
+    const monthlyEMI = totalPayable / n;
+
+    // Frequency config
+    const freq = (paymentFrequency || "MONTHLY").toUpperCase();
     const { fn: offsetFn, step } =
-      FREQUENCY_OFFSETS[paymentFrequency] || FREQUENCY_OFFSETS.MONTHLY;
+      FREQUENCY_OFFSETS[freq] || FREQUENCY_OFFSETS.MONTHLY;
+    const monthsPerInstallment = FREQUENCY_MONTHS[freq] || 1;
 
-    const schedule = [];
-
-    // Determine first due date
+    // 3) Build schedule (bucket months by frequency)
+    // First due date = same month on dueDay; if startDate's DOM > dueDay, shift by one "step"
     let firstDue = setDate(new Date(startDate), dueDay);
     if (new Date(startDate).getDate() > dueDay) {
       firstDue = offsetFn(firstDue, step);
     }
 
-    for (let i = 0; i < n; i++) {
+    const numInstallments = Math.ceil(n / monthsPerInstallment);
+    const schedule = [];
+
+    let aggPrincipal = 0;
+    let aggInterest = 0;
+
+    for (let i = 0; i < numInstallments; i++) {
+      const monthsInThisBucket = Math.min(
+        monthsPerInstallment,
+        n - i * monthsPerInstallment
+      );
+
       const dueDate = offsetFn(firstDue, step * i);
-     
+
+      // Aggregate monthly slices into the bucket
+      let principalAmt = round2(monthlyPrincipal * monthsInThisBucket);
+      let interestAmt = round2(monthlyInterest * monthsInThisBucket);
+      let emiPayAmount = round2(monthlyEMI * monthsInThisBucket);
+
+      aggPrincipal = round2(aggPrincipal + principalAmt);
+      aggInterest = round2(aggInterest + interestAmt);
 
       schedule.push({
         paymentFor: dueDate,
         paymentDate: dueDate,
-        emiPayAmount: EMI,
-        principalAmt: (principalLoanAmount / n).toFixed(2),
-        interestAmt: ((totalPayable - principalLoanAmount) / n).toFixed(2),
+        emiPayAmount,
+        principalAmt,
+        interestAmt,
         amountPaidSoFar: 0,
         fineAmount: 0,
         status: "UNPAID",
         isDelayed: false,
         isForeclosure: false,
       });
+    }
+
+    // Fix rounding drift on the last row so totals match exactly
+    const principalDrift = round2(P - aggPrincipal);
+    const interestDrift = round2(totalInterest - aggInterest);
+    if (schedule.length > 0 && (principalDrift !== 0 || interestDrift !== 0)) {
+      const last = schedule[schedule.length - 1];
+      last.principalAmt = round2(last.principalAmt + principalDrift);
+      last.interestAmt = round2(last.interestAmt + interestDrift);
+      last.emiPayAmount = round2(last.principalAmt + last.interestAmt);
     }
 
     // 4) Permission check
@@ -116,39 +163,49 @@ exports.createLoan = async (req, res) => {
           data: {
             user: { connect: { id: userId } },
             loanType: { connect: { id: loanTypeId } },
+            branch: { connect: { id: branchId } },
+
             fileNo,
             productAmount,
             downPayment,
-            principalLoanAmount,
-            interestAmount: parseFloat((totalPayable - P).toFixed(2)),
-            totalAmount: totalPayable,
-            monthlyPayableAmount: EMI,
-            pendingAmount: totalPayable,
-            interestRate,
+
+            principalLoanAmount: P,
+            interestAmount: round2(totalPayable - P),
+            totalAmount: round2(totalPayable),
+
+            // per-installment amount (first row is representative)
+            monthlyPayableAmount: schedule[0]?.emiPayAmount ?? round2(totalPayable / n),
+
+            pendingAmount: round2(totalPayable),
+            interestRate: annualRate,
             interestType,
             penaltyPercentage,
             tenureMonths: n,
-            paymentFrequency,
+            paymentFrequency: freq,
+
             rtoCharges,
             processingCharges,
             otherCharges,
             ourPaymentType,
+
             startDate: new Date(startDate),
-            endDate: schedule[n - 1].paymentFor,
+            endDate: schedule[schedule.length - 1].paymentFor,
             dueDay,
+
             fileStatus: verified ? "ACTIVE" : "PENDING_APPROVAL",
             disbursedDate: disbursedDate ? new Date(disbursedDate) : null,
             agreementDate: agreementDate ? new Date(agreementDate) : null,
-            insuranceAmount,
+
+            insuranceAmount: insuranceAmount ?? null,
             insuranceDate: insuranceDate ? new Date(insuranceDate) : null,
             insuranceValidTill: insuranceValidTill
               ? new Date(insuranceValidTill)
               : null,
-            insuranceAlert: insuranceAlert === "true",
+            insuranceAlert: String(insuranceAlert) === "true",
             insuranceNumber,
             insuranceCompany,
             comment,
-            branch: { connect: { id: branchId } },
+
             createdBy: req.user.type,
             admin: isAdmin ? { connect: { id: req.user.adminId } } : undefined,
             employee: !isAdmin
@@ -163,32 +220,34 @@ exports.createLoan = async (req, res) => {
           await tx.twoWheelerLoan.create({
             data: {
               loanId: loan.id,
-              vehicleName: details.vehicleName,
-              brandId: details.brandId,
-              modelId: details.modelId,
-              registrationNumber: details.registrationNumber,
-              chassisNumber: details.chassisNumber,
-              engineNumber: details.engineNumber,
+              vehicleName: details?.vehicleName ?? "",
+              brandId: details?.brandId ?? null,
+              modelId: details?.modelId ?? null,
+              registrationNumber: details?.registrationNumber ?? "",
+              chassisNumber: details?.chassisNumber ?? "",
+              engineNumber: details?.engineNumber ?? "",
             },
           });
         } else if (lt.name === "AGRICULTURE") {
           await tx.agricultureLoan.create({
             data: {
               loan: { connect: { id: loan.id } },
-              equipment: {connect: {id: details.equipmentId}},
-              usageArea: details.usageArea,
-              isSeasonal: details.isSeasonal || false,
+              equipment: details?.equipmentId
+                ? { connect: { id: details.equipmentId } }
+                : undefined,
+              usageArea: details?.usageArea ?? "",
+              isSeasonal: Boolean(details?.isSeasonal),
             },
           });
         } else if (lt.name === "MSME") {
           await tx.mSMELoan.create({
             data: {
-              loanId: loan.id ,
-              businessName: details.businessName,
-              registrationNumber: details.registrationNumber,
-              businessType: details.businessType,
-              monthlyRevenue: details.monthlyRevenue,
-              gstNumber: details.gstNumber,
+              loanId: loan.id,
+              businessName: details?.businessName ?? "",
+              registrationNumber: details?.registrationNumber ?? "",
+              businessType: details?.businessType ?? "",
+              monthlyRevenue: details?.monthlyRevenue ?? null,
+              gstNumber: details?.gstNumber ?? "",
             },
           });
         }
@@ -212,18 +271,18 @@ exports.createLoan = async (req, res) => {
 
         return loan;
       },
-      {
-        maxWait: 2000,
-        timeout: 30000,
-      }
+      { maxWait: 2000, timeout: 30000 }
     );
 
-    return res.status(201).json({ message: "Loan created", data: created, status: 201 });
+    return res
+      .status(201)
+      .json({ message: "Loan created", data: created, status: 201 });
   } catch (err) {
     console.error("Create Loan Error:", err);
     return res.status(500).json({ error: err.message, status: 500 });
   }
 };
+
 
 // ====================
 // 🔄 UPDATE LOAN

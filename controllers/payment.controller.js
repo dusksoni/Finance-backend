@@ -984,6 +984,7 @@ exports.getForeclosureDetails = async (req, res) => {
     }
 
     // ---------- Past-due EMIs (<= today): pay EMI outstanding + fine due ----------
+    let totalforeclosureAmount = 0;
     let dueNowTotal = 0;
     let overdueInterestOutstanding = 0;
     let overdueFineDueTotal = 0;
@@ -1020,7 +1021,7 @@ exports.getForeclosureDetails = async (req, res) => {
       const fineDue = Math.max(fineAssessed - finePaid, 0);
 
       const totalDue = r2(emiDueOnly + fineDue);
-
+      totalforeclosureAmount += totalDue;
       // accumulate totals for “due now” bucket
       dueNowTotal += totalDue;
       overdueInterestOutstanding += interestOutstanding;
@@ -1055,6 +1056,7 @@ exports.getForeclosureDetails = async (req, res) => {
       return {
         emiId: e.id,
         paymentFor: e.paymentFor,
+        interestAmt: e.interestAmt,
         principalOutstanding: r2(p),
       };
     });
@@ -1069,8 +1071,9 @@ exports.getForeclosureDetails = async (req, res) => {
       const interestPortion = r2(balance * rMonthly);
       const principalPortion = r2(row.principalOutstanding);
       const totalHypothetical = r2(interestPortion + principalPortion);
-      futureInterestTotal = r2(futureInterestTotal + interestPortion);
+      futureInterestTotal = r2(futureInterestTotal + (row.interestAmt - interestPortion ));
       balance = Math.max(balance - principalPortion, 0);
+      totalforeclosureAmount += totalHypothetical
       return {
         emiId: row.emiId,
         paymentFor: row.paymentFor,
@@ -1100,10 +1103,7 @@ exports.getForeclosureDetails = async (req, res) => {
       dueNowTotal: r2(dueNowTotal), // (emiDueOnly + fineDue) for overdue bucket
       interestSavings, // from future EMIs (informational)
       foreclosureAmount: r2(
-        totalPrincipalOutstanding +
-          overdueInterestOutstanding +
-          overdueFineDueTotal
-      ),
+        totalforeclosureAmount),
     };
 
     return res.status(200).json({
@@ -1125,6 +1125,9 @@ exports.getForeclosureDetails = async (req, res) => {
 // --------------------------------
 // 💳 POST FORECLOSURE PAYMENT (single receipt; no per-EMI payments)
 // --------------------------------
+// --------------------------------
+// --------------------------------
+// 💳 POST FORECLOSURE PAYMENT (single receipt; mirrors GET foreclosure math)
 // --------------------------------
 exports.postForeclosurePayment = async (req, res) => {
   try {
@@ -1183,7 +1186,7 @@ exports.postForeclosurePayment = async (req, res) => {
       // EMI (P+I) still due
       const emiDueOnly = Math.max(emiPay - emiPaidComponent, 0);
 
-      // Fine based on outstanding EMI (same as GET)
+      // Fine based on outstanding EMI (same approach as GET)
       const { daysLate, fineAmt, pct } = calculateFine(
         e.paymentFor,
         emiDueOnly
@@ -1226,55 +1229,67 @@ exports.postForeclosurePayment = async (req, res) => {
       };
     });
 
-    // ---------- Future EMIs (> today): principal only; interest is saved ----------
-    const futurePrincipalRows = future.map((e) => {
-      const principalDue = Math.max(
+    // ---------- Future EMIs (> today): principal + recalculated interest ----------
+    // Build principal rows first (like GET's principalOutstandingByEmi)
+    const futureRows = future.map((e) => {
+      const principalOutstanding = Math.max(
         (Number(e.principalAmt) || 0) - (Number(e.principalPaid) || 0),
         0
       );
-      return { emiId: e.id, principalDue, paymentFor: e.paymentFor };
+      return {
+        emiId: e.id,
+        paymentFor: e.paymentFor,
+        scheduledInterest: Number(e.interestAmt) || 0,
+        principalOutstanding: r2(principalOutstanding),
+      };
     });
 
-    // Build a schedule to expose "interest saved" for each future EMI
-    let openingBalance = futurePrincipalRows.reduce(
-      (s, x) => s + x.principalDue,
-      0
+    // rolling balance = sum of principalOutstanding across FUTURE EMIs
+    let rollingBalance = r2(
+      futureRows.reduce((s, x) => s + x.principalOutstanding, 0)
     );
-    openingBalance = r2(openingBalance);
 
-    let futureInterestTotal = 0;
-    const futureSchedule = futurePrincipalRows.map((row) => {
-      const interestPortion = r2(openingBalance * rMonthly); // saved if foreclosing now
-      const principalPortion = r2(row.principalDue);
-      const hypotheticalEmi = r2(interestPortion + principalPortion);
+    let futureRecalcInterestTotal = 0; // interest we WILL collect now for futures
+    let futureInterestSavingsTotal = 0; // scheduled - recalculated (for info)
+    let futureTotalHypothetical = 0; // principal + recalculated interest (sum)
+
+    const futureSchedule = futureRows.map((row) => {
+      const recalculatedInterest = r2(rollingBalance * rMonthly); // same as GET
+      const principalPortion = r2(row.principalOutstanding);
+      const totalHypothetical = r2(recalculatedInterest + principalPortion);
+
+      futureRecalcInterestTotal = r2(
+        futureRecalcInterestTotal + recalculatedInterest
+      );
+      futureInterestSavingsTotal = r2(
+        futureInterestSavingsTotal + (row.scheduledInterest - recalculatedInterest)
+      );
+      futureTotalHypothetical = r2(futureTotalHypothetical + totalHypothetical);
 
       const out = {
         emiId: row.emiId,
         paymentFor: row.paymentFor,
-        openingBalance: r2(openingBalance),
-        principalCollectedNow: principalPortion, // collected now
-        interestSaved: interestPortion, // NOT collected (saved)
-        hypotheticalEmi, // what would have been paid
+        openingBalance: r2(rollingBalance),
+        principalCollectedNow: principalPortion,   // collected now
+        interestCollectedNow: recalculatedInterest, // collected now (recalc)
+        totalHypothetical, // what we're collecting for each future EMI
       };
 
-      futureInterestTotal = r2(futureInterestTotal + interestPortion);
-      openingBalance = r2(Math.max(openingBalance - principalPortion, 0));
+      rollingBalance = r2(Math.max(rollingBalance - principalPortion, 0));
       return out;
     });
 
     const futurePrincipalTotal = r2(
-      futurePrincipalRows.reduce((s, x) => s + x.principalDue, 0)
+      futureRows.reduce((s, x) => s + x.principalOutstanding, 0)
     );
 
-    // Totals (mirror GET + new fields)
+    // ---------- Totals (mirror GET) ----------
     const totalPrincipalOutstanding = r2(
       principalFromOverdues + futurePrincipalTotal
     );
 
     const foreclosureAmount = r2(
-      totalPrincipalOutstanding +
-        overdueInterestOutstanding +
-        overdueFineDueTotal
+      dueNowTotal + futureTotalHypothetical // overdues (emiDue+fine) + futures (P + recalculated I)
     );
 
     // Enforce exact amount to avoid book-keeping drift
@@ -1299,12 +1314,13 @@ exports.postForeclosurePayment = async (req, res) => {
             : req.user?.type === "ADMIN" ||
               (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
 
-        // A) Create ONE payment record for the whole foreclosure
+        // Covered EMIs list
         const coveredEmiIds = [
           ...dueNowBreakdown.map((r) => r.emiId),
-          ...futurePrincipalRows.map((r) => r.emiId),
+          ...futureSchedule.map((r) => r.emiId),
         ];
 
+        // A) Create ONE payment record for the whole foreclosure
         const payment = await tx.payment.create({
           data: {
             loanId,
@@ -1325,19 +1341,20 @@ exports.postForeclosurePayment = async (req, res) => {
                 overdueCount: dueNowBreakdown.length,
                 futureCount: futureSchedule.length,
               },
-              // For "Past-due EMIs collected now"
+              // Overdue EMIs collected now
               dueNowBreakdown,
-              // For "Future EMIs principal collected (interest saved)"
+              // Future EMIs collected now (principal + recalculated interest)
               futureSchedule,
-              // Compact lists if you need IDs only
               coveredEmiIds,
               // Totals for UI summaries
               totals: {
                 principalCollectedNow: totalPrincipalOutstanding, // overdues + future principal
-                interestCollectedNow: overdueInterestOutstanding, // only overdues
-                interestSaved: futureInterestTotal, // only futures
-                fineCollectedNow: overdueFineDueTotal,
-                amountAppliedNow: foreclosureAmount, // = principal + interest(overdue) + fines
+                interestCollectedNow: r2(
+                  overdueInterestOutstanding + futureRecalcInterestTotal
+                ),
+                interestSaved: r2(futureInterestSavingsTotal), // informational (scheduled - recalculated)
+                fineCollectedNow: r2(overdueFineDueTotal),
+                amountAppliedNow: foreclosureAmount, // = dueNowTotal + futureTotalHypothetical
               },
             },
             ...(req.user?.type === "ADMIN"
@@ -1375,14 +1392,20 @@ exports.postForeclosurePayment = async (req, res) => {
           if (!canSelfVerify) allVerified = false;
         }
 
-        // C) Update FUTURE EMIs (principal only)
-        for (const row of futurePrincipalRows) {
-          if (row.principalDue <= 0) continue;
+        // C) Update FUTURE EMIs (principal + recalculated interest)
+        for (const row of futureSchedule) {
+          const principalInc = r2(row.principalCollectedNow || 0);
+          const interestInc = r2(row.interestCollectedNow || 0);
+          const totalInc = r2(principalInc + interestInc);
+
+          if (totalInc <= 0) continue;
+
           await tx.eMI.update({
             where: { id: row.emiId },
             data: {
-              amountPaidSoFar: { increment: row.principalDue },
-              principalPaid: { increment: row.principalDue },
+              amountPaidSoFar: { increment: totalInc },
+              principalPaid: { increment: principalInc },
+              interestPaid: { increment: interestInc },
               fineAmount: 0,
               delayDays: 0,
               isForeclosure: true,
@@ -1470,9 +1493,11 @@ exports.postForeclosurePayment = async (req, res) => {
               coveredEmiIds,
               totals: {
                 principalCollectedNow: totalPrincipalOutstanding,
-                interestCollectedNow: overdueInterestOutstanding,
-                interestSaved: futureInterestTotal,
-                fineCollectedNow: overdueFineDueTotal,
+                interestCollectedNow: r2(
+                  overdueInterestOutstanding + futureRecalcInterestTotal
+                ),
+                interestSaved: r2(futureInterestSavingsTotal),
+                fineCollectedNow: r2(overdueFineDueTotal),
                 amountAppliedNow: foreclosureAmount,
               },
               allVerified,
@@ -1480,7 +1505,10 @@ exports.postForeclosurePayment = async (req, res) => {
           },
         });
 
-        return { allVerified, foreclosureAmount };
+        return {
+          allVerified,
+          foreclosureAmount,
+        };
       },
       { timeout: 30000 }
     );
@@ -1499,6 +1527,7 @@ exports.postForeclosurePayment = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
 
 exports.reversePayment = async (req, res) => {
   try {
