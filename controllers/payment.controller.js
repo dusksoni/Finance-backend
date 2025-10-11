@@ -578,11 +578,7 @@ exports.payPaymentById = async (req, res) => {
       principalOutstanding
     );
 
-    const canSelfVerify =
-      paymentMode !== "CASH"
-        ? true
-        : req.user?.type === "ADMIN" ||
-          (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
+    const canSelfVerify = (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
 
     // --- Keep the transaction TINY; post-processing happens AFTER commit ---
     const txResult = await prisma.$transaction(
@@ -711,7 +707,7 @@ exports.payPaymentById = async (req, res) => {
 
     return res.status(200).json({
       data: {
-        message: "Payment applied to installment",
+        message: canSelfVerify ? "Payment Success" : "Payment Success waiting for approval",
         paymentId: txResult.paymentId,
         paid: r2(payToFine + payToInterest + payToPrincipal),
         paidToFine: r2(payToFine),
@@ -749,10 +745,8 @@ exports.verifyPayment = async (req, res) => {
 
     // Permission check
     const isAdmin = req.user.type === "ADMIN";
-    const isEmployee =
-      req.user.type === "EMPLOYEE" &&
-      (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
-    if (!isAdmin && !isEmployee) {
+    const verified = (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
+    if (!verified) {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
@@ -766,7 +760,7 @@ exports.verifyPayment = async (req, res) => {
           verified: true,
           status: "PAID",
           verifiedByAdminId: isAdmin ? req.user.id : null,
-          verifiedByEmployeeId: isEmployee ? req.user.id : null,
+          verifiedByEmployeeId: !isAdmin ? req.user.id : null,
           verifiedAt: new Date(),
         },
       });
@@ -789,8 +783,7 @@ exports.verifyPayment = async (req, res) => {
         where: { emiId: inst.emiId },
         orderBy: [
           { paymentDate: "asc" },
-          // add both fields to stabilize ordering across same timestamps
-          { createdAt: "asc" },
+          // Payment model lacks createdAt; use id as deterministic tiebreaker
           { id: "asc" },
         ],
         select: { id: true, amount: true },
@@ -886,7 +879,7 @@ exports.verifyPayment = async (req, res) => {
         },
         ...postResult,
       };
-    });
+    }, { maxWait: 2000, timeout: 30000 });
 
     return res.json({ message: "Verified", data: result });
   } catch (err) {
@@ -1071,9 +1064,11 @@ exports.getForeclosureDetails = async (req, res) => {
       const interestPortion = r2(balance * rMonthly);
       const principalPortion = r2(row.principalOutstanding);
       const totalHypothetical = r2(interestPortion + principalPortion);
-      futureInterestTotal = r2(futureInterestTotal + (row.interestAmt - interestPortion ));
+      futureInterestTotal = r2(
+        futureInterestTotal + (row.interestAmt - interestPortion)
+      );
       balance = Math.max(balance - principalPortion, 0);
-      totalforeclosureAmount += totalHypothetical
+      totalforeclosureAmount += totalHypothetical;
       return {
         emiId: row.emiId,
         paymentFor: row.paymentFor,
@@ -1102,8 +1097,7 @@ exports.getForeclosureDetails = async (req, res) => {
       overdueFineDueTotal: r2(overdueFineDueTotal),
       dueNowTotal: r2(dueNowTotal), // (emiDueOnly + fineDue) for overdue bucket
       interestSavings, // from future EMIs (informational)
-      foreclosureAmount: r2(
-        totalforeclosureAmount),
+      foreclosureAmount: r2(totalforeclosureAmount),
     };
 
     return res.status(200).json({
@@ -1121,11 +1115,6 @@ exports.getForeclosureDetails = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
-
-// --------------------------------
-// 💳 POST FORECLOSURE PAYMENT (single receipt; no per-EMI payments)
-// --------------------------------
-// --------------------------------
 // --------------------------------
 // 💳 POST FORECLOSURE PAYMENT (single receipt; mirrors GET foreclosure math)
 // --------------------------------
@@ -1262,7 +1251,8 @@ exports.postForeclosurePayment = async (req, res) => {
         futureRecalcInterestTotal + recalculatedInterest
       );
       futureInterestSavingsTotal = r2(
-        futureInterestSavingsTotal + (row.scheduledInterest - recalculatedInterest)
+        futureInterestSavingsTotal +
+          (row.scheduledInterest - recalculatedInterest)
       );
       futureTotalHypothetical = r2(futureTotalHypothetical + totalHypothetical);
 
@@ -1270,7 +1260,7 @@ exports.postForeclosurePayment = async (req, res) => {
         emiId: row.emiId,
         paymentFor: row.paymentFor,
         openingBalance: r2(rollingBalance),
-        principalCollectedNow: principalPortion,   // collected now
+        principalCollectedNow: principalPortion, // collected now
         interestCollectedNow: recalculatedInterest, // collected now (recalc)
         totalHypothetical, // what we're collecting for each future EMI
       };
@@ -1299,6 +1289,15 @@ exports.postForeclosurePayment = async (req, res) => {
       });
     }
 
+    const permissions = await checkVerifyPermission(
+      req.user,
+      "FORECLOSE_CREATE"
+    );
+
+    if (!permissions) {
+      return res.status(403).json({ error: "Access denied", status: 403 });
+    }
+
     // ---- TX: ONE Payment row + bulk EMI updates + loan aggregates (re-synced)
     const result = await prisma.$transaction(
       async (tx) => {
@@ -1307,12 +1306,6 @@ exports.postForeclosurePayment = async (req, res) => {
           where: { id: loanId },
           data: { fileStatus: "FORECLOSURE_IN_PROGRESS" },
         });
-
-        const canSelfVerify =
-          paymentMode !== "CASH"
-            ? true
-            : req.user?.type === "ADMIN" ||
-              (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
 
         // Covered EMIs list
         const coveredEmiIds = [
@@ -1329,9 +1322,9 @@ exports.postForeclosurePayment = async (req, res) => {
             paymentDate,
             paymentMode,
             transactionId: paymentMode === "CASH" ? null : transactionId,
-            status: canSelfVerify ? "PAID" : "VERIFICATION_PENDING",
-            verified: !!canSelfVerify,
-            verifiedAt: canSelfVerify ? new Date() : null,
+            status: "PAID",
+            verified: true,
+            verifiedAt: new Date(),
             isForeclosure: true,
             metadata: {
               type: "FORECLOSURE",
@@ -1359,20 +1352,18 @@ exports.postForeclosurePayment = async (req, res) => {
             },
             ...(req.user?.type === "ADMIN"
               ? {
-                  verifiedByAdminId: canSelfVerify ? req.user?.id : null,
+                  verifiedByAdminId: req.user?.id,
                   adminId: req.user?.id,
                 }
               : {}),
             ...(req.user?.type === "EMPLOYEE"
               ? {
-                  verifiedByEmployeeId: canSelfVerify ? req.user?.id : null,
+                  verifiedByEmployeeId: req.user?.id,
                   employeeId: req.user?.id,
                 }
               : {}),
           },
         });
-
-        let allVerified = !!payment.verified;
 
         // B) Update OVERDUE EMIs with precise increments
         for (const row of dueNowBreakdown) {
@@ -1386,10 +1377,9 @@ exports.postForeclosurePayment = async (req, res) => {
               fineAmount: row.fineAssessed,
               delayDays: row.daysLate,
               isForeclosure: true,
-              status: canSelfVerify ? "PAID" : "VERIFICATION_PENDING",
+              status: "PAID",
             },
           });
-          if (!canSelfVerify) allVerified = false;
         }
 
         // C) Update FUTURE EMIs (principal + recalculated interest)
@@ -1409,83 +1399,68 @@ exports.postForeclosurePayment = async (req, res) => {
               fineAmount: 0,
               delayDays: 0,
               isForeclosure: true,
-              status: canSelfVerify ? "PAID" : "VERIFICATION_PENDING",
+              status: "PAID",
             },
           });
-          if (!canSelfVerify) allVerified = false;
         }
 
         // D) FINALIZE: when verified, re-sync aggregates from DB (carry prior + current)
-        if (allVerified) {
-          // 1) Sum from EMI buckets
-          const emiAgg = await tx.eMI.aggregate({
-            where: { loanId },
-            _sum: { principalPaid: true, interestPaid: true, finePaid: true },
-          });
+        // 1) Sum from EMI buckets
+        const emiAgg = await tx.eMI.aggregate({
+          where: { loanId },
+          _sum: { principalPaid: true, interestPaid: true, finePaid: true },
+        });
 
-          const sumPrincipal = r2(Number(emiAgg._sum.principalPaid || 0));
-          const sumInterest = r2(Number(emiAgg._sum.interestPaid || 0));
-          const sumFine = r2(Number(emiAgg._sum.finePaid || 0));
+        const sumPrincipal = r2(Number(emiAgg._sum.principalPaid || 0));
+        const sumInterest = r2(Number(emiAgg._sum.interestPaid || 0));
+        const sumFine = r2(Number(emiAgg._sum.finePaid || 0));
 
-          // 2) Sum of PAID receipts (single foreclosure + earlier)
-          const payAgg = await tx.payment.aggregate({
-            where: { loanId, status: "PAID" },
-            _sum: { amount: true },
-          });
-          const sumPaid = r2(Number(payAgg._sum.amount || 0));
+        // 2) Sum of PAID receipts (single foreclosure + earlier)
+        const payAgg = await tx.payment.aggregate({
+          where: { loanId, status: "PAID" },
+          _sum: { amount: true },
+        });
+        const sumPaid = r2(Number(payAgg._sum.amount || 0));
 
-          await tx.loan.update({
-            where: { id: loanId },
-            data: {
-              totalPaidPrincipal: sumPrincipal,
-              totalPaidInterest: sumInterest,
-              totalPaidFine: sumFine,
-              totalPaidAmount: sumPaid,
+        await tx.loan.update({
+          where: { id: loanId },
+          data: {
+            totalPaidPrincipal: sumPrincipal,
+            totalPaidInterest: sumInterest,
+            totalPaidFine: sumFine,
+            totalPaidAmount: sumPaid,
 
-              pendingAmount: 0,
-              fileStatus: "CLOSED",
-              isClosed: true,
-              isDefaulted: false,
+            pendingAmount: 0,
+            fileStatus: "CLOSED",
+            isClosed: true,
+            isDefaulted: false,
 
-              isForeclosed: true,
-              foreclosedAt: paymentDate,
-            },
-          });
+            isForeclosed: true,
+            foreclosedAt: paymentDate,
+          },
+        });
 
-          // Optional: auto-terminate hypothecation
-          if (loan.twoWheelerLoan) {
-            try {
-              await tryAutoTerminateHypothecation({
-                tx,
-                loanId,
-                twoWheelerLoan: loan.twoWheelerLoan,
-                userContext: {
-                  adminId: req.user?.adminId,
-                  employeeId: req.user?.employeeId,
-                  type: req.user?.type,
-                  loginActivityId: req.user?.loginActivityId,
-                },
-              });
-            } catch (_) {}
-          }
-        } else {
-          await tx.loan.update({
-            where: { id: loanId },
-            data: {
-              fileStatus: "FORECLOSURE_IN_PROGRESS",
-              isClosed: false,
-              isForeclosed: false,
-              foreclosedAt: null,
-            },
-          });
+        // Optional: auto-terminate hypothecation
+        if (loan.twoWheelerLoan) {
+          try {
+            await tryAutoTerminateHypothecation({
+              tx,
+              loanId,
+              twoWheelerLoan: loan.twoWheelerLoan,
+              userContext: {
+                adminId: req.user?.adminId,
+                employeeId: req.user?.employeeId,
+                type: req.user?.type,
+                loginActivityId: req.user?.loginActivityId,
+              },
+            });
+          } catch (_) {}
         }
 
         // E) Audit
         await tx.actionLog.create({
           data: {
-            action: allVerified
-              ? "FORECLOSURE_COMPLETE"
-              : "FORECLOSURE_PENDING_VERIFICATION",
+            action: "FORECLOSURE_COMPLETE",
             targetId: loanId,
             table: "Loan",
             metadata: {
@@ -1500,13 +1475,11 @@ exports.postForeclosurePayment = async (req, res) => {
                 fineCollectedNow: r2(overdueFineDueTotal),
                 amountAppliedNow: foreclosureAmount,
               },
-              allVerified,
             },
           },
         });
 
         return {
-          allVerified,
           foreclosureAmount,
         };
       },
@@ -1515,9 +1488,7 @@ exports.postForeclosurePayment = async (req, res) => {
 
     return res.json({
       status: 200,
-      message: result.allVerified
-        ? "Loan foreclosed and closed successfully (single receipt)."
-        : "Foreclosure recorded as one receipt; awaiting verification.",
+      message: "Loan foreclosed and closed successfully (single receipt).",
       data: {
         required: r2(result.foreclosureAmount),
       },
@@ -1527,7 +1498,6 @@ exports.postForeclosurePayment = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
-
 
 exports.reversePayment = async (req, res) => {
   try {

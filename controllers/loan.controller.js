@@ -38,12 +38,12 @@ exports.createLoan = async (req, res) => {
       productAmount,
       downPayment = 0,
       principalLoanAmount,
-      interestRate,          // Annual %, e.g. 14
-      tenureMonths,          // total months
-      startDate,             // JS/ISO date
-      dueDay = 5,            // day-of-month
+      interestRate, // Annual %, e.g. 14
+      tenureMonths, // total months
+      startDate, // JS/ISO date
+      dueDay = 5, // day-of-month
       paymentFrequency = "MONTHLY",
-      details,               // subtype payload
+      details, // subtype payload
       fileNo,
       disbursedDate,
       agreementDate,
@@ -150,9 +150,7 @@ exports.createLoan = async (req, res) => {
 
     // 4) Permission check
     const isAdmin = req.user.type === "ADMIN";
-    const isEmpCan =
-      req.user.type === "EMPLOYEE" &&
-      (await checkVerifyPermission(req.user, "CREATE_LOAN"));
+    const isEmpCan = await checkVerifyPermission(req.user, "LOAN_CREATE");
     const verified = isAdmin || isEmpCan;
 
     // 5) Transaction: Loan, subtypes, schedule, log
@@ -174,7 +172,8 @@ exports.createLoan = async (req, res) => {
             totalAmount: round2(totalPayable),
 
             // per-installment amount (first row is representative)
-            monthlyPayableAmount: schedule[0]?.emiPayAmount ?? round2(totalPayable / n),
+            monthlyPayableAmount:
+              schedule[0]?.emiPayAmount ?? round2(totalPayable / n),
 
             pendingAmount: round2(totalPayable),
             interestRate: annualRate,
@@ -282,7 +281,6 @@ exports.createLoan = async (req, res) => {
     return res.status(500).json({ error: err.message, status: 500 });
   }
 };
-
 
 // ====================
 // 🔄 UPDATE LOAN
@@ -831,14 +829,15 @@ exports.getLoanById = async (req, res) => {
         delayDays: true,
         updatedAt: true,
         status: true,
-      }
+      },
     });
 
     // If there are open EMIs and last update was >= 24h ago, refresh fines
     if (openEmis.length > 0) {
       const lastUpdatedAt = openEmis[0].updatedAt;
       const needsRefresh =
-        !lastUpdatedAt || now.getTime() - new Date(lastUpdatedAt).getTime() >= H24_MS;
+        !lastUpdatedAt ||
+        now.getTime() - new Date(lastUpdatedAt).getTime() >= H24_MS;
 
       if (needsRefresh) {
         const updates = [];
@@ -850,7 +849,10 @@ exports.getLoanById = async (req, res) => {
             0
           );
 
-          const { daysLate, fineAmt } = calculateFine(e.paymentFor, outstanding);
+          const { daysLate, fineAmt } = calculateFine(
+            e.paymentFor,
+            outstanding
+          );
           const newFine = Number((Number(fineAmt) || 0).toFixed(2));
           const newDelay = Number(daysLate || 0);
           const isDelayed = newDelay > 0;
@@ -859,7 +861,11 @@ exports.getLoanById = async (req, res) => {
           const storedDelay = Number(e.delayDays || 0);
 
           // only write if changed (saves writes & keeps updatedAt meaningful)
-          if (storedFine !== newFine || storedDelay !== newDelay || e.isDelayed !== isDelayed) {
+          if (
+            storedFine !== newFine ||
+            storedDelay !== newDelay ||
+            e.isDelayed !== isDelayed
+          ) {
             updates.push(
               prisma.eMI.update({
                 where: { id: e.id },
@@ -886,12 +892,21 @@ exports.getLoanById = async (req, res) => {
       include: {
         user: true,
         loanType: true,
-        emi: { orderBy: { paymentFor: "asc" } },
+        emi: {
+          orderBy: { paymentFor: "asc" },
+          include: {
+            payments: true,
+          },
+        },
         ceaseHistories: true,
         admin: true,
         employee: true,
         guarantors: true,
-        payments: true,
+        payments: {
+          include: {
+            emi: true,
+          },
+        },
         twoWheelerLoan: { include: { brand: true, model: true } },
         agriLoan: { include: { equipment: true } },
         msmeLoan: true,
@@ -911,4 +926,3 @@ exports.getLoanById = async (req, res) => {
       .json({ error: "Failed to fetch loan details", status: 500 });
   }
 };
-
