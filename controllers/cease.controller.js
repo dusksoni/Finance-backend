@@ -38,7 +38,7 @@ exports.createCease = async (req, res) => {
     }
 
     // Only ACTIVE or DEFAULTED can be ceased (tweak if you allow OVERDUE)
-    if (loan.fileStatus !== "ACTIVE" && loan.fileStatus !== "DEFAULTED") {
+    if (loan.isClosed || loan.isForeclosed || loan.isDefaulted) {
       return res.status(400).json({
         status: 400,
         success: false,
@@ -115,7 +115,7 @@ exports.createCease = async (req, res) => {
       });
 
       return ceaseHistory;
-    });
+    }, { maxWait: 2000, timeout: 30000 });
 
     return res.status(200).json({
       status: 200,
@@ -225,7 +225,7 @@ exports.completeCease = async (req, res) => {
       });
 
       return updatedCease;
-    });
+    }, { maxWait: 2000, timeout: 30000 });
 
     return res.json({ status: 200, message: "Cease marked as completed", data: result });
   } catch (error) {
