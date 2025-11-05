@@ -2,6 +2,7 @@ const express = require("express");
 require("dotenv").config();
 const app = express();
 const cors = require("cors");
+app.use(cors());
 
 const adminRoutes = require("./routes/admin.route");
 const employeeRoutes = require("./routes/employee.route");
@@ -21,7 +22,6 @@ const reportRoutes = require("./routes/report.route");
 const auditRoutes = require("./routes/audit.route");
 const dashboardRoutes = require("./routes/dashboard.route");
 
-app.use(cors());
 app.use(express.json());
 app.get("/", async (req, res) => {
   try {
