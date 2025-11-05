@@ -3,25 +3,48 @@ require("dotenv").config();
 const app = express();
 const cors = require("cors");
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS
+const rawAllowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",")
       .map((origin) => origin.trim())
       .filter(Boolean)
   : [];
+
+const allowAllOrigins = rawAllowedOrigins.includes("*");
+const allowedOrigins = rawAllowedOrigins.filter((origin) => origin !== "*");
+
+const escapeRegExp = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const matchesAllowedOrigin = (origin) =>
+  allowedOrigins.some((allowedOrigin) => {
+    if (!allowedOrigin.includes("*")) {
+      return allowedOrigin === origin;
+    }
+    const regex = new RegExp(
+      `^${allowedOrigin.split("*").map(escapeRegExp).join(".*")}$`
+    );
+    return regex.test(origin);
+  });
 
 const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) {
       return callback(null, true);
     }
-    if (!allowedOrigins.length || allowedOrigins.includes(origin)) {
+    if (
+      allowAllOrigins ||
+      !allowedOrigins.length ||
+      matchesAllowedOrigin(origin)
+    ) {
       return callback(null, true);
     }
+    console.warn(`[cors] blocked origin: ${origin}`);
     return callback(null, false);
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));
