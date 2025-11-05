@@ -34,6 +34,9 @@ app.get("/", async (req, res) => {
     });
   }
 });
+app.use("/api/status", (req, res) => {
+  res.json({ status: 200, data: "Server is running!" });
+});
 app.use("/api/admin", adminRoutes);
 app.use("/api/employee", employeeRoutes);
 app.use("/api/users", userRoutes);
