@@ -8,6 +8,7 @@ const {
   authMiddleware,
   onlyAdminOrEmployee,
   adminOnly,
+  requirePermission,
 } = require("../middleware/auth");
 const { createCease, completeCease, releaseCeasedAsset, getLoanCeaseHistory, getCeaseById, getAllCeaseHistories, addCeaseContactAttempt } = require("../controllers/cease.controller");
 
@@ -17,6 +18,27 @@ router.put("/:id",        authMiddleware, onlyAdminOrEmployee, loanController.up
 router.get("/user/:userId", authMiddleware, adminOnly,         loanController.listLoansByUser);
 router.put("/close/:id", authMiddleware, adminOnly,         loanController.closeLoan);
 router.get("/pending", authMiddleware, adminOnly, loanController.getPendingLoanDetails);
+router.get(
+  "/approvals",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  requirePermission("LOAN_APPROVE"),
+  loanController.listLoanApprovals
+);
+router.post(
+  "/:id/approve",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  requirePermission("LOAN_APPROVE"),
+  loanController.approveLoan
+);
+router.post(
+  "/:id/reject",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  requirePermission("LOAN_APPROVE"),
+  loanController.rejectLoan
+);
 router.get("/",           authMiddleware, onlyAdminOrEmployee, loanController.listLoans);
 router.get("/download",   authMiddleware, onlyAdminOrEmployee, loanController.listLoansDownload);
 router.get("/:id",        authMiddleware, onlyAdminOrEmployee, loanController.getLoanById);

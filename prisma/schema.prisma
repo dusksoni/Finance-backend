@@ -76,6 +76,7 @@ model Admin {
   actionLogs             ActionLog[]
   users                  User[]
   loans                  Loan[]
+  approvedLoans          Loan[]               @relation("LoanApprovedByAdmin")
   ceaseHistoriesAssigned CeaseHistory[]        @relation("AssignedByAdmin")
   ceaseHistoriesReleased  CeaseHistory[]        @relation("ReleasedByAdmin")
   requestedUpdates       UserUpdateRequest[]   @relation("RequestedByAdmin")
@@ -127,6 +128,7 @@ model Employee {
   actionLogs               ActionLog[]
   terminationRequest       TerminationRequest[]
   loans                    Loan[]
+  approvedLoans            Loan[]               @relation("LoanApprovedByEmployee")
   verifiedPayments         Payment[]             @relation("VerifiedByEmployee")
   requestedUpdates         UserUpdateRequest[]   @relation("RequestedByEmployee")
   ceaseHistoriesAssigned   CeaseHistory[]        @relation("AssignedByEmployee")
@@ -418,6 +420,10 @@ model Loan {
   comment              String?
   isForeclosed         Boolean    @default(false)
   foreclosedAt         DateTime?
+  approvalComment      String?
+  approvedAt           DateTime?
+  approvedByAdminId    String?
+  approvedByEmployeeId String?
   createdBy            String?
   adminId              String?
   employeeId           String?
@@ -427,6 +433,8 @@ model Loan {
   branch         Branch?          @relation(fields: [branchId], references: [id])
   admin          Admin?           @relation(fields: [adminId], references: [id])
   employee       Employee?        @relation(fields: [employeeId], references: [id])
+  approvedByAdmin    Admin?       @relation("LoanApprovedByAdmin", fields: [approvedByAdminId], references: [id])
+  approvedByEmployee Employee?    @relation("LoanApprovedByEmployee", fields: [approvedByEmployeeId], references: [id])
   user           User             @relation(fields: [userId], references: [id])
   emi            EMI[]
   payments       Payment[]

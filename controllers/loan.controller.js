@@ -26,6 +26,11 @@ const FREQUENCY_MONTHS = {
   HALF_YEARLY: 6,
   YEARLY: 12,
 };
+const PENDING_APPROVAL_STATUSES = [
+  "PENDING_APPROVAL",
+  "INITIATED",
+  "IN_PROGRESS",
+];
 
 const normalizeFileInput = (value) => {
   if (!value) return null;
@@ -201,8 +206,17 @@ exports.createLoan = async (req, res) => {
 
     // 4) Permission check
     const isAdmin = req.user.type === "ADMIN";
-    const isEmpCan = await checkVerifyPermission(req.user, "LOAN_CREATE");
-    const verified = isAdmin || isEmpCan;
+    if (!isAdmin) {
+      const canCreate = await checkVerifyPermission(req.user, "LOAN_CREATE");
+      if (!canCreate) {
+        return res
+          .status(403)
+          .json({ error: "You do not have permission to create loans" });
+      }
+    }
+    const canSelfApprove =
+      isAdmin || (await checkVerifyPermission(req.user, "LOAN_APPROVE"));
+    const verified = Boolean(canSelfApprove);
 
     // 5) Transaction: Loan, subtypes, schedule, log
     const created = await prisma.$transaction(
@@ -276,6 +290,16 @@ exports.createLoan = async (req, res) => {
               registrationDoc: registrationDocRelation,
             }),
             comment,
+            approvalComment: null,
+            approvedAt: verified ? new Date() : null,
+            approvedByAdminId:
+              verified && isAdmin && req.user.adminId
+                ? req.user.adminId
+                : undefined,
+            approvedByEmployeeId:
+              verified && !isAdmin && req.user.employeeId
+                ? req.user.employeeId
+                : undefined,
 
             createdBy: req.user.type,
             admin: isAdmin ? { connect: { id: req.user.adminId } } : undefined,
@@ -407,11 +431,10 @@ exports.updateLoan = async (req, res) => {
       existing.dueDay !== newDueDay;
 
     // 5) permissions
-    const isAdmin = req.user.type === "ADMIN";
-    const isEmpOk =
-      req.user.type === "EMPLOYEE" &&
-      (await checkVerifyPermission(req.user, "CREATE_LOAN"));
-    const newFileStatus = isAdmin || isEmpOk ? "ACTIVE" : existing.fileStatus;
+    const canSelfApprove =
+      req.user.type === "ADMIN" ||
+      (await checkVerifyPermission(req.user, "LOAN_APPROVE"));
+    const newFileStatus = canSelfApprove ? "ACTIVE" : existing.fileStatus;
 
     // 6) frequency helpers
     const freqCfg = FREQUENCY_OFFSETS[newFreq] || FREQUENCY_OFFSETS.MONTHLY;
@@ -825,6 +848,271 @@ exports.listLoans = async (req, res) => {
   }
 };
 
+exports.listLoanApprovals = async (req, res) => {
+  try {
+    const isAdmin = req.user.type === "ADMIN";
+    const canApprove =
+      isAdmin || (await checkVerifyPermission(req.user, "LOAN_APPROVE"));
+
+    if (!canApprove) {
+      return res
+        .status(403)
+        .json({ error: "Not allowed to view approvals", status: 403 });
+    }
+
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 10, 100);
+    const statusQuery = (req.query.status || "PENDING").toUpperCase();
+    const branchId = req.query.branchId;
+    const loanTypeId = req.query.loanTypeId;
+    const search = (req.query.search || "").trim();
+
+    const statusMap = {
+      PENDING: PENDING_APPROVAL_STATUSES,
+      APPROVED: ["ACTIVE", "DISBURSED"],
+      REJECTED: ["REJECTED"],
+      ALL: [
+        ...new Set([
+          ...PENDING_APPROVAL_STATUSES,
+          "REJECTED",
+          "ACTIVE",
+          "DISBURSED",
+        ]),
+      ],
+    };
+
+    const statuses = statusMap[statusQuery] || PENDING_APPROVAL_STATUSES;
+
+    const where = {
+      fileStatus: { in: statuses },
+    };
+
+    if (branchId) {
+      where.branchId = branchId;
+    }
+    if (loanTypeId) {
+      where.loanTypeId = loanTypeId;
+    }
+    if (search) {
+      where.OR = [
+        { fileNo: { contains: search, mode: "insensitive" } },
+        {
+          user: {
+            OR: [
+              { firstName: { contains: search, mode: "insensitive" } },
+              { middleName: { contains: search, mode: "insensitive" } },
+              { lastName: { contains: search, mode: "insensitive" } },
+              { phone: { contains: search, mode: "insensitive" } },
+              { email: { contains: search, mode: "insensitive" } },
+            ],
+          },
+        },
+        {
+          employee: {
+            name: { contains: search, mode: "insensitive" },
+          },
+        },
+        {
+          branch: {
+            name: { contains: search, mode: "insensitive" },
+          },
+        },
+      ];
+    }
+
+    const [data, total] = await Promise.all([
+      prisma.loan.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: true,
+          employee: true,
+          branch: true,
+          loanType: true,
+          approvedByAdmin: true,
+          approvedByEmployee: true,
+        },
+      }),
+      prisma.loan.count({ where }),
+    ]);
+
+    return res.status(200).json({
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        status: statusQuery,
+      },
+    });
+  } catch (err) {
+    console.error("Loan approvals list error:", err);
+    return res
+      .status(500)
+      .json({ error: "Failed to fetch loan approvals", status: 500 });
+  }
+};
+
+exports.approveLoan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isAdmin = req.user.type === "ADMIN";
+    const canApprove =
+      isAdmin || (await checkVerifyPermission(req.user, "LOAN_APPROVE"));
+
+    if (!canApprove) {
+      return res
+        .status(403)
+        .json({ error: "Not allowed to approve loans", status: 403 });
+    }
+
+    const loan = await prisma.loan.findUnique({
+      where: { id },
+      select: { id: true, fileStatus: true },
+    });
+
+    if (!loan) {
+      return res.status(404).json({ error: "Loan not found", status: 404 });
+    }
+
+    if (!PENDING_APPROVAL_STATUSES.includes(loan.fileStatus)) {
+      return res.status(400).json({
+        error: "Loan is not pending approval",
+        status: 400,
+      });
+    }
+
+    const approvedAt = new Date();
+    const updated = await prisma.loan.update({
+      where: { id },
+      data: {
+        fileStatus: "ACTIVE",
+        approvalComment: null,
+        approvedAt,
+        approvedByAdminId: isAdmin ? req.user.adminId ?? null : null,
+        approvedByEmployeeId: !isAdmin ? req.user.employeeId ?? null : null,
+        isClosed: false,
+      },
+      include: {
+        user: true,
+        employee: true,
+        branch: true,
+        loanType: true,
+      },
+    });
+
+    await logAction({
+      action: "APPROVED_LOAN",
+      table: "Loan",
+      targetId: id,
+      metadata: {
+        approvedAt,
+        approverType: req.user.type,
+      },
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
+    return res.status(200).json({
+      message: "Loan approved successfully",
+      data: updated,
+      status: 200,
+    });
+  } catch (err) {
+    console.error("Approve loan error:", err);
+    return res
+      .status(500)
+      .json({ error: "Failed to approve loan", status: 500 });
+  }
+};
+
+exports.rejectLoan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const comment = (req.body?.comment || "").trim();
+
+    if (!comment) {
+      return res.status(400).json({
+        error: "Rejection comment is required",
+        status: 400,
+      });
+    }
+
+    const isAdmin = req.user.type === "ADMIN";
+    const canApprove =
+      isAdmin || (await checkVerifyPermission(req.user, "LOAN_APPROVE"));
+
+    if (!canApprove) {
+      return res
+        .status(403)
+        .json({ error: "Not allowed to reject loans", status: 403 });
+    }
+
+    const loan = await prisma.loan.findUnique({
+      where: { id },
+      select: { id: true, fileStatus: true },
+    });
+
+    if (!loan) {
+      return res.status(404).json({ error: "Loan not found", status: 404 });
+    }
+
+    if (!PENDING_APPROVAL_STATUSES.includes(loan.fileStatus)) {
+      return res.status(400).json({
+        error: "Loan is not pending approval",
+        status: 400,
+      });
+    }
+
+    const approvedAt = new Date();
+    const updated = await prisma.loan.update({
+      where: { id },
+      data: {
+        fileStatus: "REJECTED",
+        approvalComment: comment,
+        approvedAt,
+        approvedByAdminId: isAdmin ? req.user.adminId ?? null : null,
+        approvedByEmployeeId: !isAdmin ? req.user.employeeId ?? null : null,
+        isClosed: true,
+      },
+      include: {
+        user: true,
+        employee: true,
+        branch: true,
+        loanType: true,
+      },
+    });
+
+    await logAction({
+      action: "REJECTED_LOAN",
+      table: "Loan",
+      targetId: id,
+      metadata: {
+        approvalComment: comment,
+        approvedAt,
+        approverType: req.user.type,
+      },
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
+    return res.status(200).json({
+      message: "Loan rejected successfully",
+      data: updated,
+      status: 200,
+    });
+  } catch (err) {
+    console.error("Reject loan error:", err);
+    return res
+      .status(500)
+      .json({ error: "Failed to reject loan", status: 500 });
+  }
+};
+
 exports.listLoansDownload = async (req, res) => {
   try {
     const {
@@ -999,6 +1287,8 @@ exports.getLoanById = async (req, res) => {
         ceaseHistories: true,
         admin: true,
         employee: true,
+        approvedByAdmin: true,
+        approvedByEmployee: true,
         guarantors: true,
         payments: {
           include: {
