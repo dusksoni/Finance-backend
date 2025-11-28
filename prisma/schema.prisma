@@ -412,6 +412,9 @@ model Loan {
   insuranceAlert       Boolean    @default(false)
   insuranceNumber      String?
   insuranceCompany     String?
+  loanInvoiceDoc       File[]              @relation("loanInvoiceDoc")
+  insuranceDoc         File[]              @relation("insuranceDoc")
+  registrationDoc      File[]              @relation("registrationDoc")
   comment              String?
   isForeclosed         Boolean    @default(false)
   foreclosedAt         DateTime?
@@ -717,4 +720,7 @@ model File {
   proofOfIncomeImages User[]    @relation("ProofOfIncomeImages")
   photoIDImages       PhotoID[] @relation("PhotoIDImages")
   employees         Employee[] @relation("Photo")
+  loanInvoiceDoc       Loan[]    @relation("loanInvoiceDoc")
+  insuranceDoc         Loan[]    @relation("insuranceDoc")
+  registrationDoc      Loan[]    @relation("registrationDoc")
 }

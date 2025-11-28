@@ -27,6 +27,54 @@ const FREQUENCY_MONTHS = {
   YEARLY: 12,
 };
 
+const normalizeFileInput = (value) => {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    return value.length ? value[0] : null;
+  }
+  return value;
+};
+
+const createOrGetFileId = async (tx, filePayload) => {
+  if (!filePayload) return null;
+  if (filePayload.id) return filePayload.id;
+
+  const url = filePayload.secure_url || filePayload.url;
+  const publicId = filePayload.public_id || filePayload.publicId;
+  if (!url || !publicId) return null;
+
+  const resourceType = filePayload.resource_type || filePayload.resourceType || "image";
+  const format = filePayload.format || "raw";
+
+  const created = await tx.file.create({
+    data: {
+      url,
+      publicId,
+      resourceType,
+      format,
+    },
+  });
+
+  return created.id;
+};
+
+const buildCreateFileRelation = async (tx, filePayload) => {
+  const normalized = normalizeFileInput(filePayload);
+  if (!normalized) return null;
+  const fileId = await createOrGetFileId(tx, normalized);
+  return fileId ? { connect: [{ id: fileId }] } : null;
+};
+
+const buildUpdateFileRelation = async (tx, filePayload) => {
+  if (filePayload === undefined) return null;
+  const normalized = normalizeFileInput(filePayload);
+  if (!normalized) {
+    return { set: [] };
+  }
+  const fileId = await createOrGetFileId(tx, normalized);
+  return fileId ? { set: [{ id: fileId }] } : { set: [] };
+};
+
 // ====================
 // 🟢 CREATE LOAN (fixed)
 // ====================
@@ -57,6 +105,9 @@ exports.createLoan = async (req, res) => {
       insuranceAlert,
       insuranceNumber,
       insuranceCompany,
+      loanInvoiceDoc,
+      insuranceDoc,
+      registrationDoc,
       comment,
       branchId,
       interestType,
@@ -156,6 +207,18 @@ exports.createLoan = async (req, res) => {
     // 5) Transaction: Loan, subtypes, schedule, log
     const created = await prisma.$transaction(
       async (tx) => {
+        const invoiceDocRelation = await buildCreateFileRelation(
+          tx,
+          loanInvoiceDoc
+        );
+        const insuranceDocRelation = await buildCreateFileRelation(
+          tx,
+          insuranceDoc
+        );
+        const registrationDocRelation = await buildCreateFileRelation(
+          tx,
+          registrationDoc
+        );
         // a) Core loan
         const loan = await tx.loan.create({
           data: {
@@ -203,6 +266,15 @@ exports.createLoan = async (req, res) => {
             insuranceAlert: String(insuranceAlert) === "true",
             insuranceNumber,
             insuranceCompany,
+            ...(invoiceDocRelation && {
+              loanInvoiceDoc: invoiceDocRelation,
+            }),
+            ...(insuranceDocRelation && {
+              insuranceDoc: insuranceDocRelation,
+            }),
+            ...(registrationDocRelation && {
+              registrationDoc: registrationDocRelation,
+            }),
             comment,
 
             createdBy: req.user.type,
@@ -293,7 +365,12 @@ exports.updateLoan = async (req, res) => {
     // 1) fetch existing (with payments)
     const existing = await prisma.loan.findUnique({
       where: { id: loanId },
-      include: { payments: true },
+      include: {
+        payments: true,
+        loanInvoiceDoc: true,
+        insuranceDoc: true,
+        registrationDoc: true,
+      },
     });
     if (!existing) {
       return res.status(404).json({ error: "Loan not found" });
@@ -343,6 +420,18 @@ exports.updateLoan = async (req, res) => {
     // 7) transaction
     const updatedLoan = await prisma.$transaction(
       async (tx) => {
+        const invoiceDocRelation = await buildUpdateFileRelation(
+          tx,
+          payload.loanInvoiceDoc
+        );
+        const insuranceDocRelation = await buildUpdateFileRelation(
+          tx,
+          payload.insuranceDoc
+        );
+        const registrationDocRelation = await buildUpdateFileRelation(
+          tx,
+          payload.registrationDoc
+        );
         // a) update loan
         const loan = await tx.loan.update({
           where: { id: loanId },
@@ -399,6 +488,15 @@ exports.updateLoan = async (req, res) => {
               payload.insuranceNumber ?? existing.insuranceNumber,
             insuranceCompany:
               payload.insuranceCompany ?? existing.insuranceCompany,
+            ...(invoiceDocRelation !== null && {
+              loanInvoiceDoc: invoiceDocRelation,
+            }),
+            ...(insuranceDocRelation !== null && {
+              insuranceDoc: insuranceDocRelation,
+            }),
+            ...(registrationDocRelation !== null && {
+              registrationDoc: registrationDocRelation,
+            }),
             comment: payload.comment ?? existing.comment,
             branch: payload.branchId
               ? { connect: { id: payload.branchId } }
