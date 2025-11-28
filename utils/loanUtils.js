@@ -4,29 +4,52 @@ const { encrypt, decrypt } = require("../utils/encryptionUtils");
 
 async function processPostPayment({
   tx,
-  emiId,              // Optional: pass if this payment is for a specific EMI
+  emiId, // Optional: pass if this payment is for a specific EMI
   loanId,
-  paymentAmount,       // Amount verified/paid
-  addToEmi = true,     // Set false if only want to update loan/hypothecation
+  paymentAmount = 0, // Amount verified/paid
+  addToEmi = true, // Set false if only want to update loan/hypothecation
+  updateEmiStatus,
   forceFullUpdate = false, // For foreclosure
   userContext = {},
 }) {
   // 1. Update EMI if required
   let emi = null;
   let emiStatus = null;
-  if (emiId && addToEmi) {
-    emi = await tx.eMI.findUnique({ where: { id: emiId } });
-    const newPaidSoFar = Number(emi.amountPaidSoFar) + Number(paymentAmount);
-    const isFullyPaid = newPaidSoFar >= Number(emi.emiPayAmount) + Number(emi.fineAmount || 0);
-    emiStatus = isFullyPaid ? "PAID" : "PARTIAL";
+  const shouldUpdateStatus =
+    typeof updateEmiStatus === "boolean" ? updateEmiStatus : addToEmi;
 
-    await tx.eMI.update({
-      where: { id: emiId },
-      data: {
-        amountPaidSoFar: newPaidSoFar,
-        status: emiStatus,
+  if (emiId && (addToEmi || shouldUpdateStatus)) {
+    emi = await tx.eMI.findUnique({ where: { id: emiId } });
+    if (emi) {
+      const finePaid = Number(emi.finePaid || 0);
+      const fineAssessed = Number(emi.fineAmount || 0);
+
+      const paymentValue = Number(paymentAmount || 0);
+      let adjustedPaidSoFar = Number(emi.amountPaidSoFar || 0);
+      if (addToEmi) {
+        adjustedPaidSoFar += paymentValue;
       }
-    });
+
+      const emiComponentPaid = Math.max(adjustedPaidSoFar - finePaid, 0);
+      const emiDue = Math.max(Number(emi.emiPayAmount || 0) - emiComponentPaid, 0);
+      const fineDue = Math.max(fineAssessed - finePaid, 0);
+      emiStatus = emiDue <= 0.01 && fineDue <= 0.01 ? "PAID" : "PARTIAL";
+
+      const updatePayload = {};
+      if (addToEmi) {
+        updatePayload.amountPaidSoFar = adjustedPaidSoFar;
+      }
+      if (shouldUpdateStatus) {
+        updatePayload.status = emiStatus;
+      }
+
+      if (Object.keys(updatePayload).length > 0) {
+        await tx.eMI.update({
+          where: { id: emiId },
+          data: updatePayload,
+        });
+      }
+    }
   }
 
   // 2. Update Loan summary

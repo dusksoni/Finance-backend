@@ -2,6 +2,7 @@ const express = require("express");
 require("dotenv").config();
 const app = express();
 const cors = require("cors");
+const { initializeCronJobs, updateAllOverdueFines } = require("./utils/fineUpdateService");
 
 app.use(cors());
 
@@ -57,6 +58,18 @@ app.use("/api/audit", auditRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () =>
-  console.log(`🚀 Servers running on http://localhost:${PORT}`)
-);
+app.listen(PORT, async () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+
+  // Initialize cron jobs for automatic fine updates
+  initializeCronJobs();
+
+  // Optionally run fine update once on startup
+  console.log('🔄 Running initial fine update on startup...');
+  try {
+    await updateAllOverdueFines();
+    console.log('✅ Initial fine update completed');
+  } catch (error) {
+    console.error('❌ Initial fine update failed:', error.message);
+  }
+});
