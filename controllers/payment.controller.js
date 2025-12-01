@@ -152,7 +152,7 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
 exports.makePayment = async (req, res) => {
   try {
     const { loanId } = req.params;
-    let { amountPaid, paymentMode, transactionId, paymentDate } = req.body;
+    let { amountPaid, paymentMode, transactionId, paymentDate, useGateway } = req.body;
 
     // Helper for precise rounding using Decimal.js
     const r2 = (n) => new Decimal(n || 0).toDecimalPlaces(2).toNumber();
@@ -232,11 +232,13 @@ exports.makePayment = async (req, res) => {
         });
 
         // Check verification permission once
-        const verified =
-          paymentMode === "CASH"
-            ? req.user.type === "ADMIN" ||
-              checkVerifyPermission(req.user, "PAYMENT_VERIFY")
-            : true;
+        // Gateway payments are auto-approved, manual payments require permission
+        const verified = useGateway
+          ? true // Auto-approve gateway payments
+          : paymentMode === "CASH"
+          ? req.user.type === "ADMIN" ||
+            checkVerifyPermission(req.user, "PAYMENT_VERIFY")
+          : true;
 
         // CREATE ONE PAYMENT RECORD FOR THE ENTIRE AMOUNT
         const payment = await tx.payment.create({
@@ -585,7 +587,7 @@ exports.getEmiById = async (req, res) => {
 exports.payPaymentById = async (req, res) => {
   try {
     const { emiId } = req.params;
-    let { amount, paymentMode, transactionId, paymentDate } = req.body;
+    let { amount, paymentMode, transactionId, paymentDate, useGateway } = req.body;
 
     const r2 = (n) => Number((Number(n) || 0).toFixed(2));
     amount = r2(Number(amount));
@@ -632,7 +634,10 @@ exports.payPaymentById = async (req, res) => {
       principalOutstanding
     );
 
-    const canSelfVerify = (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
+    // Gateway payments are auto-approved, manual payments require permission
+    const canSelfVerify = useGateway
+      ? true
+      : (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
 
     // --- Keep the transaction TINY; post-processing happens AFTER commit ---
     const txResult = await prisma.$transaction(

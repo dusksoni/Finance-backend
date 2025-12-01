@@ -4,6 +4,7 @@ const router = express.Router();
 
 const loanController    = require("../controllers/loan.controller");
 const paymentController = require("../controllers/payment.controller");
+const forecloseApprovalController = require("../controllers/forecloseApproval.controller");
 const {
   authMiddleware,
   onlyAdminOrEmployee,
@@ -116,6 +117,50 @@ router.get(
   authMiddleware,
   onlyAdminOrEmployee,
   paymentController.getPaymentInvoice
+);
+
+/** --------------- Foreclose Approval Routes -------------------- */
+// List all foreclose approval requests
+router.get(
+  "/foreclose-approvals",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  requirePermission("FORECLOSE_VERIFY"),
+  forecloseApprovalController.listForecloseRequests
+);
+
+// Create a foreclose approval request
+router.post(
+  "/foreclose-request/:loanId",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  forecloseApprovalController.createForecloseRequest
+);
+
+// Get a single foreclose request
+router.get(
+  "/foreclose-request/:id",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  forecloseApprovalController.getForecloseRequestById
+);
+
+// Approve a foreclose request
+router.post(
+  "/foreclose-request/:id/approve",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  requirePermission("FORECLOSE_VERIFY"),
+  forecloseApprovalController.approveForecloseRequest
+);
+
+// Reject a foreclose request
+router.post(
+  "/foreclose-request/:id/reject",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  requirePermission("FORECLOSE_VERIFY"),
+  forecloseApprovalController.rejectForecloseRequest
 );
 
 /** --------------- Cease Routes -------------------- */

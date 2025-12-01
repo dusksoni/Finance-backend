@@ -23,6 +23,7 @@ const listRoutes = require("./routes/list.route");
 const reportRoutes = require("./routes/report.route");
 const auditRoutes = require("./routes/audit.route");
 const dashboardRoutes = require("./routes/dashboard.route");
+const publicUserRoutes = require("./routes/publicUser.route");
 
 app.use(express.json());
 app.get("/", async (req, res) => {
@@ -56,6 +57,7 @@ app.use("/api/region", regionRoute);
 app.use("/api/report", reportRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/public", publicUserRoutes);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {

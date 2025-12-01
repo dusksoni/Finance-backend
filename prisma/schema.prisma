@@ -83,6 +83,8 @@ model Admin {
   verifiedPayments       Payment[]             @relation("VerifiedByAdmin")
   payments               Payment[]
   ceaseContactAttempts   CeaseContactAttempt[]
+  approvedForecloseRequests ForecloseRequest[] @relation("ForecloseApprovedByAdmin")
+  requestedForecloseRequests ForecloseRequest[] @relation("ForecloseRequestedByAdmin")
   // CeaseHistory           CeaseHistory[]
 }
 
@@ -137,6 +139,8 @@ model Employee {
   ceaseHistoriesReleased    CeaseHistory[]        @relation("ReleasedByEmployee")
   payments                 Payment[]
   ceaseContactAttempts     CeaseContactAttempt[]
+  approvedForecloseRequests ForecloseRequest[] @relation("ForecloseApprovedByEmployee")
+  requestedForecloseRequests ForecloseRequest[] @relation("ForecloseRequestedByEmployee")
   // CeaseHistory             CeaseHistory[]
 }
 
@@ -438,11 +442,13 @@ model Loan {
   user           User             @relation(fields: [userId], references: [id])
   emi            EMI[]
   payments       Payment[]
+  paymentOrders  PaymentOrder[]
   ceaseHistories CeaseHistory[]
   guarantors     LoanGuarantor[]
   twoWheelerLoan TwoWheelerLoan?
   agriLoan       AgricultureLoan?
   msmeLoan       MSMELoan?
+  forecloseRequests ForecloseRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -504,6 +510,51 @@ model Payment {
   admin                Admin?       @relation(fields: [adminId], references: [id])
   employee             Employee?    @relation(fields: [employeeId], references: [id])
   loan                 Loan         @relation(fields: [loanId], references: [id])
+}
+
+model ForecloseRequest {
+  id                   String    @id @default(uuid())
+  loanId               String
+  requestedAmount      Decimal
+  calculatedAmount     Decimal
+  paymentMode          PaymentMode?
+  transactionId        String?
+  paymentDate          DateTime
+  status               String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvalComment      String?
+  approvedAt           DateTime?
+  approvedByAdminId    String?
+  approvedByEmployeeId String?
+  requestedByAdminId   String?
+  requestedByEmployeeId String?
+  metadata             Json?      // Store foreclose calculation details
+
+  loan                 Loan      @relation(fields: [loanId], references: [id])
+  approvedByAdmin      Admin?    @relation("ForecloseApprovedByAdmin", fields: [approvedByAdminId], references: [id])
+  approvedByEmployee   Employee? @relation("ForecloseApprovedByEmployee", fields: [approvedByEmployeeId], references: [id])
+  requestedByAdmin     Admin?    @relation("ForecloseRequestedByAdmin", fields: [requestedByAdminId], references: [id])
+  requestedByEmployee  Employee? @relation("ForecloseRequestedByEmployee", fields: [requestedByEmployeeId], references: [id])
+
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model PaymentOrder {
+  id                String    @id @default(uuid())
+  orderId           String    @unique
+  loanId            String
+  emiId             String?
+  amount            Decimal
+  paymentType       String    @default("BULK") // BULK, EMI
+  gatewayOrderId    String?
+  gatewayPaymentId  String?
+  gatewaySignature  String?
+  transactionId     String?
+  status            String    @default("PENDING") // PENDING, COMPLETED, FAILED
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+  completedAt       DateTime?
+  loan              Loan      @relation(fields: [loanId], references: [id])
 }
 
 enum ContactType {
