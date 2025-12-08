@@ -11,7 +11,7 @@ const {
   adminOnly,
   requirePermission,
 } = require("../middleware/auth");
-const { createCease, completeCease, releaseCeasedAsset, getLoanCeaseHistory, getCeaseById, getAllCeaseHistories, addCeaseContactAttempt } = require("../controllers/cease.controller");
+const { createSeized, completeSeized, releaseSeizedAsset, getLoanSeizedHistory, getSeizedById, getAllSeizedHistories, addSeizedContactAttempt } = require("../controllers/seized.controller");
 
 /** ─── LOAN CRUD ───────────────────────────────────── */
 router.post("/",          authMiddleware, onlyAdminOrEmployee, loanController.createLoan);
@@ -164,24 +164,25 @@ router.post(
 );
 
 /** --------------- Cease Routes -------------------- */
-// Create cease request (assign asset cease)
-router.post('/cease/:loanId', authMiddleware, onlyAdminOrEmployee, createCease);
+// Create seized request (assign asset seizure)
+router.post('/seized/:loanId', authMiddleware, onlyAdminOrEmployee, createSeized);
 
-// Mark cease as completed by assigned employee
-router.post('/cease/:id/complete', authMiddleware, onlyAdminOrEmployee, completeCease);
+// Mark seized as completed by assigned employee
+router.post('/seized/:id/complete', authMiddleware, onlyAdminOrEmployee, completeSeized);
 
-// Release ceased asset
-router.post('/cease/:id/release', authMiddleware, onlyAdminOrEmployee, releaseCeasedAsset);
+// Release seized asset
+router.post('/seized/:id/release', authMiddleware, onlyAdminOrEmployee, releaseSeizedAsset);
 
-// Get all cease histories for a loan
-router.get('/cease/loan/:loanId', authMiddleware, onlyAdminOrEmployee, getLoanCeaseHistory);
+// Get all seized histories for a loan
+router.get('/seized/loan/:loanId', authMiddleware, onlyAdminOrEmployee, getLoanSeizedHistory);
 
-// Get one cease record with all details
-router.get('/cease/:id', authMiddleware, onlyAdminOrEmployee, getCeaseById);
+// Get one seized record with all details
+router.get('/seized/:id', authMiddleware, onlyAdminOrEmployee, getSeizedById);
 
-// In your ceaseHistory router:
-router.get("/cease", authMiddleware, onlyAdminOrEmployee, getAllCeaseHistories);
+// Get all seized histories
+router.get("/seized", authMiddleware, onlyAdminOrEmployee, getAllSeizedHistories);
 
-router.post("/cease/:id/contact-attempt", authMiddleware, onlyAdminOrEmployee, addCeaseContactAttempt);
+// Add contact attempt for seized asset
+router.post("/seized/:id/contact-attempt", authMiddleware, onlyAdminOrEmployee, addSeizedContactAttempt);
 
 module.exports = router;

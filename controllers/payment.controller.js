@@ -1022,6 +1022,16 @@ exports.getForeclosureDetails = async (req, res) => {
     }
 
     const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    // Round to nearest 10: amounts ending in 1-5 round down, 6-9 round up, no decimals
+    const roundToNearest10 = (amount) => {
+      if (typeof amount !== "number") return 0;
+      const lastDigit = Math.abs(amount) % 10;
+      if (lastDigit <= 5) {
+        return Math.floor(amount / 10) * 10; // 2342 -> 2340
+      } else {
+        return Math.ceil(amount / 10) * 10; // 2348 -> 2350
+      }
+    };
     const today = new Date();
     const rMonthly = (Number(loan.interestRate) || 0) / 100 / 12;
 
@@ -1158,7 +1168,7 @@ exports.getForeclosureDetails = async (req, res) => {
       overdueFineDueTotal: r2(overdueFineDueTotal),
       dueNowTotal: r2(dueNowTotal), // (emiDueOnly + fineDue) for overdue bucket
       interestSavings, // from future EMIs (informational)
-      foreclosureAmount: r2(totalforeclosureAmount),
+      foreclosureAmount: roundToNearest10(totalforeclosureAmount), // Rounded to nearest 10, no decimals
     };
 
     return res.status(200).json({

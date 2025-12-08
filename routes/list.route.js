@@ -25,6 +25,7 @@ const {
 const { ro } = require("date-fns/locale");
 const { authMiddleware, onlyAdminOrEmployee } = require("../middleware/auth");
 const { createBranch, updateBranch, deleteBranch, getBranches, getBranchEmployees, getBranchLoans, getBranchStatistics, getBranch } = require("../controllers/branch.controller");
+const { getAllShowrooms, getShowroomsByBranch, getShowroomById, createShowroom, updateShowroom, deleteShowroom } = require("../controllers/showroom.controller");
 
 // Public lookup endpoints
 router.get("/genders", getAllGenders);
@@ -65,6 +66,23 @@ router.get("/equipment", getEquipment);
 router.put("/equipment/:id", authMiddleware, onlyAdminOrEmployee, updateEquipment);
 router.delete("/equipment/:id", authMiddleware, onlyAdminOrEmployee, deleteEquipment);
 
+// Get all showrooms
+router.get("/showroom", authMiddleware, onlyAdminOrEmployee, getAllShowrooms);
+
+// Get showrooms by branch
+router.get("/showroom/branch/:branchId", authMiddleware, onlyAdminOrEmployee, getShowroomsByBranch);
+
+// Get single showroom
+router.get("/showroom/:id", authMiddleware, onlyAdminOrEmployee, getShowroomById);
+
+// Create showroom
+router.post("/showroom", authMiddleware, onlyAdminOrEmployee, createShowroom);
+
+// Update showroom
+router.put("/showroom/:id", authMiddleware, onlyAdminOrEmployee, updateShowroom);
+
+// Delete showroom
+router.delete("/showroom/:id", authMiddleware, onlyAdminOrEmployee, deleteShowroom);
 
 
 module.exports = router;

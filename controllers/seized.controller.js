@@ -2,7 +2,7 @@ const prisma = require("../lib/prisma");
 const logAction = require("../utils/adminLogger");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 
-exports.createCease = async (req, res) => {
+exports.createSeized = async (req, res) => {
   try {
     const { loanId } = req.params;
     const {
@@ -26,7 +26,7 @@ exports.createCease = async (req, res) => {
     }
 
     // Prevent duplicate active cease
-    const existingCease = await prisma.ceaseHistory.findFirst({
+    const existingCease = await prisma.seizedHistory.findFirst({
       where: { loanId, status: { in: ["PENDING", "COMPLETED"] } },
     });
     if (existingCease) {
@@ -72,7 +72,7 @@ exports.createCease = async (req, res) => {
         );
       }
 
-      const ceaseHistory = await tx.ceaseHistory.create({
+      const seizedHistory = await tx.seizedHistory.create({
         data: {
         loan: { connect: { id: loan.id } },
         ceaseDate: ceaseDate ? new Date(ceaseDate) : new Date(),
@@ -99,14 +99,14 @@ exports.createCease = async (req, res) => {
       await tx.actionLog.create({
         data: {
           action: "CREATE_CEASE_REQUEST",
-          targetId: ceaseHistory.id,
-          table: "CeaseHistory",
+          targetId: seizedHistory.id,
+          table: "SeizedHistory",
           metadata: {
             loanId: loan.id,
             assignedToId: assignedToId ?? null,
             status,
             priority,
-            ceaseDate: ceaseHistory.ceaseDate,
+            ceaseDate: seizedHistory.ceaseDate,
             fileIds: fileRecords.map((f) => f.id),
           },
           adminId: adminId,
@@ -114,7 +114,7 @@ exports.createCease = async (req, res) => {
         },
       });
 
-      return ceaseHistory;
+      return seizedHistory;
     }, { maxWait: 2000, timeout: 30000 });
 
     return res.status(200).json({
@@ -132,9 +132,9 @@ exports.createCease = async (req, res) => {
   }
 };
 
-exports.completeCease = async (req, res) => {
+exports.completeSeized = async (req, res) => {
   try {
-    const { id } = req.params; // CeaseHistory ID
+    const { id } = req.params; // SeizedHistory ID
     const {
       files = [],
       actualCeaseDate,
@@ -144,10 +144,10 @@ exports.completeCease = async (req, res) => {
       assetCondition,
     } = req.body;
 
-    if (!id) return res.status(400).json({ status: 400, message: "CeaseHistory ID required" });
+    if (!id) return res.status(400).json({ status: 400, message: "SeizedHistory ID required" });
 
     // Preload once, outside the transaction
-    const ceaseRecord = await prisma.ceaseHistory.findUnique({ where: { id } });
+    const ceaseRecord = await prisma.seizedHistory.findUnique({ where: { id } });
     if (!ceaseRecord) return res.status(404).json({ status: 404, message: "Cease record not found" });
     if (ceaseRecord.status === "COMPLETED")
       return res.status(400).json({ status: 400, message: "This cease record is already marked as completed" });
@@ -179,7 +179,7 @@ exports.completeCease = async (req, res) => {
       }
 
       // 2) Existing file ids
-      const existing = await tx.ceaseHistory.findUnique({
+      const existing = await tx.seizedHistory.findUnique({
         where: { id },
         select: { files: { select: { id: true } } },
       });
@@ -200,7 +200,7 @@ exports.completeCease = async (req, res) => {
         ...(allFileIds.length ? { files: { connect: allFileIds.map(id => ({ id })) } } : {}),
       };
 
-      const updatedCease = await tx.ceaseHistory.update({
+      const updatedCease = await tx.seizedHistory.update({
         where: { id },
         data: updateData,
         include: { files: true, ceasedBy: true },
@@ -217,7 +217,7 @@ exports.completeCease = async (req, res) => {
         data: {
           action: "COMPLETE_CEASE_REQUEST",
           targetId: id,
-          table: "CeaseHistory",
+          table: "SeizedHistory",
           metadata: updatedCease,
           adminId: req.user?.adminId ?? null,
           employeeId: actorEmployeeId,
@@ -236,14 +236,14 @@ exports.completeCease = async (req, res) => {
 
 
 // controllers/cease.controller.js
-exports.releaseCeasedAsset = async (req, res) => {
+exports.releaseSeizedAsset = async (req, res) => {
   try {
     const { id } = req.params;
     const { releaseReason, releaseNotes, files = [] } = req.body;
 
-    if (!id) return res.status(400).json({ status: 400, message: "CeaseHistory ID required" });
+    if (!id) return res.status(400).json({ status: 400, message: "SeizedHistory ID required" });
 
-    const ceaseRecord = await prisma.ceaseHistory.findUnique({ where: { id } });
+    const ceaseRecord = await prisma.seizedHistory.findUnique({ where: { id } });
     if (!ceaseRecord) return res.status(404).json({ status: 404, message: "Cease record not found" });
     if (ceaseRecord.status === "RELEASED")
       return res.status(400).json({ status: 400, message: "This cease record is already released" });
@@ -274,7 +274,7 @@ exports.releaseCeasedAsset = async (req, res) => {
       }
 
       // existing release files
-      const current = await tx.ceaseHistory.findUnique({
+      const current = await tx.seizedHistory.findUnique({
         where: { id },
         select: { releaseFiles: { select: { id: true } }, loanId: true },
       });
@@ -284,7 +284,7 @@ exports.releaseCeasedAsset = async (req, res) => {
         ...createdFileRecords.map(x => x.id),
       ];
 
-      const updatedCease = await tx.ceaseHistory.update({
+      const updatedCease = await tx.seizedHistory.update({
         where: { id },
         data: {
           status: "RELEASED",
@@ -310,7 +310,7 @@ exports.releaseCeasedAsset = async (req, res) => {
         data: {
           action: "RELEASE_CEASED_ASSET",
           targetId: id,
-          table: "CeaseHistory",
+          table: "SeizedHistory",
           metadata: updatedCease,
           adminId,
           employeeId,
@@ -328,9 +328,9 @@ exports.releaseCeasedAsset = async (req, res) => {
 
 
 // Create a contact attempt for a cease
-exports.addCeaseContactAttempt = async (req, res) => {
+exports.addSeizedContactAttempt = async (req, res) => {
   try {
-    const { id } = req.params; // ceaseHistoryId
+    const { id } = req.params; // seizedHistoryId
     const {
       contactAt,            // optional; default now
       contactType,          // "CALL" | "VISIT" | "SMS" | "WHATSAPP" | "EMAIL"
@@ -340,15 +340,15 @@ exports.addCeaseContactAttempt = async (req, res) => {
       durationSeconds,      // call duration if any
     } = req.body;
 
-    const cease = await prisma.ceaseHistory.findUnique({ where: { id } });
+    const cease = await prisma.seizedHistory.findUnique({ where: { id } });
     if (!cease) return res.status(404).json({ status: 404, message: "Cease not found" });
 
     const adminId    = req.user?.type === "ADMIN"    ? req.user?.adminId    ?? null : null;
     const employeeId = req.user?.type === "EMPLOYEE" ? req.user?.employeeId ?? null : null;
 
-    const created = await prisma.ceaseContactAttempt.create({
+    const created = await prisma.seizedContactAttempt.create({
       data: {
-        ceaseHistoryId: id,
+        seizedHistoryId: id,
         contactAt: contactAt ? new Date(contactAt) : new Date(),
         contactType: contactType || "CALL",
         callOutcome: callOutcome || null,
@@ -362,9 +362,9 @@ exports.addCeaseContactAttempt = async (req, res) => {
 
     // return with derived count + last attempt date
     const [attemptCount, lastAttempt] = await Promise.all([
-      prisma.ceaseContactAttempt.count({ where: { ceaseHistoryId: id } }),
-      prisma.ceaseContactAttempt.findFirst({
-        where: { ceaseHistoryId: id },
+      prisma.seizedContactAttempt.count({ where: { seizedHistoryId: id } }),
+      prisma.seizedContactAttempt.findFirst({
+        where: { seizedHistoryId: id },
         orderBy: { contactAt: "desc" },
         select: { contactAt: true },
       }),
@@ -382,32 +382,32 @@ exports.addCeaseContactAttempt = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("addCeaseContactAttempt error:", error);
+    console.error("addSeizedContactAttempt error:", error);
     return res.status(500).json({ status: 500, message: "Failed to add contact attempt", error: error.message });
   }
 };
 
 // List contact attempts for a cease
-exports.listCeaseContactAttempts = async (req, res) => {
+exports.listSeizedContactAttempts = async (req, res) => {
   try {
-    const { id } = req.params; // ceaseHistoryId
-    const attempts = await prisma.ceaseContactAttempt.findMany({
-      where: { ceaseHistoryId: id },
+    const { id } = req.params; // seizedHistoryId
+    const attempts = await prisma.seizedContactAttempt.findMany({
+      where: { seizedHistoryId: id },
       orderBy: { contactAt: "desc" },
     });
     return res.json({ status: 200, data: attempts });
   } catch (error) {
-    console.error("listCeaseContactAttempts error:", error);
+    console.error("listSeizedContactAttempts error:", error);
     return res.status(500).json({ status: 500, message: "Failed to fetch attempts", error: error.message });
   }
 };
 
 
 
-exports.getLoanCeaseHistory = async (req, res) => {
+exports.getLoanSeizedHistory = async (req, res) => {
   try {
     const { loanId } = req.params;
-    const ceaseList = await prisma.ceaseHistory.findMany({
+    const ceaseList = await prisma.seizedHistory.findMany({
       where: { loanId },
       orderBy: { createdAt: "desc" },
       include: {
@@ -437,18 +437,39 @@ exports.getLoanCeaseHistory = async (req, res) => {
   }
 };
 
-exports.getCeaseById = async (req, res) => {
+exports.getSeizedById = async (req, res) => {
   try {
     const { id } = req.params;
-    const cease = await prisma.ceaseHistory.findUnique({
+    const cease = await prisma.seizedHistory.findUnique({
       where: { id },
       include: {
         files: true,
         releaseFiles: true,
         assignedByAdmin: true,
         assignedByEmployee: true,
+        releasedByAdmin: true,
+        releasedByEmployee: true,
         assignedTo: true,
-        ceasedBy: true,
+        seizedBy: true,
+        loan: {
+          include: {
+            user: true,
+            branch: true,
+            loanType: true,
+            twoWheelerLoan: {
+              include: {
+                brand: true,
+                model: true,
+              },
+            },
+            agricultureLoan: {
+              include: {
+                equipment: true,
+              },
+            },
+            msmeLoan: true,
+          },
+        },
         contactAttempts: {
           include: {
             createdByAdmin: true,
@@ -471,7 +492,7 @@ exports.getCeaseById = async (req, res) => {
   }
 };
 
-exports.getAllCeaseHistories = async (req, res) => {
+exports.getAllSeizedHistories = async (req, res) => {
   try {
     console.log("object")
     const page = parseInt(req.query.page) || 1;
@@ -479,7 +500,7 @@ exports.getAllCeaseHistories = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const [data, total] = await Promise.all([
-      prisma.ceaseHistory.findMany({
+      prisma.seizedHistory.findMany({
         skip,
         take: limit,
         orderBy: { createdAt: "desc" },
@@ -488,19 +509,33 @@ exports.getAllCeaseHistories = async (req, res) => {
           releaseFiles: true,
           assignedByAdmin: true,
           assignedByEmployee: true,
+          releasedByAdmin: true,
+          releasedByEmployee: true,
           assignedTo: true,
           contactAttempts: true,
-          ceasedBy: true,
+          seizedBy: true,
           loan: {
             include: {
               user: true,
               branch: true,
-              loanType: true
+              loanType: true,
+              twoWheelerLoan: {
+                include: {
+                  brand: true,
+                  model: true,
+                },
+              },
+              agricultureLoan: {
+                include: {
+                  equipment: true,
+                },
+              },
+              msmeLoan: true,
             }
           }
         }
       }),
-      prisma.ceaseHistory.count(),
+      prisma.seizedHistory.count(),
     ]);
 
     res.json({

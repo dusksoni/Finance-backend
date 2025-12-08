@@ -88,8 +88,8 @@ exports.createLoan = async (req, res) => {
     const {
       userId,
       loanTypeId,
-      productAmount,
-      downPayment = 0,
+      // productAmount, // REMOVED: No longer collecting
+      // downPayment = 0, // REMOVED: No longer collecting
       principalLoanAmount,
       interestRate, // Annual %, e.g. 14
       tenureMonths, // total months
@@ -103,7 +103,7 @@ exports.createLoan = async (req, res) => {
       rtoCharges,
       processingCharges,
       otherCharges,
-      ourPaymentType,
+      // ourPaymentType, // REMOVED: Payment setup section removed
       insuranceAmount,
       insuranceDate,
       insuranceValidTill,
@@ -241,8 +241,8 @@ exports.createLoan = async (req, res) => {
             branch: { connect: { id: branchId } },
 
             fileNo,
-            productAmount,
-            downPayment,
+            // productAmount, // REMOVED
+            // downPayment, // REMOVED
 
             principalLoanAmount: P,
             interestAmount: round2(totalPayable - P),
@@ -262,7 +262,7 @@ exports.createLoan = async (req, res) => {
             rtoCharges,
             processingCharges,
             otherCharges,
-            ourPaymentType,
+            // ourPaymentType, // REMOVED
 
             startDate: new Date(startDate),
             endDate: schedule[schedule.length - 1].paymentFor,
@@ -402,9 +402,11 @@ exports.updateLoan = async (req, res) => {
 
     // 2) new vs old
     const newPct = payload.interestRate ?? existing.interestRate;
-    const newProd = payload.productAmount ?? existing.productAmount;
-    const newDown = payload.downPayment ?? existing.downPayment;
-    const newPrincipal = newProd - newDown;
+    // REMOVED: productAmount and downPayment fields
+    // const newProd = payload.productAmount ?? existing.productAmount;
+    // const newDown = payload.downPayment ?? existing.downPayment;
+    // const newPrincipal = newProd - newDown;
+    const newPrincipal = payload.principalLoanAmount ?? existing.principalLoanAmount;
     if (newPrincipal <= 0) {
       return res.status(400).json({ error: "Principal must be > 0" });
     }
@@ -460,8 +462,8 @@ exports.updateLoan = async (req, res) => {
           where: { id: loanId },
           data: {
             loanType: { connect: { id: newLoanTypeId } },
-            productAmount: newProd,
-            downPayment: newDown,
+            // productAmount: newProd, // REMOVED
+            // downPayment: newDown, // REMOVED
             principalLoanAmount: newPrincipal,
             interestAmount: parseFloat(
               (totalPayable - newPrincipal).toFixed(2)
@@ -494,7 +496,7 @@ exports.updateLoan = async (req, res) => {
             processingCharges:
               payload.processingCharges ?? existing.processingCharges,
             otherCharges: payload.otherCharges ?? existing.otherCharges,
-            ourPaymentType: payload.ourPaymentType ?? existing.ourPaymentType,
+            // ourPaymentType: payload.ourPaymentType ?? existing.ourPaymentType, // REMOVED
             insuranceAmount:
               payload.insuranceAmount ?? existing.insuranceAmount,
             insuranceDate: payload.insuranceDate
@@ -958,6 +960,7 @@ exports.listLoanApprovals = async (req, res) => {
 exports.approveLoan = async (req, res) => {
   try {
     const { id } = req.params;
+    const { fileNo, startDate, disbursedDate } = req.body;
     const isAdmin = req.user.type === "ADMIN";
     const canApprove =
       isAdmin || (await checkVerifyPermission(req.user, "LOAN_APPROVE"));
@@ -968,9 +971,29 @@ exports.approveLoan = async (req, res) => {
         .json({ error: "Not allowed to approve loans", status: 403 });
     }
 
+    // Validate required fields
+    if (!fileNo || !fileNo.trim()) {
+      return res.status(400).json({
+        error: "File number is required for approval",
+        status: 400,
+      });
+    }
+    if (!startDate) {
+      return res.status(400).json({
+        error: "Start date is required for approval",
+        status: 400,
+      });
+    }
+    if (!disbursedDate) {
+      return res.status(400).json({
+        error: "Disbursed date is required for approval",
+        status: 400,
+      });
+    }
+
     const loan = await prisma.loan.findUnique({
       where: { id },
-      select: { id: true, fileStatus: true },
+      select: { id: true, fileStatus: true, tenureMonths: true, paymentFrequency: true, dueDay: true },
     });
 
     if (!loan) {
@@ -984,6 +1007,10 @@ exports.approveLoan = async (req, res) => {
       });
     }
 
+    // Calculate endDate based on startDate and tenureMonths
+    const start = new Date(startDate);
+    const endDate = addMonths(start, loan.tenureMonths);
+
     const approvedAt = new Date();
     const updated = await prisma.loan.update({
       where: { id },
@@ -994,6 +1021,10 @@ exports.approveLoan = async (req, res) => {
         approvedByAdminId: isAdmin ? req.user.adminId ?? null : null,
         approvedByEmployeeId: !isAdmin ? req.user.employeeId ?? null : null,
         isClosed: false,
+        fileNo: fileNo.trim(),
+        startDate: new Date(startDate),
+        endDate,
+        disbursedDate: new Date(disbursedDate),
       },
       include: {
         user: true,

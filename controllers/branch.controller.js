@@ -78,6 +78,7 @@ exports.getBranches = async (req, res) => {
       where: filters,
       select: {
         id: true,
+        // showrooms: true,
         name: true,
         address: true,
         region: {

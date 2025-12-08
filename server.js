@@ -24,6 +24,7 @@ const reportRoutes = require("./routes/report.route");
 const auditRoutes = require("./routes/audit.route");
 const dashboardRoutes = require("./routes/dashboard.route");
 const publicUserRoutes = require("./routes/publicUser.route");
+const showroomRoutes = require("./routes/showroom.routes");
 
 app.use(express.json());
 app.get("/", async (req, res) => {
@@ -58,6 +59,7 @@ app.use("/api/report", reportRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/public", publicUserRoutes);
+app.use("/api/showroom", showroomRoutes);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {

@@ -29,9 +29,20 @@ exports.getPublicLoanDetails = async (req, res) => {
   try {
     const { loanId } = req.params;
 
-    const loan = await prisma.loan.findUnique({
-      where: { id: loanId },
+    const loan = await prisma.loan.findFirst({
+      where: {
+        OR: [
+          { id: loanId },
+          { fileNo: loanId }
+        ]
+      },
       include: {
+        emi: true,
+        payments: true,
+        twoWheelerLoan: true,
+        agriLoan: true,
+        msmeLoan: true,
+        ceaseHistories: true,
         user: {
           select: {
             id: true,
@@ -56,7 +67,7 @@ exports.getPublicLoanDetails = async (req, res) => {
             phone: true,
           },
         },
-        loanGuarantor: {
+        guarantors: {
           include: {
             guarantor: {
               select: {
@@ -93,7 +104,7 @@ exports.getPublicLoanDetails = async (req, res) => {
       fileStatus: loan.fileStatus,
       loanType: loan.loanType?.name,
       branch: loan.branch,
-      principalAmount: Number(loan.principalLoanAmount),
+      principalLoanAmount: Number(loan.principalLoanAmount),
       interestRate: Number(loan.interestRate),
       totalAmount: Number(loan.totalAmount),
       totalPaidAmount: Number(loan.totalPaidAmount),
@@ -108,6 +119,14 @@ exports.getPublicLoanDetails = async (req, res) => {
       endDate: loan.endDate,
       isClosed: loan.isClosed,
       isDefaulted: loan.isDefaulted,
+      emi: loan.emi,
+      twoWheelerLoan: loan.twoWheelerLoan,
+      agriLoan: loan.agriLoan,
+      msmeLoan: loan.msmeLoan,
+      ceaseHistories: loan.ceaseHistories,
+      emiCount: loan.emi.length,
+      paymentsCount: loan.payments.length,
+      payments: loan.payments,
       user: {
         name: [loan.user.firstName, loan.user.middleName, loan.user.lastName]
           .filter(Boolean)
@@ -115,18 +134,18 @@ exports.getPublicLoanDetails = async (req, res) => {
         phone: loan.user.phone,
         email: loan.user.email,
       },
-      guarantor: loan.loanGuarantor?.guarantor
-        ? {
+      guarantors: loan.guarantors?.length > 0
+        ? loan.guarantors.map(lg => ({
             name: [
-              loan.loanGuarantor.guarantor.firstName,
-              loan.loanGuarantor.guarantor.middleName,
-              loan.loanGuarantor.guarantor.lastName,
+              lg.guarantor.firstName,
+              lg.guarantor.middleName,
+              lg.guarantor.lastName,
             ]
               .filter(Boolean)
               .join(" "),
-            phone: loan.loanGuarantor.guarantor.phone,
-          }
-        : null,
+            phone: lg.guarantor.phone,
+          }))
+        : [],
     };
 
     return res.json({

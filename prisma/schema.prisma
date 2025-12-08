@@ -25,24 +25,28 @@ enum EmployeeRole {
 // 📍 Location Models
 // ==========================
 model State {
-  id        String     @id @default(uuid())
-  name      String     @unique
-  city      City[]
-  stateCode String     @default("00")
-  employees Employee[]
-  users     User[]
-  Region    Region[]
+  id                    String     @id @default(uuid())
+  name                  String     @unique
+  city                  City[]
+  stateCode             String     @default("00")
+  employees             Employee[]
+  users                 User[]
+  usersPermanentAddress User[]     @relation("PermanentState")
+  usersTemporaryAddress User[]     @relation("TemporaryState")
+  Region                Region[]
 }
 
 model City {
-  id      String @id @default(uuid())
-  name    String @unique
-  stateId String
-  state   State  @relation(fields: [stateId], references: [id])
+  id                    String     @id @default(uuid())
+  name                  String     @unique
+  stateId               String
+  state                 State      @relation(fields: [stateId], references: [id])
 
-  employees Employee[]
-  users     User[]
-  Region    Region[]
+  employees             Employee[]
+  users                 User[]
+  usersPermanentAddress User[]     @relation("PermanentCity")
+  usersTemporaryAddress User[]     @relation("TemporaryCity")
+  Region                Region[]
 }
 
 model Region {
@@ -77,15 +81,14 @@ model Admin {
   users                  User[]
   loans                  Loan[]
   approvedLoans          Loan[]               @relation("LoanApprovedByAdmin")
-  ceaseHistoriesAssigned CeaseHistory[]        @relation("AssignedByAdmin")
-  ceaseHistoriesReleased  CeaseHistory[]        @relation("ReleasedByAdmin")
+  seizedHistoriesAssigned SeizedHistory[]     @relation("AssignedByAdmin")
+  seizedHistoriesReleased SeizedHistory[]     @relation("ReleasedByAdmin")
   requestedUpdates       UserUpdateRequest[]   @relation("RequestedByAdmin")
   verifiedPayments       Payment[]             @relation("VerifiedByAdmin")
   payments               Payment[]
-  ceaseContactAttempts   CeaseContactAttempt[]
+  seizedContactAttempts  SeizedContactAttempt[]
   approvedForecloseRequests ForecloseRequest[] @relation("ForecloseApprovedByAdmin")
   requestedForecloseRequests ForecloseRequest[] @relation("ForecloseRequestedByAdmin")
-  // CeaseHistory           CeaseHistory[]
 }
 
 model Role {
@@ -133,15 +136,14 @@ model Employee {
   approvedLoans            Loan[]               @relation("LoanApprovedByEmployee")
   verifiedPayments         Payment[]             @relation("VerifiedByEmployee")
   requestedUpdates         UserUpdateRequest[]   @relation("RequestedByEmployee")
-  ceaseHistoriesAssigned   CeaseHistory[]        @relation("AssignedByEmployee")
-  ceaseHistoriesAssignedTo CeaseHistory[]        @relation("CeaseAssignedTo")
-  ceaseHistoriesCeasedBy   CeaseHistory[]        @relation("CeasedBy")
-  ceaseHistoriesReleased    CeaseHistory[]        @relation("ReleasedByEmployee")
+  seizedHistoriesAssigned  SeizedHistory[]      @relation("AssignedByEmployee")
+  seizedHistoriesAssignedTo SeizedHistory[]     @relation("SeizedAssignedTo")
+  seizedHistoriesSeizedBy  SeizedHistory[]      @relation("SeizedBy")
+  seizedHistoriesReleased  SeizedHistory[]      @relation("ReleasedByEmployee")
   payments                 Payment[]
-  ceaseContactAttempts     CeaseContactAttempt[]
+  seizedContactAttempts    SeizedContactAttempt[]
   approvedForecloseRequests ForecloseRequest[] @relation("ForecloseApprovedByEmployee")
   requestedForecloseRequests ForecloseRequest[] @relation("ForecloseRequestedByEmployee")
-  // CeaseHistory             CeaseHistory[]
 }
 
 model LoginActivity {
@@ -202,13 +204,28 @@ model User {
   isDefaulter        Boolean          @default(false)
   qualification      String?
   profession         String?
+  // Legacy address fields (kept for backward compatibility)
   address            String?
   cityText           String?
   country            String?
-  creditScore        Int?
-  proofOfIncome      String?
   stateId            String?
   cityId             String?
+  pincode            Int?
+  // Permanent Address fields
+  permanentAddress   String?
+  permanentCountry   String?
+  permanentPincode   Int?
+  permanentStateId   String?
+  permanentCityId    String?
+  // Temporary Address fields
+  temporaryAddress   String?
+  temporaryCountry   String?
+  temporaryPincode   Int?
+  temporaryStateId   String?
+  temporaryCityId    String?
+  // Other fields
+  creditScore        Int?
+  proofOfIncome      String?
   regionId           String?
   photoId            String?
   genderId           String?
@@ -216,7 +233,10 @@ model User {
   addressCategoryId  String?
   state              State?           @relation(fields: [stateId], references: [id])
   city               City?            @relation(fields: [cityId], references: [id])
-  pincode            Int?
+  permanentState     State?           @relation("PermanentState", fields: [permanentStateId], references: [id])
+  permanentCity      City?            @relation("PermanentCity", fields: [permanentCityId], references: [id])
+  temporaryState     State?           @relation("TemporaryState", fields: [temporaryStateId], references: [id])
+  temporaryCity      City?            @relation("TemporaryCity", fields: [temporaryCityId], references: [id])
   region             Region?          @relation(fields: [regionId], references: [id])
   addressCategory    AddressCategory? @relation(fields: [addressCategoryId], references: [id])
   relationType       RelationType?    @relation(fields: [relationTypeId], references: [id])
@@ -299,8 +319,30 @@ model Branch {
   region    Region     @relation(fields: [regionId], references: [id])
   loans     Loan[]
   employees Employee[]
+  showrooms Showroom[]
 
   @@unique([name, regionId]) // Prevent duplicate branch names in the same region
+}
+
+model Showroom {
+  id        String   @id @default(uuid())
+  name      String
+  branchId  String
+  address   String?
+  pincode   Int?
+  latitude  Float?
+  longitude Float?
+  phone     String?
+  email     String?
+  isDeleted Boolean? @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  loans     Loan[]
+
+  @@unique([name, branchId]) // Prevent duplicate showroom names in the same branch
 }
 
 model PhotoID {
@@ -384,8 +426,8 @@ model Loan {
   disbursedDate DateTime?
   agreementDate DateTime?
 
-  productAmount        Float?
-  downPayment          Float?
+  // productAmount        Float? // REMOVED: No longer collecting product amount
+  // downPayment          Float? // REMOVED: No longer collecting down payment
   principalLoanAmount  Float
   interestAmount       Float
   totalAmount          Float
@@ -398,7 +440,7 @@ model Loan {
   rtoCharges           Float?
   processingCharges    Float?
   otherCharges         Float?
-  ourPaymentType       String?
+  // ourPaymentType       String? // REMOVED: Payment setup section removed from loan creation
   interestRate         Float
   interestType         String?
   penaltyPercentage    Float
@@ -433,8 +475,10 @@ model Loan {
   employeeId           String?
   userId               String
   branchId             String?
+  showroomId           String?
 
   branch         Branch?          @relation(fields: [branchId], references: [id])
+  showroom       Showroom?        @relation(fields: [showroomId], references: [id])
   admin          Admin?           @relation(fields: [adminId], references: [id])
   employee       Employee?        @relation(fields: [employeeId], references: [id])
   approvedByAdmin    Admin?       @relation("LoanApprovedByAdmin", fields: [approvedByAdminId], references: [id])
@@ -443,7 +487,7 @@ model Loan {
   emi            EMI[]
   payments       Payment[]
   paymentOrders  PaymentOrder[]
-  ceaseHistories CeaseHistory[]
+  seizedHistories SeizedHistory[]
   guarantors     LoanGuarantor[]
   twoWheelerLoan TwoWheelerLoan?
   agriLoan       AgricultureLoan?
@@ -577,18 +621,18 @@ enum CallOutcome {
 
 // ===== Models =====
 
-model CeaseHistory {
+model SeizedHistory {
   id                   String    @id @default(uuid())
   loanId               String
   assignedByAdminId    String?
   assignedByEmployeeId String?
   assignedToId         String?
-  ceasedById           String?
-  ceaseDate            DateTime?
-  actualCeaseDate      DateTime?
-  ceaseLat             Float?
-  ceaseLng             Float?
-  ceaseAddress         String?
+  seizedById           String?   @map("ceasedById")
+  seizedDate           DateTime? @map("ceaseDate")
+  actualSeizedDate     DateTime? @map("actualCeaseDate")
+  seizedLat            Float?
+  seizedLng            Float?
+  seizedAddress        String?
 
   comment        String?
   releaseDate    DateTime?
@@ -608,38 +652,42 @@ model CeaseHistory {
   assignedByEmployee Employee? @relation("AssignedByEmployee", fields: [assignedByEmployeeId], references: [id])
   releasedByAdmin    Admin?    @relation("ReleasedByAdmin", fields: [releasedByAdminId], references: [id])
   releasedByEmployee Employee? @relation("ReleasedByEmployee", fields: [releasedByEmployeeId], references: [id])
-  assignedTo         Employee? @relation("CeaseAssignedTo", fields: [assignedToId], references: [id])
-  ceasedBy           Employee? @relation("CeasedBy", fields: [ceasedById], references: [id])
+  assignedTo         Employee? @relation("SeizedAssignedTo", fields: [assignedToId], references: [id])
+  seizedBy           Employee? @relation("SeizedBy", fields: [seizedById], references: [id])
 
-  files        File[] @relation("CeaseFiles")
+  files        File[] @relation("SeizedFiles", map: "_CeaseFiles")
   releaseFiles File[] @relation("ReleaseFiles")
 
-  // NEW: detailed log of attempts
-  contactAttempts CeaseContactAttempt[]
+  // detailed log of contact attempts
+  contactAttempts SeizedContactAttempt[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("CeaseHistory") // Keep table name for backward compatibility
 }
 
-// NEW: separate attempts table
-model CeaseContactAttempt {
-  id             String @id @default(uuid())
-  ceaseHistoryId String
+// separate attempts table
+model SeizedContactAttempt {
+  id              String @id @default(uuid())
+  seizedHistoryId String @map("ceaseHistoryId")
 
-  contactAt           DateTime     @default(now())
-  contactType         ContactType  @default(CALL)
+  contactAt           DateTime      @default(now())
+  contactType         ContactType   @default(CALL)
   callOutcome         CallOutcome?
   summary             String?
   spokeTo             String?
   createdByAdminId    String?
   createdByEmployeeId String?
   durationSeconds     Int?
-  ceaseHistory        CeaseHistory @relation(fields: [ceaseHistoryId], references: [id])
-  createdByAdmin      Admin?       @relation(fields: [createdByAdminId], references: [id])
-  createdByEmployee   Employee?    @relation(fields: [createdByEmployeeId], references: [id])
+  seizedHistory       SeizedHistory @relation(fields: [seizedHistoryId], references: [id])
+  createdByAdmin      Admin?        @relation(fields: [createdByAdminId], references: [id])
+  createdByEmployee   Employee?     @relation(fields: [createdByEmployeeId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("CeaseContactAttempt") // Keep table name for backward compatibility
 }
 
 enum PaymentMode {
@@ -700,11 +748,12 @@ model VehicleVariant {
 }
 
 model AgricultureLoan {
-  id          String  @id @default(uuid())
-  loanId      String  @unique
-  equipmentId String
-  usageArea String?
-  isSeasonal  Boolean @default(false)
+  id                 String  @id @default(uuid())
+  loanId             String  @unique
+  equipmentId        String
+  usageArea          String?
+  isSeasonal         Boolean @default(false)
+  registrationNumber String? // Added for agriculture equipment registration
 
   equipment Equipment  @relation(fields: [equipmentId], references: [id])
   // usageArea UsageArea? @relation(fields: [usageAreaId], references: [id])
@@ -772,8 +821,8 @@ model File {
   createdAt          DateTime             @default(now())
   terminationRequest TerminationRequest[]
 
-  ceaseHistories        CeaseHistory[] @relation("CeaseFiles") // Evidence for cease events
-  releaseCeaseHistories CeaseHistory[] @relation("ReleaseFiles") // Evidence for release events
+  seizedHistories       SeizedHistory[] @relation("SeizedFiles") // Evidence for seized events
+  releaseSeizedHistories SeizedHistory[] @relation("ReleaseFiles") // Evidence for release events
 
   photo               User[]    @relation("Photo")
   proofOfIncomeImages User[]    @relation("ProofOfIncomeImages")
