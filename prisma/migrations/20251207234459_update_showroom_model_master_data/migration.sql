@@ -1,19 +1,23 @@
+-- CreateTable Showroom if not exists
+CREATE TABLE IF NOT EXISTS "Showroom" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "branchId" TEXT NOT NULL,
+    "address" TEXT,
+    "pincode" INTEGER,
+    "latitude" DOUBLE PRECISION,
+    "longitude" DOUBLE PRECISION,
+    "phone" TEXT,
+    "email" TEXT,
+    "isDeleted" BOOLEAN DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Showroom_pkey" PRIMARY KEY ("id")
+);
+
 -- AlterTable
 ALTER TABLE "Loan" ADD COLUMN IF NOT EXISTS "showroomId" TEXT;
-
--- AlterTable - Remove location column if it exists
-ALTER TABLE "Showroom" DROP COLUMN IF EXISTS "location";
-
--- Add branchId if it doesn't exist
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'Showroom' AND column_name = 'branchId'
-    ) THEN
-        ALTER TABLE "Showroom" ADD COLUMN "branchId" TEXT NOT NULL DEFAULT '';
-    END IF;
-END $$;
 
 -- AddForeignKey for Showroom to Branch (if not exists)
 DO $$

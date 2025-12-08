@@ -17,8 +17,6 @@ exports.createUser = async (req, res) => {
     relationLastName,
     genderId,
     relationTypeId,
-    pincode,
-    addressCategoryId,
     dateOfBirth,
     maritalStatus,
     qualification,
@@ -30,21 +28,7 @@ exports.createUser = async (req, res) => {
     proofOfIncome,
     creditScore,
     profession,
-    address,
-    cityText,
-    country,
-    stateId,
-    cityId,
-    permanentAddress,
-    permanentCountry,
-    permanentPincode,
-    permanentStateId,
-    permanentCityId,
-    temporaryAddress,
-    temporaryCountry,
-    temporaryPincode,
-    temporaryStateId,
-    temporaryCityId,
+    addresses = [], // Array of address objects
     proofOfIncomeImages = [],
   } = req.body;
 
@@ -86,8 +70,15 @@ exports.createUser = async (req, res) => {
       });
     }
 
+    // Validate addresses array
+    if (!addresses || addresses.length === 0) {
+      return res.status(400).json({ error: "At least one address is required" });
+    }
+
+    // Get region from first address
+    const firstAddress = addresses[0];
     const region = await prisma.region.findFirst({
-      where: { stateId, cityId },
+      where: { stateId: firstAddress.stateId, cityId: firstAddress.cityId },
       select: { id: true },
     });
 
@@ -122,13 +113,11 @@ exports.createUser = async (req, res) => {
         middleName,
         lastName,
         relationTypeId: relationTypeId,
-        addressCategoryId: addressCategoryId,
         relationFirstName,
         relationMiddleName,
         relationLastName,
         dateOfBirth,
         phone,
-        pincode,
         genderId: genderId,
         maritalStatus,
         email,
@@ -136,22 +125,7 @@ exports.createUser = async (req, res) => {
         proofOfIncome,
         creditScore,
         profession,
-        address,
-        cityText,
-        country,
         qualification,
-        stateId: stateId,
-        cityId: cityId,
-        permanentAddress,
-        permanentCountry,
-        permanentPincode,
-        permanentStateId,
-        permanentCityId,
-        temporaryAddress,
-        temporaryCountry,
-        temporaryPincode,
-        temporaryStateId,
-        temporaryCityId,
         regionId: region.id,
         createdBy: req.user?.type || "unknown",
         adminId: req.user?.adminId || null,
@@ -169,23 +143,33 @@ exports.createUser = async (req, res) => {
             }))
           ),
         },
+        addresses: {
+          create: addresses.map((addr) => ({
+            addressCategoryId: addr.addressCategoryId,
+            address: addr.address,
+            country: addr.country,
+            stateId: addr.stateId,
+            cityId: addr.cityId,
+            pincode: parseInt(addr.pincode),
+          })),
+        },
       },
       include: {
         photoIds: { include: { images: true } },
         proofOfIncomeImages: true,
         photo: true,
         region: true,
-        state: true,
-        city: true,
-        permanentState: true,
-        permanentCity: true,
-        temporaryState: true,
-        temporaryCity: true,
         gender: true,
-        addressCategory: true,
         relationType: true,
         employee: true,
         admin: true,
+        addresses: {
+          include: {
+            addressCategory: true,
+            state: true,
+            city: true,
+          },
+        },
       },
     });
 
@@ -297,16 +281,20 @@ exports.getAllUsers = async (req, res) => {
               photoIdType: true,
             },
           },
-          city: true,
           gender: true,
-          addressCategory: true,
           relationType: true,
           employee: true,
           photo: true,
-          state: true,
           region: true,
           proofOfIncomeImages: true,
           loans: true,
+          addresses: {
+            include: {
+              addressCategory: true,
+              state: true,
+              city: true,
+            },
+          },
         },
       }),
       prisma.user.count({ where: filters }),
@@ -408,15 +396,19 @@ exports.getUserById = async (req, res) => {
             photoIdType: true,
           },
         },
-        city: true,
         gender: true,
-        addressCategory: true,
         relationType: true,
         employee: true,
         photo: true,
-        state: true,
         region: true,
         proofOfIncomeImages: true,
+        addresses: {
+          include: {
+            addressCategory: true,
+            state: true,
+            city: true,
+          },
+        },
         loans: {
           include: {
             loanType: true,
@@ -444,8 +436,6 @@ exports.updateUser = async (req, res) => {
     relationLastName,
     genderId,
     relationTypeId,
-    pincode,
-    addressCategoryId,
     dateOfBirth,
     maritalStatus,
     qualification,
@@ -457,21 +447,7 @@ exports.updateUser = async (req, res) => {
     proofOfIncome,
     creditScore,
     profession,
-    address,
-    cityText,
-    country,
-    stateId,
-    cityId,
-    permanentAddress,
-    permanentCountry,
-    permanentPincode,
-    permanentStateId,
-    permanentCityId,
-    temporaryAddress,
-    temporaryCountry,
-    temporaryPincode,
-    temporaryStateId,
-    temporaryCityId,
+    addresses = [], // Array of address objects
     proofOfIncomeImages = [],
   } = req.body;
 
@@ -497,13 +473,17 @@ exports.updateUser = async (req, res) => {
         })
       ).then(arr => arr.filter(Boolean));
 
-    // Build region filter safely
-    const regionWhere = { stateId };
-    if (cityId) regionWhere.cityId = cityId;
+    // Build region filter safely from first address
+    let region = null;
+    if (addresses && addresses.length > 0) {
+      const firstAddress = addresses[0];
+      const regionWhere = { stateId: firstAddress.stateId };
+      if (firstAddress.cityId) regionWhere.cityId = firstAddress.cityId;
 
-    const region = await prisma.region.findFirst({ where: regionWhere });
-    if (!region) {
-      return res.status(400).json({ error: "Region not found for state/city" });
+      region = await prisma.region.findFirst({ where: regionWhere });
+      if (!region) {
+        return res.status(400).json({ error: "Region not found for state/city" });
+      }
     }
 
     const parsedDOB =
@@ -579,34 +559,17 @@ exports.updateUser = async (req, res) => {
           relationLastName,
           dateOfBirth: dobValid,
           phone,
-          pincode,
           email,
           isDefaulter: isDefaulterBool,
           proofOfIncome,
           creditScore: creditScoreNum,
           profession,
-          address,
-          cityText,
-          country,
           maritalStatus,
           qualification,
-          permanentAddress,
-          permanentCountry,
-          permanentPincode,
-          temporaryAddress,
-          temporaryCountry,
-          temporaryPincode,
 
           relationType: relationTypeId ? { connect: { id: relationTypeId } } : undefined,
           gender:        genderId      ? { connect: { id: genderId } }       : undefined,
-          addressCategory: addressCategoryId ? { connect: { id: addressCategoryId } } : undefined,
-          state:         stateId       ? { connect: { id: stateId } }        : undefined,
-          city:          cityId        ? { connect: { id: cityId } }         : undefined,
-          permanentState: permanentStateId ? { connect: { id: permanentStateId } } : undefined,
-          permanentCity:  permanentCityId  ? { connect: { id: permanentCityId } }  : undefined,
-          temporaryState: temporaryStateId ? { connect: { id: temporaryStateId } } : undefined,
-          temporaryCity:  temporaryCityId  ? { connect: { id: temporaryCityId } }  : undefined,
-          region:        { connect: { id: region.id } },
+          region:        region ? { connect: { id: region.id } } : undefined,
 
           // Replace all proofOfIncomeImages with provided set
           ...(proofIncomeFileLinks?.length
@@ -621,15 +584,35 @@ exports.updateUser = async (req, res) => {
           ...(formattedPhotoIds?.length
             ? { photoIds: { connect: formattedPhotoIds } }
             : {}),
+
+          // Update addresses: delete all existing and create new ones
+          ...(addresses?.length
+            ? {
+                addresses: {
+                  deleteMany: {},
+                  create: addresses.map((addr) => ({
+                    addressCategoryId: addr.addressCategoryId,
+                    address: addr.address,
+                    country: addr.country,
+                    stateId: addr.stateId,
+                    cityId: addr.cityId,
+                    pincode: parseInt(addr.pincode),
+                  })),
+                },
+              }
+            : {}),
         },
         include: {
           photoIds: { include: { images: true, photoIdType: true } },
           photo: true,
           proofOfIncomeImages: true,
-          permanentState: true,
-          permanentCity: true,
-          temporaryState: true,
-          temporaryCity: true,
+          addresses: {
+            include: {
+              addressCategory: true,
+              state: true,
+              city: true,
+            },
+          },
         },
       });
 

@@ -25,28 +25,23 @@ enum EmployeeRole {
 // 📍 Location Models
 // ==========================
 model State {
-  id                    String     @id @default(uuid())
-  name                  String     @unique
-  city                  City[]
-  stateCode             String     @default("00")
-  employees             Employee[]
-  users                 User[]
-  usersPermanentAddress User[]     @relation("PermanentState")
-  usersTemporaryAddress User[]     @relation("TemporaryState")
-  Region                Region[]
+  id           String        @id @default(uuid())
+  name         String        @unique
+  city         City[]
+  stateCode    String        @default("00")
+  employees    Employee[]
+  Region       Region[]
+  userAddresses UserAddress[]
 }
 
 model City {
-  id                    String     @id @default(uuid())
-  name                  String     @unique
-  stateId               String
-  state                 State      @relation(fields: [stateId], references: [id])
-
-  employees             Employee[]
-  users                 User[]
-  usersPermanentAddress User[]     @relation("PermanentCity")
-  usersTemporaryAddress User[]     @relation("TemporaryCity")
-  Region                Region[]
+  id            String        @id @default(uuid())
+  name          String        @unique
+  stateId       String
+  state         State         @relation(fields: [stateId], references: [id])
+  employees     Employee[]
+  Region        Region[]
+  userAddresses UserAddress[]
 }
 
 model Region {
@@ -204,41 +199,14 @@ model User {
   isDefaulter        Boolean          @default(false)
   qualification      String?
   profession         String?
-  // Legacy address fields (kept for backward compatibility)
-  address            String?
-  cityText           String?
-  country            String?
-  stateId            String?
-  cityId             String?
-  pincode            Int?
-  // Permanent Address fields
-  permanentAddress   String?
-  permanentCountry   String?
-  permanentPincode   Int?
-  permanentStateId   String?
-  permanentCityId    String?
-  // Temporary Address fields
-  temporaryAddress   String?
-  temporaryCountry   String?
-  temporaryPincode   Int?
-  temporaryStateId   String?
-  temporaryCityId    String?
-  // Other fields
   creditScore        Int?
   proofOfIncome      String?
   regionId           String?
   photoId            String?
   genderId           String?
   relationTypeId     String?
-  addressCategoryId  String?
-  state              State?           @relation(fields: [stateId], references: [id])
-  city               City?            @relation(fields: [cityId], references: [id])
-  permanentState     State?           @relation("PermanentState", fields: [permanentStateId], references: [id])
-  permanentCity      City?            @relation("PermanentCity", fields: [permanentCityId], references: [id])
-  temporaryState     State?           @relation("TemporaryState", fields: [temporaryStateId], references: [id])
-  temporaryCity      City?            @relation("TemporaryCity", fields: [temporaryCityId], references: [id])
+
   region             Region?          @relation(fields: [regionId], references: [id])
-  addressCategory    AddressCategory? @relation(fields: [addressCategoryId], references: [id])
   relationType       RelationType?    @relation(fields: [relationTypeId], references: [id])
   gender             Gender?          @relation(fields: [genderId], references: [id])
   photo              File?            @relation("Photo", fields: [photoId], references: [id])
@@ -254,6 +222,25 @@ model User {
   photoIds                 PhotoID[]
   proofOfIncomeImages      File[]              @relation("ProofOfIncomeImages")
   updateRequests           UserUpdateRequest[]
+  addresses                UserAddress[]
+}
+
+model UserAddress {
+  id                String          @id @default(uuid())
+  userId            String
+  addressCategoryId String
+  address           String
+  country           String
+  stateId           String
+  cityId            String
+  pincode           Int
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addressCategory AddressCategory @relation(fields: [addressCategoryId], references: [id])
+  state           State           @relation(fields: [stateId], references: [id])
+  city            City            @relation(fields: [cityId], references: [id])
 }
 
 model UserUpdateRequest {
@@ -283,12 +270,12 @@ model RelationType {
 }
 
 model AddressCategory {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  value     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  users     User[]
+  id            String        @id @default(uuid())
+  name          String        @unique
+  value         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  userAddresses UserAddress[]
 }
 
 model Gender {
