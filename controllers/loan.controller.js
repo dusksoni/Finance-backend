@@ -763,10 +763,14 @@ exports.listLoans = async (req, res) => {
       stateId,
       cityId,
       isClosed,
+      isDefaulted,
+      fileStatus,
       search,
       fromDate,
       toDate,
       includeTotal = false,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
     } = req.query;
 
     const skip = (page - 1) * limit;
@@ -792,6 +796,8 @@ exports.listLoans = async (req, res) => {
     // 🧠 Build filter
     const loanWhere = {
       ...(isClosed !== undefined && { isClosed: isClosed === "true" }),
+      ...(isDefaulted !== undefined && { isDefaulted: isDefaulted === "true" }),
+      ...(fileStatus && { fileStatus }),
       ...(fromDate &&
         toDate && {
           startDate: {
@@ -799,22 +805,70 @@ exports.listLoans = async (req, res) => {
             lte: new Date(toDate),
           },
         }),
-      user: {
-        ...(search && {
-          OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            { phone: { contains: search } },
-          ],
-        }),
-      },
     };
+
+    // Build user filter with search and location
+    const userFilter = {};
+    if (search) {
+      userFilter.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { firstName: { contains: search, mode: "insensitive" } },
+        { lastName: { contains: search, mode: "insensitive" } },
+        { phone: { contains: search } },
+      ];
+    }
+
+    // Add location filters if provided
+    if (filterStateId || filterCityId) {
+      userFilter.addresses = {
+        some: {
+          ...(filterStateId && { stateId: filterStateId }),
+          ...(filterCityId && { cityId: filterCityId }),
+        },
+      };
+    }
+
+    // Only add user filter if it has conditions
+    if (Object.keys(userFilter).length > 0) {
+      loanWhere.user = userFilter;
+    }
+
+    // Add loanType search
+    if (search) {
+      loanWhere.OR = [
+        ...(loanWhere.OR || []),
+        {
+          loanType: {
+            OR: [
+              { name: { contains: search, mode: "insensitive" } },
+              { label: { contains: search, mode: "insensitive" } },
+            ],
+          },
+        },
+      ];
+    }
+
+    // 🔄 Build orderBy based on sortBy parameter
+    let orderBy = { createdAt: "desc" };
+
+    const validSortFields = {
+      fileNo: { fileNo: sortOrder },
+      userName: { user: { name: sortOrder } },
+      totalAmount: { totalAmount: sortOrder },
+      pendingAmount: { pendingAmount: sortOrder },
+      createdAt: { createdAt: sortOrder },
+    };
+
+    if (sortBy && validSortFields[sortBy]) {
+      orderBy = validSortFields[sortBy];
+    }
 
     const [loans, total, totalAmount] = await Promise.all([
       prisma.loan.findMany({
         where: loanWhere,
         skip: parseInt(skip),
         take: parseInt(limit),
-        orderBy: { createdAt: "desc" },
+        orderBy,
         include: {
           user: true,
           payments: true,
@@ -1315,7 +1369,7 @@ exports.getLoanById = async (req, res) => {
             payments: true,
           },
         },
-        ceaseHistories: true,
+        seizedHistories: true,
         admin: true,
         employee: true,
         approvedByAdmin: true,
