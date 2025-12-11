@@ -17,7 +17,21 @@ const stateRoute = require("./routes/state.routes");
 const cityRoute = require("./routes/city.routes");
 const regionRoute = require("./routes/region.routes");
 
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "https://admin.kushalfinance.com",
+      "http://localhost:3000", // local dev
+    ],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+app.options(/.*/, (req, res) => {
+  res.sendStatus(200);
+});
+
 app.use(express.json());
 app.get("/", async (req, res) => {
   try {
