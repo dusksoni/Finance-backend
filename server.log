@@ -1,0 +1,110 @@
+
+> api@1.0.0 start
+> node server.js
+
+⚠️  ICICI Payment Gateway - Running in DEVELOPMENT MODE
+⚠️  Encryption keys or credentials missing. Using mock responses.
+⚠️  To enable production mode:
+    1. Generate RSA keys (see keys/README.md)
+    2. Configure ICICI credentials in .env file
+🚀 Server running on http://localhost:3001
+📅 Initializing fine update cron jobs...
+✅ Fine update cron jobs initialized successfully
+   - Daily update: 12:01 AM (Asia/Kolkata)
+   - Backup update: Every 6 hours
+🔄 Running initial fine update on startup...
+🔄 Starting fine update job...
+📊 Found 3 overdue EMIs
+✅ Fine update completed: 0 EMIs updated in 3294ms
+✅ Initial fine update completed
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN1766157965660Q0KEGZ97&am=5415.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+Generate QR Error: PrismaClientKnownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:64:36
+
+  61 }
+  62 
+  63 // Fetch loan details
+→ 64 const loan = await prisma.loan.findUnique(
+Timed out fetching a new connection from the connection pool. More info: http://pris.ly/d/connection-pool (Current connection pool timeout: 10, connection limit: 21)
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.generateQR (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:64:18) {
+  code: 'P2024',
+  meta: { modelName: 'Loan', connection_limit: 21, timeout: 10 },
+  clientVersion: '6.6.0'
+}
+Generate QR Error: PrismaClientKnownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:64:36
+
+  61 }
+  62 
+  63 // Fetch loan details
+→ 64 const loan = await prisma.loan.findUnique(
+Timed out fetching a new connection from the connection pool. More info: http://pris.ly/d/connection-pool (Current connection pool timeout: 10, connection limit: 21)
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.generateQR (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:64:18) {
+  code: 'P2024',
+  meta: { modelName: 'Loan', connection_limit: 21, timeout: 10 },
+  clientVersion: '6.6.0'
+}
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN1766164857299BJ8IQXVG&am=5415.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)

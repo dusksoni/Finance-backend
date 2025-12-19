@@ -480,6 +480,7 @@ model Loan {
   agriLoan       AgricultureLoan?
   msmeLoan       MSMELoan?
   forecloseRequests ForecloseRequest[]
+  pendingUPITransactions PendingUPITransaction[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -586,6 +587,59 @@ model PaymentOrder {
   createdAt         DateTime  @default(now())
   completedAt       DateTime?
   loan              Loan      @relation(fields: [loanId], references: [id])
+}
+
+// ==========================
+// 💳 ICICI UPI Payment Gateway
+// ==========================
+
+// Pending UPI transactions awaiting callback
+model PendingUPITransaction {
+  id                    String    @id @default(uuid())
+  loanId                String
+  emiId                 String?
+  merchantTranId        String    @unique
+  refId                 String?   // ICICI generated refId (EZY/EZP prefix)
+  billNumber            String
+  amount                Decimal
+  paymentType           String    @default("bulk") // bulk or emi
+  status                String    @default("PENDING") // PENDING, SUCCESS, FAILURE
+  qrString              String?   // UPI QR string
+  intentURL             String?   // UPI Intent URL for mobile apps
+
+  // Callback data (populated when callback received)
+  bankRRN               String?
+  payerName             String?
+  payerMobile           String?
+  payerVA               String?
+  txnInitDate           DateTime?
+  txnCompletionDate     DateTime?
+  callbackReceivedAt    DateTime?
+
+  // Audit fields
+  createdByAdminId      String?
+  createdByEmployeeId   String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  loan                  Loan      @relation(fields: [loanId], references: [id])
+}
+
+// UPI Refund tracking
+model UPIRefund {
+  id                      String    @id @default(uuid())
+  originalBankRRN         String
+  originalMerchantTranId  String
+  refundMerchantTranId    String    @unique
+  refundAmount            Decimal
+  status                  String    @default("PENDING") // PENDING, SUCCESS, FAILURE
+  note                    String?
+  refundResponse          Json?     // Full ICICI response
+
+  initiatedByAdminId      String?
+  initiatedByEmployeeId   String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 }
 
 enum ContactType {

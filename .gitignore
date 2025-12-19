@@ -1,2 +1,7 @@
 node_modules
 .env
+
+# ICICI Payment Gateway Keys
+keys/*.pem
+keys/*.p12
+keys/*.cer
