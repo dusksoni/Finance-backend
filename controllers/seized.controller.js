@@ -92,7 +92,7 @@ exports.createSeized = async (req, res) => {
       // 3) Update loan status (only fields that exist on your Loan model)
       await tx.loan.update({
         where: { id: loan.id },
-        data: { fileStatus: "CEASED_INITIATED" },
+        data: { fileStatus: "SEIZED_INITIATED" },
       });
 
       // 4) Action log
@@ -209,7 +209,7 @@ exports.completeSeized = async (req, res) => {
       // 4) Update loan status using the preloaded loanId
       await tx.loan.update({
         where: { id: loanId },
-        data: { fileStatus: "CEASED" }, // or "CEASED_COMPLETED" if you prefer
+        data: { fileStatus: "SEIZED" }, // or "SEIZED_COMPLETED" if you prefer
       });
 
       // 5) Log (use scalar ids to be consistent with your createCease)
@@ -300,15 +300,15 @@ exports.releaseSeizedAsset = async (req, res) => {
         include: { releaseFiles: true }, // no releasedByAdmin/Employee includes (not in schema)
       });
 
-      // update loan status
+      // update loan status back to ACTIVE when asset is released
       await tx.loan.update({
         where: { id: current.loanId },
-        data: { fileStatus: "RELEASED" },
+        data: { fileStatus: "ACTIVE" },
       });
 
       await tx.actionLog.create({
         data: {
-          action: "RELEASE_CEASED_ASSET",
+          action: "RELEASE_SEIZED_ASSET",
           targetId: id,
           table: "SeizedHistory",
           metadata: updatedCease,

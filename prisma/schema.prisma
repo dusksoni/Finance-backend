@@ -392,9 +392,8 @@ enum FileStatus {
   ACTIVE // Loan is live, repayment ongoing
   OVERDUE // Payment due is late
   DEFAULTED // Repeated missed payments / declared default
-  CEASED_INITIATED // Product/assets ceased due to non-payment
-  CEASED // Product/assets ceased due to non-payment
-  RELEASED // Product/assets returned to customer
+  SEIZED_INITIATED // Product/assets seized due to non-payment
+  SEIZED // Product/assets seized due to non-payment
   CLOSED // Loan fully repaid and file closed
   REJECTED // Application rejected before approval
   CANCELLED // File manually cancelled before any disbursal

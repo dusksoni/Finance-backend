@@ -847,3 +847,344 @@ Please make sure your database server is running at `ep-twilight-field-a77hiryu-
 📱 [DEV MODE] Checking transaction status (simulated)
 📱 [DEV MODE] Checking transaction status (simulated)
 📱 [DEV MODE] Checking transaction status (simulated)
+Get Loan By ID Error: PrismaClientKnownRequestError: 
+Invalid `prisma.eMI.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1292:39
+
+  1289 const H24_MS = 24 * 60 * 60 * 1000;
+  1290 
+  1291 // 1) Load OPEN EMIs metadata to decide whether to update
+→ 1292 const openEmis = await prisma.eMI.findMany(
+Can't reach database server at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1292:22) {
+  code: 'P1001',
+  meta: {
+    modelName: 'EMI',
+    database_host: 'ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech',
+    database_port: 5432
+  },
+  clientVersion: '6.6.0'
+}
+Get admin profile error: PrismaClientKnownRequestError: 
+Invalid `prisma.admin.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/admin.controller.js:64:38
+
+  61   });
+  62 }
+  63 
+→ 64 const admin = await prisma.admin.findUnique(
+Timed out fetching a new connection from the connection pool. More info: http://pris.ly/d/connection-pool (Current connection pool timeout: 10, connection limit: 21)
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getAdminProfile (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/admin.controller.js:64:19) {
+  code: 'P2024',
+  meta: { modelName: 'Admin', connection_limit: 21, timeout: 10 },
+  clientVersion: '6.6.0'
+}
+Get Loan By ID Error: PrismaClientKnownRequestError: 
+Invalid `prisma.eMI.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1292:39
+
+  1289 const H24_MS = 24 * 60 * 60 * 1000;
+  1290 
+  1291 // 1) Load OPEN EMIs metadata to decide whether to update
+→ 1292 const openEmis = await prisma.eMI.findMany(
+Can't reach database server at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1292:22) {
+  code: 'P1001',
+  meta: {
+    modelName: 'EMI',
+    database_host: 'ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech',
+    database_port: 5432
+  },
+  clientVersion: '6.6.0'
+}
+Get admin profile error: PrismaClientKnownRequestError: 
+Invalid `prisma.admin.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/admin.controller.js:64:38
+
+  61   });
+  62 }
+  63 
+→ 64 const admin = await prisma.admin.findUnique(
+Can't reach database server at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getAdminProfile (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/admin.controller.js:64:19) {
+  code: 'P1001',
+  meta: {
+    modelName: 'Admin',
+    database_host: 'ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech',
+    database_port: 5432
+  },
+  clientVersion: '6.6.0'
+}
+Get Loan By ID Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:36
+
+  1358 }
+  1359 
+  1360 // 2) Fetch full loan with everything you need (fresh after any updates)
+→ 1361 const loan = await prisma.loan.findUnique(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:18) {
+  clientVersion: '6.6.0'
+}
+Dashboard summary error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.groupBy()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/dashboard.controller.js:350:19
+
+  347     },
+  348   }),
+  349 }),
+→ 350 prisma.loan.groupBy(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 8)
+    at async exports.getSummary (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/dashboard.controller.js:291:9) {
+  clientVersion: '6.6.0'
+}
+Get Loan By ID Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:36
+
+  1358 }
+  1359 
+  1360 // 2) Fetch full loan with everything you need (fresh after any updates)
+→ 1361 const loan = await prisma.loan.findUnique(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:18) {
+  clientVersion: '6.6.0'
+}
+Get Loan By ID Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:36
+
+  1358 }
+  1359 
+  1360 // 2) Fetch full loan with everything you need (fresh after any updates)
+→ 1361 const loan = await prisma.loan.findUnique(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:18) {
+  clientVersion: '6.6.0'
+}
+Get Loan By ID Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:36
+
+  1358 }
+  1359 
+  1360 // 2) Fetch full loan with everything you need (fresh after any updates)
+→ 1361 const loan = await prisma.loan.findUnique(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:18) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
