@@ -7,7 +7,7 @@ const logAction = require("../utils/adminLogger");
 exports.createForecloseRequest = async (req, res) => {
   try {
     const { loanId } = req.params;
-    const { requestedAmount, calculatedAmount, paymentMode, transactionId, paymentDate, metadata } = req.body;
+    const { requestedAmount, calculatedAmount, paymentMode, transactionId, paymentDate, metadata, useGateway } = req.body;
 
     // Validate inputs
     if (!requestedAmount || requestedAmount <= 0) {
@@ -18,7 +18,7 @@ exports.createForecloseRequest = async (req, res) => {
       return res.status(400).json({ error: "calculatedAmount must be > 0", status: 400 });
     }
 
-    if (paymentMode !== "CASH" && !transactionId) {
+    if (paymentMode !== "CASH" && !transactionId && !useGateway) {
       return res.status(400).json({ error: "transactionId required for non-cash payment", status: 400 });
     }
 
@@ -53,6 +53,13 @@ exports.createForecloseRequest = async (req, res) => {
 
     const isAdmin = req.user.type === "ADMIN";
 
+    // Enhance metadata with gateway information
+    const enhancedMetadata = {
+      ...metadata,
+      useGateway: useGateway || false,
+      paymentSource: useGateway ? 'ICICI_GATEWAY' : 'MANUAL_ENTRY',
+    };
+
     // Create the foreclose request
     const forecloseRequest = await prisma.forecloseRequest.create({
       data: {
@@ -63,7 +70,7 @@ exports.createForecloseRequest = async (req, res) => {
         transactionId: paymentMode === "CASH" ? null : transactionId,
         paymentDate: new Date(paymentDate),
         status: "PENDING",
-        metadata,
+        metadata: enhancedMetadata,
         requestedByAdminId: isAdmin ? req.user.adminId : null,
         requestedByEmployeeId: !isAdmin ? req.user.employeeId : null,
       },
@@ -240,7 +247,16 @@ exports.getForecloseRequestById = async (req, res) => {
       return res.status(404).json({ error: "Foreclose request not found", status: 404 });
     }
 
-    return res.status(200).json({ data: forecloseRequest });
+    // Check if this was a gateway payment and if it was rejected
+    const isGatewayPayment = forecloseRequest.metadata?.useGateway === true;
+    const isRejected = forecloseRequest.status === "REJECTED";
+    const requiresRefund = isGatewayPayment && isRejected;
+
+    return res.status(200).json({
+      data: forecloseRequest,
+      requiresRefund,
+      gatewayTransactionId: isGatewayPayment ? forecloseRequest.transactionId : null,
+    });
   } catch (err) {
     console.error("Get foreclose request error:", err);
     return res.status(500).json({
@@ -444,6 +460,10 @@ exports.rejectForecloseRequest = async (req, res) => {
       },
     });
 
+    // Check if this was a gateway payment (payment already done via ICICI)
+    const isGatewayPayment = forecloseRequest.metadata?.useGateway === true;
+    const gatewayTransactionId = forecloseRequest.transactionId;
+
     // Log the action
     await logAction({
       action: "REJECTED_FORECLOSE_REQUEST",
@@ -452,6 +472,8 @@ exports.rejectForecloseRequest = async (req, res) => {
       metadata: {
         loanId: forecloseRequest.loanId,
         rejectionComment: comment,
+        isGatewayPayment,
+        gatewayTransactionId: isGatewayPayment ? gatewayTransactionId : null,
       },
       loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
@@ -462,6 +484,8 @@ exports.rejectForecloseRequest = async (req, res) => {
       message: "Foreclose request rejected successfully",
       data: updatedRequest,
       status: 200,
+      requiresRefund: isGatewayPayment, // Flag to show refund button in UI
+      gatewayTransactionId: isGatewayPayment ? gatewayTransactionId : null,
     });
   } catch (err) {
     console.error("Reject foreclose request error:", err);
