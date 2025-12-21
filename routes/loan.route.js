@@ -11,7 +11,6 @@ const {
   adminOnly,
   requirePermission,
 } = require("../middleware/auth");
-const { createSeized, completeSeized, releaseSeizedAsset, getLoanSeizedHistory, getSeizedById, getAllSeizedHistories, addSeizedContactAttempt } = require("../controllers/seized.controller");
 
 /** ─── LOAN CRUD ───────────────────────────────────── */
 router.post("/",          authMiddleware, onlyAdminOrEmployee, loanController.createLoan);
@@ -162,27 +161,5 @@ router.post(
   requirePermission("FORECLOSE_VERIFY"),
   forecloseApprovalController.rejectForecloseRequest
 );
-
-/** --------------- Cease Routes -------------------- */
-// Create seized request (assign asset seizure)
-router.post('/seized/:loanId', authMiddleware, onlyAdminOrEmployee, createSeized);
-
-// Mark seized as completed by assigned employee
-router.post('/seized/:id/complete', authMiddleware, onlyAdminOrEmployee, completeSeized);
-
-// Release seized asset
-router.post('/seized/:id/release', authMiddleware, onlyAdminOrEmployee, releaseSeizedAsset);
-
-// Get all seized histories for a loan
-router.get('/seized/loan/:loanId', authMiddleware, onlyAdminOrEmployee, getLoanSeizedHistory);
-
-// Get one seized record with all details
-router.get('/seized/:id', authMiddleware, onlyAdminOrEmployee, getSeizedById);
-
-// Get all seized histories
-router.get("/seized", authMiddleware, onlyAdminOrEmployee, getAllSeizedHistories);
-
-// Add contact attempt for seized asset
-router.post("/seized/:id/contact-attempt", authMiddleware, onlyAdminOrEmployee, addSeizedContactAttempt);
 
 module.exports = router;

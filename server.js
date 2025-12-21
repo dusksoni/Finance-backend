@@ -25,6 +25,7 @@ const auditRoutes = require("./routes/audit.route");
 const dashboardRoutes = require("./routes/dashboard.route");
 const publicUserRoutes = require("./routes/publicUser.route");
 const iciciPaymentRoutes = require("./routes/iciciPayment.route");
+const seizedRoutes = require("./routes/seized.route");
 
 app.use(express.json());
 app.get("/", async (req, res) => {
@@ -60,6 +61,7 @@ app.use("/api/audit", auditRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/public", publicUserRoutes);
 app.use("/api/icici-payment", iciciPaymentRoutes);
+app.use("/api/seized", seizedRoutes);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {

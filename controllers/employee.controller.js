@@ -940,3 +940,64 @@ exports.getLoans = async (req, res) => {
     });
   }
 };
+
+// GET EMPLOYEES WITH SPECIFIC PERMISSION
+exports.getEmployeesByPermission = async (req, res) => {
+  try {
+    const { permission } = req.query;
+
+    if (!permission) {
+      return res.status(400).json({
+        status: 400,
+        message: "Permission parameter is required",
+      });
+    }
+
+    // Fetch all employees with their roles and permissions
+    const employees = await prisma.employee.findMany({
+      where: {
+        isDeleted: false,
+        isBlocked: false,
+        role: {
+          permissions: {
+            has: permission,
+          },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: {
+          select: {
+            id: true,
+            name: true,
+            permissions: true,
+          },
+        },
+        region: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        name: "asc",
+      },
+    });
+
+    res.status(200).json({
+      status: 200,
+      data: employees,
+      count: employees.length,
+    });
+  } catch (error) {
+    console.error("Get employees by permission error:", error);
+    res.status(500).json({
+      status: 500,
+      message: "Failed to fetch employees by permission",
+      error: error.message,
+    });
+  }
+};

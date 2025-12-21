@@ -5,10 +5,12 @@ const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 exports.createSeized = async (req, res) => {
   try {
     const { loanId } = req.params;
+    console.log("createSeized called with loanId:", loanId);
     const {
       assignedToId,      // employee id to assign the cease job to (optional)
       comment,
-      ceaseDate,
+      ceaseDate,         // backward compatibility
+      seizedDate,        // new field name
       files = [],        // [{ secure_url, public_id, resource_type?, format? }]
       status = "PENDING",
       priority = "MEDIUM",
@@ -16,12 +18,16 @@ exports.createSeized = async (req, res) => {
       assetCondition,
     } = req.body;
 
+    // Support both old (ceaseDate) and new (seizedDate) field names
+    const actualSeizedDate = seizedDate || ceaseDate;
+
     if (!loanId) {
       return res.status(400).json({ status: 400, success: false, message: "Loan ID is required" });
     }
 
     const loan = await prisma.loan.findUnique({ where: { id: loanId } });
     if (!loan) {
+      console.log("Loan not found for ID:", loanId);
       return res.status(404).json({ status: 404, success: false, message: "Loan not found" });
     }
 
@@ -75,7 +81,7 @@ exports.createSeized = async (req, res) => {
       const seizedHistory = await tx.seizedHistory.create({
         data: {
         loan: { connect: { id: loan.id } },
-        ceaseDate: ceaseDate ? new Date(ceaseDate) : new Date(),
+        seizedDate: actualSeizedDate ? new Date(actualSeizedDate) : new Date(),
         comment: comment ?? null,
         status,
         priority,
@@ -106,7 +112,7 @@ exports.createSeized = async (req, res) => {
             assignedToId: assignedToId ?? null,
             status,
             priority,
-            ceaseDate: seizedHistory.ceaseDate,
+            seizedDate: seizedHistory.seizedDate,
             fileIds: fileRecords.map((f) => f.id),
           },
           adminId: adminId,
@@ -137,12 +143,23 @@ exports.completeSeized = async (req, res) => {
     const { id } = req.params; // SeizedHistory ID
     const {
       files = [],
+      // Support both old and new field names for backward compatibility
+      actualSeizedDate,
       actualCeaseDate,
+      seizedAddress,
       ceaseAddress,
+      seizedLat,
       ceaseLat,
+      seizedLng,
       ceaseLng,
       assetCondition,
     } = req.body;
+
+    // Use new field names, fall back to old ones
+    const finalActualSeizedDate = actualSeizedDate || actualCeaseDate;
+    const finalSeizedAddress = seizedAddress || ceaseAddress;
+    const finalSeizedLat = seizedLat !== undefined ? seizedLat : ceaseLat;
+    const finalSeizedLng = seizedLng !== undefined ? seizedLng : ceaseLng;
 
     if (!id) return res.status(400).json({ status: 400, message: "SeizedHistory ID required" });
 
@@ -157,9 +174,9 @@ exports.completeSeized = async (req, res) => {
     const loanId = ceaseRecord.loanId; // <<— use this inside the tx
     const actorEmployeeId = req?.user?.employeeId || null;
 
-    const parsedDate = actualCeaseDate ? new Date(actualCeaseDate) : new Date();
-    const parsedLat = (ceaseLat === "" || ceaseLat == null) ? undefined : Number(ceaseLat);
-    const parsedLng = (ceaseLng === "" || ceaseLng == null) ? undefined : Number(ceaseLng);
+    const parsedDate = finalActualSeizedDate ? new Date(finalActualSeizedDate) : new Date();
+    const parsedLat = (finalSeizedLat === "" || finalSeizedLat == null) ? undefined : Number(finalSeizedLat);
+    const parsedLng = (finalSeizedLng === "" || finalSeizedLng == null) ? undefined : Number(finalSeizedLng);
 
     const result = await prisma.$transaction(async (tx) => {
       // 1) Create new files (sequential for robustness)
@@ -192,18 +209,18 @@ exports.completeSeized = async (req, res) => {
       const updateData = {
         status: "COMPLETED",
         assetCondition: assetCondition || undefined,
-        actualCeaseDate: parsedDate,
-        ceaseAddress: ceaseAddress || undefined,
-        ceaseLat: parsedLat,
-        ceaseLng: parsedLng,
-        ...(actorEmployeeId ? { ceasedBy: { connect: { id: actorEmployeeId } } } : {}),
+        actualSeizedDate: parsedDate,
+        seizedAddress: finalSeizedAddress || undefined,
+        seizedLat: parsedLat,
+        seizedLng: parsedLng,
+        ...(actorEmployeeId ? { seizedBy: { connect: { id: actorEmployeeId } } } : {}),
         ...(allFileIds.length ? { files: { connect: allFileIds.map(id => ({ id })) } } : {}),
       };
 
       const updatedCease = await tx.seizedHistory.update({
         where: { id },
         data: updateData,
-        include: { files: true, ceasedBy: true },
+        include: { files: true, seizedBy: true },
       });
 
       // 4) Update loan status using the preloaded loanId
@@ -416,7 +433,7 @@ exports.getLoanSeizedHistory = async (req, res) => {
         assignedByAdmin: true,
         assignedByEmployee: true,
         assignedTo: true,
-        ceasedBy: true,
+        seizedBy: true,
         contactAttempts: true,
         loan: {
           include: {
@@ -462,7 +479,7 @@ exports.getSeizedById = async (req, res) => {
                 model: true,
               },
             },
-            agricultureLoan: {
+            agriLoan: {
               include: {
                 equipment: true,
               },
@@ -482,6 +499,7 @@ exports.getSeizedById = async (req, res) => {
       return res.status(404).json({ status: 404, message: "Cease not found" });
     res.status(200).json({ status: 200, data: cease });
   } catch (error) {
+    console.error("getSeizedById error:", error);
     res
       .status(500)
       .json({
@@ -493,8 +511,9 @@ exports.getSeizedById = async (req, res) => {
 };
 
 exports.getAllSeizedHistories = async (req, res) => {
+
   try {
-    console.log("object")
+    console.log("getAllSeizedHistories called with query:", req.query);
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
@@ -525,7 +544,7 @@ exports.getAllSeizedHistories = async (req, res) => {
                   model: true,
                 },
               },
-              agricultureLoan: {
+              agriLoan: {
                 include: {
                   equipment: true,
                 },
@@ -550,6 +569,237 @@ exports.getAllSeizedHistories = async (req, res) => {
     res.status(500).json({
       status: 500,
       message: "Failed to fetch all cease records",
+      error: error.message,
+    });
+  }
+};
+
+// UPDATE SEIZED (only in PENDING status)
+exports.updateSeized = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      assignedToId,
+      comment,
+      seizedDate,
+      priority,
+      dueDate,
+      assetCondition,
+      files = [],
+    } = req.body;
+
+    // Check permission
+    const hasPermission = checkVerifyPermission(req.user, "SEIZED_EDIT");
+    if (!hasPermission) {
+      return res.status(403).json({ status: 403, message: "Permission denied" });
+    }
+
+    const seized = await prisma.seizedHistory.findUnique({ where: { id } });
+    if (!seized) {
+      return res.status(404).json({ status: 404, message: "Seized record not found" });
+    }
+
+    // Only allow edit if status is PENDING
+    if (seized.status !== "PENDING") {
+      return res.status(400).json({
+        status: 400,
+        message: `Cannot edit seized record with status ${seized.status}. Only PENDING records can be edited.`,
+      });
+    }
+
+    // Upload new files if provided
+    let fileRecords = [];
+    if (Array.isArray(files) && files.length) {
+      fileRecords = await Promise.all(
+        files.map((f) =>
+          prisma.file.create({
+            data: {
+              url: f.secure_url,
+              publicId: f.public_id,
+              resourceType: f.resource_type || "image",
+              format: f.format || null,
+            },
+          })
+        )
+      );
+    }
+
+    const updated = await prisma.seizedHistory.update({
+      where: { id },
+      data: {
+        ...(assignedToId && { assignedTo: { connect: { id: assignedToId } } }),
+        ...(comment !== undefined && { comment }),
+        ...(seizedDate && { seizedDate: new Date(seizedDate) }),
+        ...(priority && { priority }),
+        ...(dueDate && { dueDate: new Date(dueDate) }),
+        ...(assetCondition !== undefined && { assetCondition }),
+        ...(fileRecords.length && { files: { connect: fileRecords.map((fr) => ({ id: fr.id })) } }),
+      },
+      include: {
+        files: true,
+        assignedTo: true,
+      },
+    });
+
+    await logAction({
+      adminId: req.user?.adminId || null,
+      employeeId: req.user?.employeeId || null,
+      loginActivityId: req.user?.loginActivityId,
+      action: "UPDATED_SEIZED",
+      table: "SeizedHistory",
+      targetId: id,
+      metadata: updated,
+    });
+
+    res.json({ status: 200, message: "Seized record updated successfully", data: updated });
+  } catch (error) {
+    console.error("Update seized error:", error);
+    res.status(500).json({
+      status: 500,
+      message: "Failed to update seized record",
+      error: error.message,
+    });
+  }
+};
+
+// DELETE SEIZED (only in PENDING status)
+exports.deleteSeized = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check permission
+    const hasPermission = checkVerifyPermission(req.user, "SEIZED_DELETE");
+    if (!hasPermission) {
+      return res.status(403).json({ status: 403, message: "Permission denied" });
+    }
+
+    const seized = await prisma.seizedHistory.findUnique({ where: { id } });
+    if (!seized) {
+      return res.status(404).json({ status: 404, message: "Seized record not found" });
+    }
+
+    // Only allow delete if status is PENDING
+    if (seized.status !== "PENDING") {
+      return res.status(400).json({
+        status: 400,
+        message: `Cannot delete seized record with status ${seized.status}. Only PENDING records can be deleted.`,
+      });
+    }
+
+    await prisma.seizedHistory.delete({ where: { id } });
+
+    await logAction({
+      adminId: req.user?.adminId || null,
+      employeeId: req.user?.employeeId || null,
+      loginActivityId: req.user?.loginActivityId,
+      action: "DELETED_SEIZED",
+      table: "SeizedHistory",
+      targetId: id,
+      metadata: { loanId: seized.loanId },
+    });
+
+    res.json({ status: 200, message: "Seized record deleted successfully" });
+  } catch (error) {
+    console.error("Delete seized error:", error);
+    res.status(500).json({
+      status: 500,
+      message: "Failed to delete seized record",
+      error: error.message,
+    });
+  }
+};
+
+// CLOSE SEIZED (can be done before RELEASED but after COMPLETED)
+exports.closeSeized = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { closeReason, files = [] } = req.body;
+
+    // Check permission
+    const hasPermission = checkVerifyPermission(req.user, "SEIZED_CLOSE");
+    if (!hasPermission) {
+      return res.status(403).json({ status: 403, message: "Permission denied" });
+    }
+
+    if (!closeReason) {
+      return res.status(400).json({ status: 400, message: "Close reason is required" });
+    }
+
+    const seized = await prisma.seizedHistory.findUnique({ where: { id } });
+    if (!seized) {
+      return res.status(404).json({ status: 404, message: "Seized record not found" });
+    }
+
+    // Can only close if PENDING or COMPLETED (not RELEASED or already CLOSED)
+    if (seized.status === "RELEASED") {
+      return res.status(400).json({
+        status: 400,
+        message: "Cannot close a seized record that has already been released",
+      });
+    }
+
+    if (seized.status === "CLOSED") {
+      return res.status(400).json({
+        status: 400,
+        message: "Seized record is already closed",
+      });
+    }
+
+    const userType = req.user?.type;
+    const adminId = userType === "ADMIN" ? req.user?.adminId ?? null : null;
+    const employeeId = userType === "EMPLOYEE" ? req.user?.employeeId ?? null : null;
+
+    // Upload files if provided
+    let fileRecords = [];
+    if (Array.isArray(files) && files.length) {
+      fileRecords = await Promise.all(
+        files.map((f) =>
+          prisma.file.create({
+            data: {
+              url: f.secure_url,
+              publicId: f.public_id,
+              resourceType: f.resource_type || "image",
+              format: f.format || null,
+            },
+          })
+        )
+      );
+    }
+
+    const updated = await prisma.seizedHistory.update({
+      where: { id },
+      data: {
+        status: "CLOSED",
+        closeReason,
+        closeDate: new Date(),
+        ...(adminId && { closedByAdmin: { connect: { id: adminId } } }),
+        ...(employeeId && { closedByEmployee: { connect: { id: employeeId } } }),
+        ...(fileRecords.length && { closeFiles: { connect: fileRecords.map((fr) => ({ id: fr.id })) } }),
+      },
+      include: {
+        files: true,
+        closeFiles: true,
+        closedByAdmin: true,
+        closedByEmployee: true,
+      },
+    });
+
+    await logAction({
+      adminId: req.user?.adminId || null,
+      employeeId: req.user?.employeeId || null,
+      loginActivityId: req.user?.loginActivityId,
+      action: "CLOSED_SEIZED",
+      table: "SeizedHistory",
+      targetId: id,
+      metadata: { closeReason, status: "CLOSED" },
+    });
+
+    res.json({ status: 200, message: "Seized record closed successfully", data: updated });
+  } catch (error) {
+    console.error("Close seized error:", error);
+    res.status(500).json({
+      status: 500,
+      message: "Failed to close seized record",
       error: error.message,
     });
   }
