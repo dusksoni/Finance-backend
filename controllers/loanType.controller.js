@@ -18,11 +18,12 @@ exports.createLoanType = async (req, res) => {
 
     await logAction({
       adminId: req.user.adminId,
+      employeeId: req.user.employeeId,
       loginActivityId: req.user.activity,
       action: "CREATED LOAN TYPE",
       table: "LoanType",
       targetId: loanType.id,
-      metadata: { name, description, label, rules },
+      metadata: loanType,
     });
 
     res.status(201).json({ message: "Loan type created", data: loanType });
@@ -72,11 +73,12 @@ exports.updateLoanType = async (req, res) => {
 
     await logAction({
       adminId: req.user.adminId,
+      employeeId: req.user.employeeId,
       loginActivityId: req.user.activity,
       action: "CREATED LOAN TYPE",
       table: "LoanType",
       targetId: updated.id,
-      metadata: { name, description, label, rules },
+      metadata: updated,
     });
 
     res.json({ message: "Updated successfully", data: updated });

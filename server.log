@@ -1,0 +1,1190 @@
+
+> api@1.0.0 start
+> node server.js
+
+⚠️  ICICI Payment Gateway - Running in DEVELOPMENT MODE
+⚠️  Encryption keys or credentials missing. Using mock responses.
+⚠️  To enable production mode:
+    1. Generate RSA keys (see keys/README.md)
+    2. Configure ICICI credentials in .env file
+🚀 Server running on http://localhost:3001
+📅 Initializing fine update cron jobs...
+✅ Fine update cron jobs initialized successfully
+   - Daily update: 12:01 AM (Asia/Kolkata)
+   - Backup update: Every 6 hours
+🔄 Running initial fine update on startup...
+🔄 Starting fine update job...
+📊 Found 3 overdue EMIs
+✅ Fine update completed: 0 EMIs updated in 3294ms
+✅ Initial fine update completed
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN1766157965660Q0KEGZ97&am=5415.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+Generate QR Error: PrismaClientKnownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:64:36
+
+  61 }
+  62 
+  63 // Fetch loan details
+→ 64 const loan = await prisma.loan.findUnique(
+Timed out fetching a new connection from the connection pool. More info: http://pris.ly/d/connection-pool (Current connection pool timeout: 10, connection limit: 21)
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.generateQR (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:64:18) {
+  code: 'P2024',
+  meta: { modelName: 'Loan', connection_limit: 21, timeout: 10 },
+  clientVersion: '6.6.0'
+}
+Generate QR Error: PrismaClientKnownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:64:36
+
+  61 }
+  62 
+  63 // Fetch loan details
+→ 64 const loan = await prisma.loan.findUnique(
+Timed out fetching a new connection from the connection pool. More info: http://pris.ly/d/connection-pool (Current connection pool timeout: 10, connection limit: 21)
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.generateQR (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:64:18) {
+  code: 'P2024',
+  meta: { modelName: 'Loan', connection_limit: 21, timeout: 10 },
+  clientVersion: '6.6.0'
+}
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN1766164857299BJ8IQXVG&am=5415.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+Dashboard summary error: PrismaClientKnownRequestError: 
+Invalid `prisma.loan.count()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/dashboard.controller.js:301:19
+
+  298     pendingAmount: true,
+  299   },
+  300 }),
+→ 301 prisma.loan.count(
+Can't reach database server at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 1)
+    at async exports.getSummary (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/dashboard.controller.js:291:9) {
+  code: 'P1001',
+  meta: {
+    modelName: 'Loan',
+    database_host: 'ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech',
+    database_port: 5432
+  },
+  clientVersion: '6.6.0'
+}
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+ICICI Payment Order Creation Error: getaddrinfo ENOTFOUND www.eazypayuat.icicibank.com
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN1766166453299DCXUOVIN&am=10000.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+Get Loan By ID Error: PrismaClientKnownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:36
+
+  1358 }
+  1359 
+  1360 // 2) Fetch full loan with everything you need (fresh after any updates)
+→ 1361 const loan = await prisma.loan.findUnique(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:18) {
+  code: 'P1017',
+  meta: { modelName: 'Loan' },
+  clientVersion: '6.6.0'
+}
+Get Loan By ID Error: PrismaClientKnownRequestError: 
+Invalid `prisma.eMI.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1292:39
+
+  1289 const H24_MS = 24 * 60 * 60 * 1000;
+  1290 
+  1291 // 1) Load OPEN EMIs metadata to decide whether to update
+→ 1292 const openEmis = await prisma.eMI.findMany(
+Timed out fetching a new connection from the connection pool. More info: http://pris.ly/d/connection-pool (Current connection pool timeout: 10, connection limit: 21)
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1292:22) {
+  code: 'P2024',
+  meta: { modelName: 'EMI', connection_limit: 21, timeout: 10 },
+  clientVersion: '6.6.0'
+}
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN1766184880292AQR6YDSU&am=10000.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN1766185691597IHHPLP6L&am=5415.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN1766185704111L62N1DWF&am=5415.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN1766185744436WFCM6YK4&am=10000.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN17661866065450YOM13KH&am=5415.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+[2025-12-20T00:38:33.916Z] [PID: 27670] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Sat Dec 20 2025 06:00:00 GMT+0530 (India Standard Time)! Possible blocking IO or high CPU user at the same process used by node-cron.
+Status check error: PrismaClientKnownRequestError: 
+Invalid `prisma.pendingUPITransaction.findFirst()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:57
+
+  371 const { merchantTranId } = req.params;
+  372 
+  373 // Fetch local transaction data
+→ 374 const localTxn = await prisma.pendingUPITransaction.findFirst(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.checkTransactionStatus (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:22) {
+  code: 'P1017',
+  meta: { modelName: 'PendingUPITransaction' },
+  clientVersion: '6.6.0'
+}
+📱 [DEV MODE] Checking transaction status (simulated)
+Status check error: PrismaClientKnownRequestError: 
+Invalid `prisma.pendingUPITransaction.findFirst()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:57
+
+  371 const { merchantTranId } = req.params;
+  372 
+  373 // Fetch local transaction data
+→ 374 const localTxn = await prisma.pendingUPITransaction.findFirst(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.checkTransactionStatus (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:22) {
+  code: 'P1017',
+  meta: { modelName: 'PendingUPITransaction' },
+  clientVersion: '6.6.0'
+}
+Status check error: PrismaClientKnownRequestError: 
+Invalid `prisma.pendingUPITransaction.findFirst()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:57
+
+  371 const { merchantTranId } = req.params;
+  372 
+  373 // Fetch local transaction data
+→ 374 const localTxn = await prisma.pendingUPITransaction.findFirst(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.checkTransactionStatus (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:22) {
+  code: 'P1017',
+  meta: { modelName: 'PendingUPITransaction' },
+  clientVersion: '6.6.0'
+}
+📱 [DEV MODE] Checking transaction status (simulated)
+Status check error: PrismaClientKnownRequestError: 
+Invalid `prisma.pendingUPITransaction.findFirst()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:57
+
+  371 const { merchantTranId } = req.params;
+  372 
+  373 // Fetch local transaction data
+→ 374 const localTxn = await prisma.pendingUPITransaction.findFirst(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.checkTransactionStatus (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:22) {
+  code: 'P1017',
+  meta: { modelName: 'PendingUPITransaction' },
+  clientVersion: '6.6.0'
+}
+📱 [DEV MODE] Checking transaction status (simulated)
+Status check error: PrismaClientKnownRequestError: 
+Invalid `prisma.pendingUPITransaction.findFirst()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:57
+
+  371 const { merchantTranId } = req.params;
+  372 
+  373 // Fetch local transaction data
+→ 374 const localTxn = await prisma.pendingUPITransaction.findFirst(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.checkTransactionStatus (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:22) {
+  code: 'P1017',
+  meta: { modelName: 'PendingUPITransaction' },
+  clientVersion: '6.6.0'
+}
+📱 [DEV MODE] Checking transaction status (simulated)
+Status check error: PrismaClientKnownRequestError: 
+Invalid `prisma.pendingUPITransaction.findFirst()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:57
+
+  371 const { merchantTranId } = req.params;
+  372 
+  373 // Fetch local transaction data
+→ 374 const localTxn = await prisma.pendingUPITransaction.findFirst(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.checkTransactionStatus (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:22) {
+  code: 'P1017',
+  meta: { modelName: 'PendingUPITransaction' },
+  clientVersion: '6.6.0'
+}
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+Status check error: PrismaClientKnownRequestError: 
+Invalid `prisma.pendingUPITransaction.findFirst()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:57
+
+  371 const { merchantTranId } = req.params;
+  372 
+  373 // Fetch local transaction data
+→ 374 const localTxn = await prisma.pendingUPITransaction.findFirst(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.checkTransactionStatus (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:22) {
+  code: 'P1017',
+  meta: { modelName: 'PendingUPITransaction' },
+  clientVersion: '6.6.0'
+}
+Status check error: PrismaClientKnownRequestError: 
+Invalid `prisma.pendingUPITransaction.findFirst()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:57
+
+  371 const { merchantTranId } = req.params;
+  372 
+  373 // Fetch local transaction data
+→ 374 const localTxn = await prisma.pendingUPITransaction.findFirst(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.checkTransactionStatus (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:22) {
+  code: 'P1017',
+  meta: { modelName: 'PendingUPITransaction' },
+  clientVersion: '6.6.0'
+}
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+Status check error: PrismaClientKnownRequestError: 
+Invalid `prisma.pendingUPITransaction.findFirst()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:57
+
+  371 const { merchantTranId } = req.params;
+  372 
+  373 // Fetch local transaction data
+→ 374 const localTxn = await prisma.pendingUPITransaction.findFirst(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.checkTransactionStatus (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:22) {
+  code: 'P1017',
+  meta: { modelName: 'PendingUPITransaction' },
+  clientVersion: '6.6.0'
+}
+Status check error: PrismaClientKnownRequestError: 
+Invalid `prisma.pendingUPITransaction.findFirst()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:57
+
+  371 const { merchantTranId } = req.params;
+  372 
+  373 // Fetch local transaction data
+→ 374 const localTxn = await prisma.pendingUPITransaction.findFirst(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.checkTransactionStatus (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:22) {
+  code: 'P1017',
+  meta: { modelName: 'PendingUPITransaction' },
+  clientVersion: '6.6.0'
+}
+Status check error: PrismaClientKnownRequestError: 
+Invalid `prisma.pendingUPITransaction.findFirst()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:57
+
+  371 const { merchantTranId } = req.params;
+  372 
+  373 // Fetch local transaction data
+→ 374 const localTxn = await prisma.pendingUPITransaction.findFirst(
+Server has closed the connection.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.checkTransactionStatus (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/iciciPayment.controller.js:374:22) {
+  code: 'P1017',
+  meta: { modelName: 'PendingUPITransaction' },
+  clientVersion: '6.6.0'
+}
+[2025-12-20T06:58:51.557Z] [PID: 27670] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Sat Dec 20 2025 12:00:00 GMT+0530 (India Standard Time)! Possible blocking IO or high CPU user at the same process used by node-cron.
+ICICI Payment Order Creation Error: getaddrinfo ENOTFOUND www.eazypayuat.icicibank.com
+ICICI Payment Order Creation Error: getaddrinfo ENOTFOUND www.eazypayuat.icicibank.com
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN1766219032209Y9030KAI&am=10000.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+Get admin profile error: PrismaClientKnownRequestError: 
+Invalid `prisma.admin.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/admin.controller.js:64:38
+
+  61   });
+  62 }
+  63 
+→ 64 const admin = await prisma.admin.findUnique(
+Can't reach database server at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getAdminProfile (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/admin.controller.js:64:19) {
+  code: 'P1001',
+  meta: {
+    modelName: 'Admin',
+    database_host: 'ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech',
+    database_port: 5432
+  },
+  clientVersion: '6.6.0'
+}
+⏰ Running 6-hour backup fine update...
+🔄 Starting fine update job...
+📊 Found 3 overdue EMIs
+✅ Fine update completed: 0 EMIs updated in 3555ms
+📱 [DEV MODE] Generating mock UPI QR for testing
+📱 [DEV MODE] QR String: upi://pay?pa=kushalfinance@icici&pn=Kushal%20Finance&tr=TXN1766250428206FDQP7DPA&am=61530.00&cu=INR&mc=5411
+📱 [DEV MODE] Note: Payments will be simulated - no actual charges
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+📱 [DEV MODE] Checking transaction status (simulated)
+Get Loan By ID Error: PrismaClientKnownRequestError: 
+Invalid `prisma.eMI.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1292:39
+
+  1289 const H24_MS = 24 * 60 * 60 * 1000;
+  1290 
+  1291 // 1) Load OPEN EMIs metadata to decide whether to update
+→ 1292 const openEmis = await prisma.eMI.findMany(
+Can't reach database server at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1292:22) {
+  code: 'P1001',
+  meta: {
+    modelName: 'EMI',
+    database_host: 'ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech',
+    database_port: 5432
+  },
+  clientVersion: '6.6.0'
+}
+Get admin profile error: PrismaClientKnownRequestError: 
+Invalid `prisma.admin.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/admin.controller.js:64:38
+
+  61   });
+  62 }
+  63 
+→ 64 const admin = await prisma.admin.findUnique(
+Timed out fetching a new connection from the connection pool. More info: http://pris.ly/d/connection-pool (Current connection pool timeout: 10, connection limit: 21)
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getAdminProfile (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/admin.controller.js:64:19) {
+  code: 'P2024',
+  meta: { modelName: 'Admin', connection_limit: 21, timeout: 10 },
+  clientVersion: '6.6.0'
+}
+Get Loan By ID Error: PrismaClientKnownRequestError: 
+Invalid `prisma.eMI.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1292:39
+
+  1289 const H24_MS = 24 * 60 * 60 * 1000;
+  1290 
+  1291 // 1) Load OPEN EMIs metadata to decide whether to update
+→ 1292 const openEmis = await prisma.eMI.findMany(
+Can't reach database server at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1292:22) {
+  code: 'P1001',
+  meta: {
+    modelName: 'EMI',
+    database_host: 'ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech',
+    database_port: 5432
+  },
+  clientVersion: '6.6.0'
+}
+Get admin profile error: PrismaClientKnownRequestError: 
+Invalid `prisma.admin.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/admin.controller.js:64:38
+
+  61   });
+  62 }
+  63 
+→ 64 const admin = await prisma.admin.findUnique(
+Can't reach database server at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech:5432`.
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7459)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getAdminProfile (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/admin.controller.js:64:19) {
+  code: 'P1001',
+  meta: {
+    modelName: 'Admin',
+    database_host: 'ep-twilight-field-a77hiryu-pooler.ap-southeast-2.aws.neon.tech',
+    database_port: 5432
+  },
+  clientVersion: '6.6.0'
+}
+Get Loan By ID Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:36
+
+  1358 }
+  1359 
+  1360 // 2) Fetch full loan with everything you need (fresh after any updates)
+→ 1361 const loan = await prisma.loan.findUnique(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:18) {
+  clientVersion: '6.6.0'
+}
+Dashboard summary error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.groupBy()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/dashboard.controller.js:350:19
+
+  347     },
+  348   }),
+  349 }),
+→ 350 prisma.loan.groupBy(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 8)
+    at async exports.getSummary (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/dashboard.controller.js:291:9) {
+  clientVersion: '6.6.0'
+}
+Get Loan By ID Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:36
+
+  1358 }
+  1359 
+  1360 // 2) Fetch full loan with everything you need (fresh after any updates)
+→ 1361 const loan = await prisma.loan.findUnique(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:18) {
+  clientVersion: '6.6.0'
+}
+Get Loan By ID Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:36
+
+  1358 }
+  1359 
+  1360 // 2) Fetch full loan with everything you need (fresh after any updates)
+→ 1361 const loan = await prisma.loan.findUnique(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:18) {
+  clientVersion: '6.6.0'
+}
+Get Loan By ID Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findUnique()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:36
+
+  1358 }
+  1359 
+  1360 // 2) Fetch full loan with everything you need (fresh after any updates)
+→ 1361 const loan = await prisma.loan.findUnique(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async exports.getLoanById (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:1361:18) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}
+Loan List Filter Error: PrismaClientUnknownRequestError: 
+Invalid `prisma.loan.findMany()` invocation in
+/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:867:19
+
+  864 }
+  865 
+  866 const [loans, total, totalAmount] = await Promise.all([
+→ 867   prisma.loan.findMany(
+Value 'SEIZED' not found in enum 'FileStatus'
+    at zn.handleRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:7649)
+    at zn.handleAndLogRequestError (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6784)
+    at zn.request (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:121:6491)
+    at async l (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/node_modules/@prisma/client/runtime/library.js:130:9778)
+    at async Promise.all (index 0)
+    at async exports.listLoans (/Users/dusks/Desktop/work/kushal finance/kushal-finance-backend/controllers/loan.controller.js:866:41) {
+  clientVersion: '6.6.0'
+}

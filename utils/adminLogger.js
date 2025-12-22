@@ -1,6 +1,6 @@
 const prisma = require("../lib/prisma");
 
-/**
+/** 
  * Log activity (admin or employee)
  * @param {Object} params
  * @param {string} [params.adminId] - ID of the admin performing the action

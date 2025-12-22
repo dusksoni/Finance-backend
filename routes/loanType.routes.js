@@ -6,7 +6,7 @@ const { authMiddleware, adminOnly, onlyAdminOrEmployee } = require("../middlewar
 router.post("/", authMiddleware, adminOnly, controller.createLoanType);
 router.get("/", authMiddleware, onlyAdminOrEmployee, controller.getLoanTypes);
 router.get("/:id", authMiddleware, onlyAdminOrEmployee, controller.getLoanTypeById);
-router.put("/:id", authMiddleware, adminOnly, controller.updateLoanType);
-router.delete("/:id", authMiddleware, adminOnly, controller.deleteLoanType);
+router.put("/:id", authMiddleware, onlyAdminOrEmployee, controller.updateLoanType);
+router.delete("/:id", authMiddleware, onlyAdminOrEmployee, controller.deleteLoanType);
 
 module.exports = router;

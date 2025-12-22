@@ -1,0 +1,3 @@
+-- Add new SEIZED enum values to FileStatus
+ALTER TYPE "FileStatus" ADD VALUE IF NOT EXISTS 'SEIZED_INITIATED';
+ALTER TYPE "FileStatus" ADD VALUE IF NOT EXISTS 'SEIZED';

@@ -6,11 +6,41 @@ exports.createRegion = async (req, res) => {
   try {
     const { name, stateId, cityId } = req.body;
 
+    // Check for duplicate region
+    const existingRegion = await prisma.region.findFirst({
+      where: {
+        name: name,
+        stateId: stateId,
+        cityId: cityId,
+      },
+    });
+
+    if (existingRegion) {
+      return res.status(400).json({ error: "Region with the same name, state, and city already exists" });
+    }
+
+    // Check for duplicate roles
+    const existingRoles = await prisma.role.findMany({
+      where: {
+        region: {
+          name: name,
+          stateId: stateId,
+          cityId: cityId,
+        },
+      },
+    });
+
+    if (existingRoles.length > 0) {
+      return res.status(400).json({ error: "Roles for this region already exist" });
+    }
+
     const region = await prisma.region.create({
       data: {
-        name,
-        stateId,
-        cityId,
+        name: name,
+        state: {
+          connect: { id: stateId },
+        },
+        city: { connect: { id: cityId } },
       },
     });
 
@@ -38,7 +68,8 @@ exports.getAllRegions = async (req, res) => {
         state: true,
         city: true,
         employees: true,
-        userDetails: true,
+        users: true,
+        branches: true,
       },
     });
     res.json({ status: 200, data: regions });

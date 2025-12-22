@@ -1,4 +1,5 @@
 const prisma = require("../lib/prisma");
+const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const logAction = require("../utils/adminLogger");
 
 // List all roles
@@ -54,17 +55,23 @@ exports.createRole = async (req, res) => {
       return res.status(400).json({ error: "Role already in use" });
     }
 
+    const hasPermission = await checkVerifyPermission(req.user, "ROLE_CREATE");
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Permission denied", status: 403 });
+    }
+
     const newRole = await prisma.role.create({
       data: { name, description, permissions },
     });
 
     await logAction({
       adminId: req.user.adminId,
+      employeeId: req.user.employeeId,
       loginActivityId: req.user.activity,
       action: "CREATED ROLE",
       table: "Role",
       targetId: newRole.id,
-      metadata: { name, description, permissions },
+      metadata: newRole,
     });
 
     res.status(201).json({ message: "Employee Created" });
@@ -76,20 +83,27 @@ exports.createRole = async (req, res) => {
 // Update a role
 exports.updateRole = async (req, res) => {
   const { name, description, permissions } = req.body;
+  const roleId = req.params.id; // Ensure the ID is an integer
+  
   try {
-    await prisma.role.update({
-      where: { id: req.params.id },
+    const hasPermission = await checkVerifyPermission(req.user, "ROLE_UPDATE");
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Permission denied", status: 403 });
+    }
+    const updatedRole = await prisma.role.update({
+      where: { id: roleId },
       data: { name, description, permissions },
     });
     await logAction({
       adminId: req.user.adminId,
+      employeeId: req.user.employeeId,
       loginActivityId: req.user.activity,
       action: "UPDATED ROLE",
       table: "Role",
-      targetId: req.params.id,
-      metadata: { name, description, permissions },
+      targetId: updatedRole.id,
+      metadata: updatedRole,
     });
-    res.status(200).json({ message: "Employee Updated" });
+    res.status(200).json({ message: "Role Updated", data: updatedRole });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -98,10 +112,15 @@ exports.updateRole = async (req, res) => {
 // Delete a role
 exports.deleteRole = async (req, res) => {
   try {
+    const hasPermission = await checkVerifyPermission(req.user, "ROLE_DELETE");
+    if (!hasPermission) {
+      return res.status(403).json({ error: "Permission denied", status: 403 });
+    }
     const deleted = await prisma.role.delete({ where: { id: req.params.id } });
 
     await logAction({
       adminId: req.user.adminId,
+      employeeId: req.user.employeeId,
       loginActivityId: req.user.activity,
       action: "DELETED ROLE",
       table: "Role",

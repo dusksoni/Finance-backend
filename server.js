@@ -2,6 +2,9 @@ const express = require("express");
 require("dotenv").config();
 const app = express();
 const cors = require("cors");
+const { initializeCronJobs, updateAllOverdueFines } = require("./utils/fineUpdateService");
+
+app.use(cors());
 
 const adminRoutes = require("./routes/admin.route");
 const employeeRoutes = require("./routes/employee.route");
@@ -16,6 +19,13 @@ const loanTypeRoute = require("./routes/loanType.routes");
 const stateRoute = require("./routes/state.routes");
 const cityRoute = require("./routes/city.routes");
 const regionRoute = require("./routes/region.routes");
+const listRoutes = require("./routes/list.route");
+const reportRoutes = require("./routes/report.route");
+const auditRoutes = require("./routes/audit.route");
+const dashboardRoutes = require("./routes/dashboard.route");
+const publicUserRoutes = require("./routes/publicUser.route");
+const iciciPaymentRoutes = require("./routes/iciciPayment.route");
+const seizedRoutes = require("./routes/seized.route");
 
 app.use(
   cors({
@@ -44,9 +54,13 @@ app.get("/", async (req, res) => {
     });
   }
 });
+app.use("/api/status", (req, res) => {
+  res.json({ status: 200, data: "Server is running!" });
+});
 app.use("/api/admin", adminRoutes);
 app.use("/api/employee", employeeRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/list", listRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/user-auth", userAuthRoutes);
 app.use("/api/terminate", terminateRoute);
@@ -57,8 +71,26 @@ app.use("/api/loanType", loanTypeRoute);
 app.use("/api/state", stateRoute);
 app.use("/api/city", cityRoute);
 app.use("/api/region", regionRoute);
+app.use("/api/report", reportRoutes);
+app.use("/api/audit", auditRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/public", publicUserRoutes);
+app.use("/api/icici-payment", iciciPaymentRoutes);
+app.use("/api/seized", seizedRoutes);
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () =>
-  console.log(`🚀 Servers running on http://localhost:${PORT}`)
-);
+app.listen(PORT, async () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+
+  // Initialize cron jobs for automatic fine updates
+  initializeCronJobs();
+
+  // Optionally run fine update once on startup
+  console.log('🔄 Running initial fine update on startup...');
+  try {
+    await updateAllOverdueFines();
+    console.log('✅ Initial fine update completed');
+  } catch (error) {
+    console.error('❌ Initial fine update failed:', error.message);
+  }
+});

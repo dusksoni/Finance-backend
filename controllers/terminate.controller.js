@@ -65,7 +65,9 @@ exports.terminateHypothecation = async (req, res) => {
         status: parsedResponse.responseCode,
         errorMessage: parsedResponse.responseCode == 1 ? null : parsedResponse.responseMessage,
         adminId: req.user?.adminId || null,
-        employeeId: req.user?.employeeId || null,
+        employee: req.user?.employeeId
+        ? { connect: { id: req.user.employeeId } }
+        : null,
         createdBy: req.user?.type || "unknown",
         docFileId: file.id,
       },
@@ -76,9 +78,9 @@ exports.terminateHypothecation = async (req, res) => {
       action: "TERMINATED VEHICLE LOAN",
       table: "TerminationRequest",
       targetId: terminationRequest.id,
-      adminId: req.user?.adminId,
+      adminId: req.user.adminId,
       employeeId: req.user?.employeeId,
-      loginActivityId: req.user?.loginActivityId,
+      loginActivityId: req.user.loginActivityId,
       metadata: {
         requestPayload,
         encryptedData,

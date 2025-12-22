@@ -1,10 +1,24 @@
 const prisma = require("../lib/prisma");
+const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const logAction = require("../utils/adminLogger");
 
 // CREATE
 exports.createPhotoIdType = async (req, res) => {
   try {
-    const { name, description, minLength, maxLength, numberTypeEg, validation } = req.body;
+    const {
+      name,
+      description,
+      minLength,
+      maxLength,
+      numberTypeEg,
+      validation,
+    } = req.body;
+
+    const permissions = await checkVerifyPermission(req.user, "PHOTOID_CREATE");
+
+    if (!permissions) {
+      return res.status(403).json({ error: "Access denied", status: 403 });
+    }
 
     const newType = await prisma.photoIdType.create({
       data: {
@@ -27,7 +41,9 @@ exports.createPhotoIdType = async (req, res) => {
       employeeId: req.user?.employeeId,
     });
 
-    res.status(201).json({ status: 201, message: "Photo ID Type created", data: newType });
+    res
+      .status(201)
+      .json({ status: 201, message: "Photo ID Type created", data: newType });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -49,7 +65,7 @@ exports.getPhotoIdTypeById = async (req, res) => {
     const { id } = req.params;
     const type = await prisma.photoIdType.findUnique({ where: { id } });
     if (!type) return res.status(404).json({ error: "Not found" });
-    res.json(type);
+    res.status(200).json({ data: type, status: 200 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -59,7 +75,20 @@ exports.getPhotoIdTypeById = async (req, res) => {
 exports.updatePhotoIdType = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, minLength, maxLength, numberTypeEg, validation } = req.body;
+    const {
+      name,
+      description,
+      minLength,
+      maxLength,
+      numberTypeEg,
+      validation,
+    } = req.body;
+
+    const permissions = await checkVerifyPermission(req.user, "PHOTOID_EDIT");
+
+    if (!permissions) {
+      return res.status(403).json({ error: "Access denied", status: 403 });
+    }
 
     const updated = await prisma.photoIdType.update({
       where: { id },
@@ -72,7 +101,6 @@ exports.updatePhotoIdType = async (req, res) => {
         validation,
       },
     });
-
     await logAction({
       action: "UPDATED PHOTO ID TYPE",
       table: "PhotoIdType",
@@ -93,6 +121,12 @@ exports.updatePhotoIdType = async (req, res) => {
 exports.deletePhotoIdType = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const permissions = await checkVerifyPermission(req.user, "PHOTOID_DELETE");
+
+    if (!permissions) {
+      return res.status(403).json({ error: "Access denied", status: 403 });
+    }
 
     const deleted = await prisma.photoIdType.delete({ where: { id } });
 
