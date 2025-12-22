@@ -27,6 +27,21 @@ const publicUserRoutes = require("./routes/publicUser.route");
 const iciciPaymentRoutes = require("./routes/iciciPayment.route");
 const seizedRoutes = require("./routes/seized.route");
 
+app.use(
+  cors({
+    origin: [
+      "https://admin.kushalfinance.com",
+      "http://localhost:3000", // local dev
+    ],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+app.options(/.*/, (req, res) => {
+  res.sendStatus(200);
+});
+
 app.use(express.json());
 app.get("/", async (req, res) => {
   try {

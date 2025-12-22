@@ -63,7 +63,7 @@ exports.terminateHypothecation = async (req, res) => {
         encryptedData: encryptedData,
         response: parsedResponse.responseMessage,
         status: parsedResponse.responseCode,
-        errorMessage: parsedResponse.responseCode === 200 ? null : parsedResponse.responseMessage,
+        errorMessage: parsedResponse.responseCode == 1 ? null : parsedResponse.responseMessage,
         adminId: req.user?.adminId || null,
         employee: req.user?.employeeId
         ? { connect: { id: req.user.employeeId } }
@@ -89,14 +89,16 @@ exports.terminateHypothecation = async (req, res) => {
     });
 
     // 🔥 8. Respond
-    if (parsedResponse.responseCode === 200) {
+    if (parsedResponse.responseCode == 1) {
       return res.status(200).json({
+        status: 200,
         message: "Termination request successful",
         data: parsedResponse,
       });
     } else {
       return res.status(400).json({
-        status: parsedResponse.responseCode,
+        status: 400,
+        responseCode: parsedResponse.responseCode,
         message: parsedResponse.responseMessage || "Termination failed",
       });
     }
@@ -104,7 +106,7 @@ exports.terminateHypothecation = async (req, res) => {
     res.status(500).json({
       status: "error",
       message: "Internal server error",
-      details: error.message,
+      details: error,
     });
   }
 };
