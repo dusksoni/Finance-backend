@@ -371,8 +371,12 @@ exports.downloadCibilReport = async (req, res) => {
         user: {
           include: {
             gender: true,
-            state: true,
-            addressCategory: true,
+            addresses: {
+              include: {
+                state: true,
+                city: true,
+              },
+            },
             photoIds: {
               include: { photoIdType: true },
             },

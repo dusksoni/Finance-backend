@@ -8,7 +8,6 @@ exports.createSeized = async (req, res) => {
     console.log("createSeized called with loanId:", loanId);
     const {
       assignedToId,      // employee id to assign the cease job to (optional)
-      comment,
       ceaseDate,         // backward compatibility
       seizedDate,        // new field name
       files = [],        // [{ secure_url, public_id, resource_type?, format? }]
@@ -82,7 +81,6 @@ exports.createSeized = async (req, res) => {
         data: {
         loan: { connect: { id: loan.id } },
         seizedDate: actualSeizedDate ? new Date(actualSeizedDate) : new Date(),
-        comment: comment ?? null,
         status,
         priority,
         dueDate: dueDate ? new Date(dueDate) : null,
@@ -143,6 +141,7 @@ exports.completeSeized = async (req, res) => {
     const { id } = req.params; // SeizedHistory ID
     const {
       files = [],
+      comment,  // optional comment on completion
       // Support both old and new field names for backward compatibility
       actualSeizedDate,
       actualCeaseDate,
@@ -210,6 +209,7 @@ exports.completeSeized = async (req, res) => {
         status: "COMPLETED",
         assetCondition: assetCondition || undefined,
         actualSeizedDate: parsedDate,
+        comment: comment || null,
         seizedAddress: finalSeizedAddress || undefined,
         seizedLat: parsedLat,
         seizedLng: parsedLng,
@@ -437,7 +437,17 @@ exports.getLoanSeizedHistory = async (req, res) => {
         contactAttempts: true,
         loan: {
           include: {
-            user: true,
+            user: {
+              include: {
+                addresses: {
+                  include: {
+                    state: true,
+                    city: true,
+                    addressCategory: true,
+                  },
+                },
+              },
+            },
           }
         }
       },
@@ -470,7 +480,17 @@ exports.getSeizedById = async (req, res) => {
         seizedBy: true,
         loan: {
           include: {
-            user: true,
+            user: {
+              include: {
+                addresses: {
+                  include: {
+                    state: true,
+                    city: true,
+                    addressCategory: true,
+                  },
+                },
+              },
+            },
             branch: true,
             loanType: true,
             twoWheelerLoan: {
@@ -535,7 +555,17 @@ exports.getAllSeizedHistories = async (req, res) => {
           seizedBy: true,
           loan: {
             include: {
-              user: true,
+              user: {
+                include: {
+                  addresses: {
+                    include: {
+                      state: true,
+                      city: true,
+                      addressCategory: true,
+                    },
+                  },
+                },
+              },
               branch: true,
               loanType: true,
               twoWheelerLoan: {
@@ -556,7 +586,6 @@ exports.getAllSeizedHistories = async (req, res) => {
       }),
       prisma.seizedHistory.count(),
     ]);
-
     res.json({
       status: 200,
       data,
@@ -607,22 +636,40 @@ exports.updateSeized = async (req, res) => {
       });
     }
 
-    // Upload new files if provided
+    // Handle files: separate existing files from new uploads
     let fileRecords = [];
+    let existingFileIds = [];
+
     if (Array.isArray(files) && files.length) {
-      fileRecords = await Promise.all(
-        files.map((f) =>
-          prisma.file.create({
-            data: {
-              url: f.secure_url,
-              publicId: f.public_id,
-              resourceType: f.resource_type || "image",
-              format: f.format || null,
-            },
-          })
-        )
-      );
+      // Separate existing files (with id) from new uploads (with secure_url)
+      const existingFiles = files.filter(f => f.id);
+      const newFiles = files.filter(f => !f.id && f.secure_url);
+
+      // Keep track of existing file IDs to reconnect
+      existingFileIds = existingFiles.map(f => f.id);
+
+      // Create records for new uploads only
+      if (newFiles.length) {
+        fileRecords = await Promise.all(
+          newFiles.map((f) =>
+            prisma.file.create({
+              data: {
+                url: f.secure_url,
+                publicId: f.public_id,
+                resourceType: f.resource_type || "image",
+                format: f.format || null,
+              },
+            })
+          )
+        );
+      }
     }
+
+    // Combine existing and new file IDs for connection
+    const allFileIds = [
+      ...existingFileIds,
+      ...fileRecords.map(fr => fr.id)
+    ];
 
     const updated = await prisma.seizedHistory.update({
       where: { id },
@@ -633,7 +680,7 @@ exports.updateSeized = async (req, res) => {
         ...(priority && { priority }),
         ...(dueDate && { dueDate: new Date(dueDate) }),
         ...(assetCondition !== undefined && { assetCondition }),
-        ...(fileRecords.length && { files: { connect: fileRecords.map((fr) => ({ id: fr.id })) } }),
+        ...(allFileIds.length && { files: { set: allFileIds.map(id => ({ id })) } }),
       },
       include: {
         files: true,
