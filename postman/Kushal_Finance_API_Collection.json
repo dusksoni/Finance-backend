@@ -1,0 +1,1790 @@
+{
+	"info": {
+		"_postman_id": "kushal-finance-api",
+		"name": "Kushal Finance API",
+		"description": "Complete API collection for Kushal Finance Backend System",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{authToken}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3001/api",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Admin Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    if (response.token) {",
+									"        pm.collectionVariables.set('authToken', response.token);",
+									"        console.log('Token saved:', response.token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Employee Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    if (response.token) {",
+									"        pm.collectionVariables.set('authToken', response.token);",
+									"        console.log('Token saved:', response.token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"employee@example.com\",\n  \"password\": \"password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/employee/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["employee", "login"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Admin",
+			"item": [
+				{
+					"name": "Get Admin Profile",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/admin/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "me"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Admin",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Admin Name\",\n  \"email\": \"admin@example.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/admin/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "admin", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "admin-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Admin Password",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"currentPassword\": \"oldpassword\",\n  \"newPassword\": \"newpassword123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/admin/:id/password",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "admin", ":id", "password"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "admin-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Activity Logs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/admin/me/activity",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "me", "activity"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Login History",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/admin/me/login-history",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "me", "login-history"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Refresh Fines (Manual)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/admin/refresh-fines",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "refresh-fines"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Cache Stats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/admin/cache-stats",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "cache-stats"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Clear Cache",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/admin/clear-cache",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "clear-cache"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Employee",
+			"item": [
+				{
+					"name": "Create Employee",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"password\": \"password123\",\n  \"roleId\": \"role-id\",\n  \"regionId\": \"region-id\",\n  \"stateId\": \"state-id\",\n  \"cityId\": \"city-id\",\n  \"branchId\": \"branch-id\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/employee/create",
+							"host": ["{{baseUrl}}"],
+							"path": ["employee", "create"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Self Profile",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/employee/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["employee", "me"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Self Profile",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Name\",\n  \"email\": \"newemail@example.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/employee/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["employee", "me"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Self Password",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"currentPassword\": \"oldpassword\",\n  \"newPassword\": \"newpassword123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/employee/me/password",
+							"host": ["{{baseUrl}}"],
+							"path": ["employee", "me", "password"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Employees",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/admin/employees",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "employees"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Employee By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/admin/employees/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "employees", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "employee-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Employee",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Name\",\n  \"roleId\": \"new-role-id\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/employee/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["employee", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "employee-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Employee Password",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"newPassword\": \"newpassword123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/employee/:id/password",
+							"host": ["{{baseUrl}}"],
+							"path": ["employee", ":id", "password"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "employee-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Employee",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/employee/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["employee", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "employee-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Block/Unblock Employee",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"isBlocked\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/employee/block/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["employee", "block", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "employee-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Employees By Permission",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/employee/byPermission?permission=LOAN_APPROVE",
+							"host": ["{{baseUrl}}"],
+							"path": ["employee", "byPermission"],
+							"query": [
+								{
+									"key": "permission",
+									"value": "LOAN_APPROVE"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Users",
+			"item": [
+				{
+					"name": "Create User",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"firstName\": \"John\",\n  \"middleName\": \"K\",\n  \"lastName\": \"Doe\",\n  \"phone\": \"9876543210\",\n  \"email\": \"john@example.com\",\n  \"dateOfBirth\": \"1990-01-15\",\n  \"genderId\": \"gender-id\",\n  \"relationTypeId\": \"relation-type-id\",\n  \"relationFirstName\": \"Jane\",\n  \"relationMiddleName\": \"M\",\n  \"relationLastName\": \"Doe\",\n  \"maritalStatus\": \"Married\",\n  \"qualification\": \"Graduate\",\n  \"profession\": \"Business\",\n  \"addresses\": [\n    {\n      \"addressCategoryId\": \"address-category-id\",\n      \"address\": \"123 Main Street\",\n      \"country\": \"India\",\n      \"stateId\": \"state-id\",\n      \"cityId\": \"city-id\",\n      \"pincode\": 400001\n    }\n  ],\n  \"photoIds\": [\n    {\n      \"photoIdTypeId\": \"photoid-type-id\",\n      \"photoIdNumber\": \"ABCD1234E\",\n      \"images\": []\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": ["{{baseUrl}}"],
+							"path": ["users"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Users",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/users?page=1&limit=10&search=",
+							"host": ["{{baseUrl}}"],
+							"path": ["users"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "search",
+									"value": ""
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get User By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/users/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "user-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update User",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"firstName\": \"Updated Name\",\n  \"phone\": \"9876543210\",\n  \"email\": \"updated@example.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "user-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete User",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/users/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "user-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Activity Logs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/users/:id/activity",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", ":id", "activity"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "user-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Pending Update Requests",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/users/admin/requests",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", "admin", "requests"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Approve User Update",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/users/admin/approve/:requestId",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", "admin", "approve", ":requestId"],
+							"variable": [
+								{
+									"key": "requestId",
+									"value": "request-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Reject User Update",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"rejectedReason\": \"Invalid information provided\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users/admin/reject/:requestId",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", "admin", "reject", ":requestId"],
+							"variable": [
+								{
+									"key": "requestId",
+									"value": "request-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Loans",
+			"item": [
+				{
+					"name": "Create Loan",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"user-id\",\n  \"loanTypeId\": \"loan-type-id\",\n  \"fileNo\": \"LN001\",\n  \"principalLoanAmount\": 50000,\n  \"interestRate\": 14,\n  \"tenureMonths\": 12,\n  \"startDate\": \"2024-01-01\",\n  \"dueDay\": 5,\n  \"paymentFrequency\": \"MONTHLY\",\n  \"branchId\": \"branch-id\",\n  \"showroomId\": \"showroom-id\",\n  \"details\": {\n    \"brandId\": \"brand-id\",\n    \"modelId\": \"model-id\",\n    \"variantId\": \"variant-id\",\n    \"registrationNumber\": \"MH01AB1234\",\n    \"chassisNumber\": \"CHASSIS123\",\n    \"engineNumber\": \"ENGINE123\"\n  }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/loan",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Loans",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan?page=1&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Loan By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "loan-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Loans By User",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/user/:userId",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "user", ":userId"],
+							"variable": [
+								{
+									"key": "userId",
+									"value": "user-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Loan",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"principalLoanAmount\": 55000,\n  \"interestRate\": 15\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/loan/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "loan-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Pending Loan Approvals",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/approvals",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "approvals"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Approve Loan",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"approvalComment\": \"Approved after verification\",\n  \"disbursedDate\": \"2024-01-15\",\n  \"agreementDate\": \"2024-01-14\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/loan/:id/approve",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", ":id", "approve"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "loan-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Reject Loan",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"approvalComment\": \"Insufficient documentation\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/loan/:id/reject",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", ":id", "reject"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "loan-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Close Loan",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/close/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "close", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "loan-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Download Loans Report",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/download",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "download"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Payments",
+			"item": [
+				{
+					"name": "Get Pending Payments",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/payment/pending/:loanId",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "payment", "pending", ":loanId"],
+							"variable": [
+								{
+									"key": "loanId",
+									"value": "loan-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Make Payment (Bulk)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"amount\": 5000,\n  \"paymentMode\": \"CASH\",\n  \"paymentDate\": \"2024-01-05\",\n  \"transactionId\": \"TXN123456\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/loan/payment/:loanId",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "payment", ":loanId"],
+							"variable": [
+								{
+									"key": "loanId",
+									"value": "loan-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get EMI By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/payment/emi/:emiId",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "payment", "emi", ":emiId"],
+							"variable": [
+								{
+									"key": "emiId",
+									"value": "emi-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Pay Specific EMI",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"amount\": 5000,\n  \"paymentMode\": \"UPI\",\n  \"transactionId\": \"UPI123456\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/loan/payment/emi/:emiId/pay",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "payment", "emi", ":emiId", "pay"],
+							"variable": [
+								{
+									"key": "emiId",
+									"value": "emi-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Payment By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/payment/getbyid/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "payment", "getbyid", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "payment-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Unverified Payments",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/payment/unverified",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "payment", "unverified"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Verify Payment",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/payment/:paymentId/verify",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "payment", ":paymentId", "verify"],
+							"variable": [
+								{
+									"key": "paymentId",
+									"value": "payment-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Payment Invoice",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/payment/invoice/:paymentId",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "payment", "invoice", ":paymentId"],
+							"variable": [
+								{
+									"key": "paymentId",
+									"value": "payment-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Foreclosure",
+			"item": [
+				{
+					"name": "Get Foreclosure Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/payment/foreclose/:loanId",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "payment", "foreclose", ":loanId"],
+							"variable": [
+								{
+									"key": "loanId",
+									"value": "loan-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Foreclose Request",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"requestedAmount\": 45000,\n  \"paymentMode\": \"ONLINE\",\n  \"paymentDate\": \"2024-06-15\",\n  \"transactionId\": \"FORE123456\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/loan/foreclose-request/:loanId",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "foreclose-request", ":loanId"],
+							"variable": [
+								{
+									"key": "loanId",
+									"value": "loan-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Foreclose Requests",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/foreclose-approvals",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "foreclose-approvals"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Foreclose Request By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loan/foreclose-request/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "foreclose-request", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "request-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Approve Foreclose Request",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"approvalComment\": \"Foreclosure approved\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/loan/foreclose-request/:id/approve",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "foreclose-request", ":id", "approve"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "request-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Reject Foreclose Request",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"approvalComment\": \"Incomplete payment details\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/loan/foreclose-request/:id/reject",
+							"host": ["{{baseUrl}}"],
+							"path": ["loan", "foreclose-request", ":id", "reject"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "request-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Seized/Ceased Assets",
+			"item": [
+				{
+					"name": "Get All Seized Histories",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/seized",
+							"host": ["{{baseUrl}}"],
+							"path": ["seized"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Seized By Loan",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/seized/loan/:loanId",
+							"host": ["{{baseUrl}}"],
+							"path": ["seized", "loan", ":loanId"],
+							"variable": [
+								{
+									"key": "loanId",
+									"value": "loan-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Seized By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/seized/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["seized", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "seized-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Seized Request",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"assignedToId\": \"employee-id\",\n  \"priority\": \"HIGH\",\n  \"dueDate\": \"2024-02-01\",\n  \"comment\": \"Customer not responding to payment reminders\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/seized/:loanId",
+							"host": ["{{baseUrl}}"],
+							"path": ["seized", ":loanId"],
+							"variable": [
+								{
+									"key": "loanId",
+									"value": "loan-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Seized",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"priority\": \"MEDIUM\",\n  \"comment\": \"Updated priority\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/seized/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["seized", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "seized-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Seized",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/seized/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["seized", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "seized-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Complete Seized",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"actualSeizedDate\": \"2024-01-25\",\n  \"seizedLat\": 19.0760,\n  \"seizedLng\": 72.8777,\n  \"seizedAddress\": \"Mumbai, Maharashtra\",\n  \"assetCondition\": \"Good condition\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/seized/:id/complete",
+							"host": ["{{baseUrl}}"],
+							"path": ["seized", ":id", "complete"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "seized-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Close Seized",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/seized/:id/close",
+							"host": ["{{baseUrl}}"],
+							"path": ["seized", ":id", "close"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "seized-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Release Seized Asset",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"releaseDate\": \"2024-02-15\",\n  \"releaseReason\": \"Payment cleared\",\n  \"releaseNotes\": \"Full payment received, asset returned to customer\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/seized/:id/release",
+							"host": ["{{baseUrl}}"],
+							"path": ["seized", ":id", "release"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "seized-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Add Contact Attempt",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"contactType\": \"CALL\",\n  \"callOutcome\": \"PICKED\",\n  \"spokeTo\": \"Customer\",\n  \"summary\": \"Customer agreed to make payment by next week\",\n  \"durationSeconds\": 180\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/seized/:id/contact-attempt",
+							"host": ["{{baseUrl}}"],
+							"path": ["seized", ":id", "contact-attempt"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "seized-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Roles & Permissions",
+			"item": [
+				{
+					"name": "Get All Roles",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/roles",
+							"host": ["{{baseUrl}}"],
+							"path": ["roles"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Role By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/roles/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["roles", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "role-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Role",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Branch Manager\",\n  \"description\": \"Manages branch operations\",\n  \"permissions\": [\n    \"LOAN_VIEW\",\n    \"LOAN_CREATE\",\n    \"LOAN_APPROVE\",\n    \"USER_VIEW\",\n    \"USER_CREATE\",\n    \"PAYMENT_VIEW\",\n    \"PAYMENT_VERIFY\"\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/roles",
+							"host": ["{{baseUrl}}"],
+							"path": ["roles"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Role",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Role Name\",\n  \"permissions\": [\"LOAN_VIEW\", \"USER_VIEW\"]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/roles/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["roles", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "role-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Role",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/roles/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["roles", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "role-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Permissions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/employee/permission/:userId",
+							"host": ["{{baseUrl}}"],
+							"path": ["employee", "permission", ":userId"],
+							"variable": [
+								{
+									"key": "userId",
+									"value": "user-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Dashboard & Reports",
+			"item": [
+				{
+					"name": "Get Dashboard Summary",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/summary",
+							"host": ["{{baseUrl}}"],
+							"path": ["dashboard", "summary"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Enhanced Dashboard",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/enhanced?startDate=2024-01-01&endDate=2024-12-31",
+							"host": ["{{baseUrl}}"],
+							"path": ["dashboard", "enhanced"],
+							"query": [
+								{
+									"key": "startDate",
+									"value": "2024-01-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Export Dashboard to Excel",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"startDate\": \"2024-01-01\",\n  \"endDate\": \"2024-12-31\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/export/excel",
+							"host": ["{{baseUrl}}"],
+							"path": ["dashboard", "export", "excel"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Export Dashboard to PDF",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"startDate\": \"2024-01-01\",\n  \"endDate\": \"2024-12-31\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/export/pdf",
+							"host": ["{{baseUrl}}"],
+							"path": ["dashboard", "export", "pdf"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Export Formatted Dashboard",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"startDate\": \"2024-01-01\",\n  \"endDate\": \"2024-12-31\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/export/formatted",
+							"host": ["{{baseUrl}}"],
+							"path": ["dashboard", "export", "formatted"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Download CIBIL Report",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/report/cibil",
+							"host": ["{{baseUrl}}"],
+							"path": ["report", "cibil"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "File Upload",
+			"item": [
+				{
+					"name": "Upload File",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/file/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["file", "upload"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete File",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"publicId\": \"file-public-id\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/file/remove",
+							"host": ["{{baseUrl}}"],
+							"path": ["file", "remove"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Bulk Upload",
+			"item": [
+				{
+					"name": "Download Template",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/bulk-upload/template",
+							"host": ["{{baseUrl}}"],
+							"path": ["bulk-upload", "template"]
+						},
+						"description": "Downloads an Excel template file for bulk upload"
+					},
+					"response": []
+				},
+				{
+					"name": "Upload Bulk Data",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": [],
+									"description": "Excel file (.xlsx) containing users, loans, and payments data"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/bulk-upload/upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["bulk-upload", "upload"]
+						},
+						"description": "Upload Excel file with users, loans, and payments data for bulk import"
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
