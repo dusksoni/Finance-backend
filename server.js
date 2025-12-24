@@ -32,6 +32,7 @@ app.use(
   cors({
     origin: [
       "https://admin.kushalfinance.com",
+      "https://kushal-finance-frontend-git-user-dusksonis-projects.vercel.app", //uat
       "http://localhost:5173", // local dev
     ],
     credentials: true,
