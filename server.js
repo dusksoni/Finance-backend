@@ -97,11 +97,7 @@ app.use("/api/bulk-upload", bulkUploadRoutes);
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
-
-  // Initialize cron jobs for automatic fine updates
   initializeCronJobs();
-
-  // Optionally run fine update once on startup
   console.log('🔄 Running initial fine update on startup...');
   try {
     await updateAllOverdueFines();
