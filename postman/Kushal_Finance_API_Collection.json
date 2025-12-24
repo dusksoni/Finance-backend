@@ -1743,6 +1743,1209 @@
 			]
 		},
 		{
+			"name": "Master Data - States",
+			"item": [
+				{
+					"name": "Get All States",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/state",
+							"host": ["{{baseUrl}}"],
+							"path": ["state"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get State By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/state/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["state", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "state-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create State",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Maharashtra\",\n  \"stateCode\": \"27\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/state",
+							"host": ["{{baseUrl}}"],
+							"path": ["state"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update State",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated State Name\",\n  \"stateCode\": \"27\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/state/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["state", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "state-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete State",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/state/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["state", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "state-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Master Data - Cities",
+			"item": [
+				{
+					"name": "Get All Cities",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/city",
+							"host": ["{{baseUrl}}"],
+							"path": ["city"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get City By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/city/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["city", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "city-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create City",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Mumbai\",\n  \"stateId\": \"state-id\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/city",
+							"host": ["{{baseUrl}}"],
+							"path": ["city"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update City",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated City Name\",\n  \"stateId\": \"state-id\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/city/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["city", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "city-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete City",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/city/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["city", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "city-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Master Data - Regions",
+			"item": [
+				{
+					"name": "Get All Regions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/region",
+							"host": ["{{baseUrl}}"],
+							"path": ["region"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Region By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/region/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["region", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "region-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Region",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"South Mumbai\",\n  \"stateId\": \"state-id\",\n  \"cityId\": \"city-id\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/region",
+							"host": ["{{baseUrl}}"],
+							"path": ["region"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Region",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Region Name\",\n  \"stateId\": \"state-id\",\n  \"cityId\": \"city-id\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/region/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["region", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "region-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Region",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/region/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["region", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "region-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Master Data - Branches",
+			"item": [
+				{
+					"name": "Get All Branches",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/branch",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "branch"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Branch By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/branch/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "branch", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "branch-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Branch",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"South Mumbai Branch\",\n  \"regionId\": \"region-id\",\n  \"address\": \"123 Main Street, Mumbai\",\n  \"pincode\": 400001,\n  \"latitude\": 19.0760,\n  \"longitude\": 72.8777,\n  \"phone\": \"022-12345678\",\n  \"email\": \"mumbai@kushalfinance.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/branch",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "branch"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Branch",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Branch Name\",\n  \"address\": \"Updated Address\",\n  \"phone\": \"022-87654321\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/branch/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "branch", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "branch-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Branch",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/branch/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "branch", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "branch-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Branch Employees",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/branch/:id/employees",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "branch", ":id", "employees"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "branch-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Branch Loans",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/branch/:id/loans",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "branch", ":id", "loans"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "branch-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Branch Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/branch/:id/statistics",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "branch", ":id", "statistics"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "branch-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Master Data - Showrooms",
+			"item": [
+				{
+					"name": "Get All Showrooms",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/showroom",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "showroom"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Showrooms By Branch",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/showroom/branch/:branchId",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "showroom", "branch", ":branchId"],
+							"variable": [
+								{
+									"key": "branchId",
+									"value": "branch-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Showroom By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/showroom/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "showroom", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "showroom-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Showroom",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Premium Showroom\",\n  \"branchId\": \"branch-id\",\n  \"address\": \"456 Mall Road, Mumbai\",\n  \"pincode\": 400002,\n  \"latitude\": 19.0760,\n  \"longitude\": 72.8777,\n  \"phone\": \"022-11111111\",\n  \"email\": \"showroom@kushalfinance.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/showroom",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "showroom"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Showroom",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Showroom Name\",\n  \"address\": \"Updated Address\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/showroom/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "showroom", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "showroom-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Showroom",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/showroom/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "showroom", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "showroom-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Master Data - Loan Types",
+			"item": [
+				{
+					"name": "Get All Loan Types",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loanType",
+							"host": ["{{baseUrl}}"],
+							"path": ["loanType"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Loan Type By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loanType/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["loanType", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "loantype-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Loan Type",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Two Wheeler\",\n  \"label\": \"Two Wheeler Loan\",\n  \"description\": \"Loan for purchasing two wheeler vehicles\",\n  \"rules\": {}\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/loanType",
+							"host": ["{{baseUrl}}"],
+							"path": ["loanType"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Loan Type",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"label\": \"Updated Label\",\n  \"description\": \"Updated description\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/loanType/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["loanType", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "loantype-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Loan Type",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/loanType/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["loanType", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "loantype-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Master Data - Photo ID Types",
+			"item": [
+				{
+					"name": "Get All Photo ID Types",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/photoId",
+							"host": ["{{baseUrl}}"],
+							"path": ["photoId"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Photo ID Type By ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/photoId/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["photoId", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "photoid-type-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Photo ID Type",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Aadhaar Card\",\n  \"description\": \"Unique Identification Number\",\n  \"minLength\": 12,\n  \"maxLength\": 12,\n  \"numberTypeEg\": \"1234 5678 9012\",\n  \"validation\": \"^[0-9]{12}$\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/photoId",
+							"host": ["{{baseUrl}}"],
+							"path": ["photoId"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Photo ID Type",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"description\": \"Updated description\",\n  \"numberTypeEg\": \"Updated example\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/photoId/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["photoId", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "photoid-type-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Photo ID Type",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/photoId/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["photoId", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "photoid-type-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Master Data - Vehicle (Brands, Models, Variants)",
+			"item": [
+				{
+					"name": "Get All Brands",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/brands",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "brands"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Brand",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Honda\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/brands",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "brands"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Brand",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Brand Name\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/brands/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "brands", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "brand-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Brand",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/brands/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "brands", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "brand-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Models",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/models",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "models"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Model",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Activa\",\n  \"brandId\": \"brand-id\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/models",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "models"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Model",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Model Name\",\n  \"brandId\": \"brand-id\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/models/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "models", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "model-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Model",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/models/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "models", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "model-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Variants",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/variants",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "variants"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Variant",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"6G\",\n  \"modelId\": \"model-id\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/variants",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "variants"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Variant",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Variant Name\",\n  \"modelId\": \"model-id\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/variants/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "variants", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "variant-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Variant",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/variants/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "variants", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "variant-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Master Data - Equipment (Agriculture)",
+			"item": [
+				{
+					"name": "Get All Equipment",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/equipment",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "equipment"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Equipment",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Tractor\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/equipment",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "equipment"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Equipment",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Equipment Name\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/list/equipment/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "equipment", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "equipment-id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Equipment",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/equipment/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "equipment", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "equipment-id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Master Data - Lookup Lists",
+			"item": [
+				{
+					"name": "Get All Genders",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/genders",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "genders"]
+						},
+						"description": "Public endpoint - no authentication required"
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Relation Types",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/relation-types",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "relation-types"]
+						},
+						"description": "Public endpoint - no authentication required"
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Address Categories",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/list/address-categories",
+							"host": ["{{baseUrl}}"],
+							"path": ["list", "address-categories"]
+						},
+						"description": "Public endpoint - no authentication required"
+					},
+					"response": []
+				}
+			]
+		},
+		{
 			"name": "Bulk Upload",
 			"item": [
 				{
