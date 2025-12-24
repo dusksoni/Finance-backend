@@ -32,23 +32,31 @@ const allowedOrigins = [
   "https://kushal-finance-frontend-git-user-dusksonis-projects.vercel.app",
   "http://localhost:5173",
 ];
+
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // allow server-to-server & Postman
+    origin: (origin, callback) => {
+      // Allow Postman, curl, server-to-server
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      return callback(new Error("Not allowed by CORS"));
+      // ❗ IMPORTANT: do NOT throw error
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+    ],
   })
 );
+
 
 app.use(express.json());
 app.get("/", async (req, res) => {
