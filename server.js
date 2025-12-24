@@ -4,7 +4,7 @@ const app = express();
 const cors = require("cors");
 const { initializeCronJobs, updateAllOverdueFines } = require("./utils/fineUpdateService");
 
-app.use(cors());
+// app.use(cors());
 
 const adminRoutes = require("./routes/admin.route");
 const employeeRoutes = require("./routes/employee.route");
@@ -27,16 +27,25 @@ const publicUserRoutes = require("./routes/publicUser.route");
 const iciciPaymentRoutes = require("./routes/iciciPayment.route");
 const seizedRoutes = require("./routes/seized.route");
 const bulkUploadRoutes = require("./routes/bulkUpload.route");
-
+const allowedOrigins = [
+  "https://admin.kushalfinance.com",
+  "https://kushal-finance-frontend-git-user-dusksonis-projects.vercel.app",
+  "http://localhost:5173",
+];
 app.use(
   cors({
-    origin: [
-      "https://admin.kushalfinance.com",
-      "https://kushal-finance-frontend-git-user-dusksonis-projects.vercel.app", //uat
-      "http://localhost:5173", // local dev
-    ],
+    origin: function (origin, callback) {
+      // allow server-to-server & Postman
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
