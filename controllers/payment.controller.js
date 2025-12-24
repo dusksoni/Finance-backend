@@ -1511,6 +1511,9 @@ exports.postForeclosurePayment = async (req, res) => {
           },
         });
 
+        // NOTE: Auto-termination is temporarily disabled
+        // Uncomment the block below to re-enable auto-termination on foreclosure
+        /*
         // Optional: auto-terminate hypothecation
         if (loan.twoWheelerLoan) {
           try {
@@ -1527,6 +1530,7 @@ exports.postForeclosurePayment = async (req, res) => {
             });
           } catch (_) {}
         }
+        */
 
         // E) Audit
         await tx.actionLog.create({

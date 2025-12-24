@@ -70,6 +70,9 @@ async function processPostPayment({
       include: { twoWheelerLoan: true }
     });
 
+    // NOTE: Auto-termination is temporarily disabled
+    // Uncomment the block below to re-enable auto-termination on loan end
+    /*
     if (closedLoan.twoWheelerLoan) {
       hypothecationResult = await tryAutoTerminateHypothecation({
         prismaOrTx: tx,
@@ -81,6 +84,7 @@ async function processPostPayment({
         userContext,
       });
     }
+    */
   }
 
   return { emiStatus, hypothecationResult };

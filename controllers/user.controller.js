@@ -70,22 +70,21 @@ exports.createUser = async (req, res) => {
       });
     }
 
-    // Validate addresses array
-    if (!addresses || addresses.length === 0) {
-      return res.status(400).json({ error: "At least one address is required" });
+    // Get region from first address if addresses provided
+    let regionId = null;
+    if (addresses && addresses.length > 0) {
+      const firstAddress = addresses[0];
+      const region = await prisma.region.findFirst({
+        where: { stateId: firstAddress.stateId, cityId: firstAddress.cityId },
+        select: { id: true },
+      });
+      regionId = region?.id || null;
     }
 
-    // Get region from first address
-    const firstAddress = addresses[0];
-    const region = await prisma.region.findFirst({
-      where: { stateId: firstAddress.stateId, cityId: firstAddress.cityId },
-      select: { id: true },
-    });
-
-    if (!region) {
-      return res
-        .status(400)
-        .json({ error: "Region not found for given state and city" });
+    // If no region found, use first available region
+    if (!regionId) {
+      const defaultRegion = await prisma.region.findFirst();
+      regionId = defaultRegion?.id || null;
     }
 
     const createFiles = async (files = []) =>
@@ -126,7 +125,7 @@ exports.createUser = async (req, res) => {
         creditScore,
         profession,
         qualification,
-        regionId: region.id,
+        regionId: regionId,
         createdBy: req.user?.type || "unknown",
         adminId: req.user?.adminId || null,
         employeeId: req.user?.employeeId || null,
@@ -138,21 +137,23 @@ exports.createUser = async (req, res) => {
               photoIdNumber: pid.photoIdNumber,
               photoIdTypeId: pid.photoIdTypeId,
               images: {
-                connect: await createFiles(pid.images),
+                connect: await createFiles(pid.images || []),
               },
             }))
           ),
         },
-        addresses: {
-          create: addresses.map((addr) => ({
-            addressCategoryId: addr.addressCategoryId,
-            address: addr.address,
-            country: addr.country,
-            stateId: addr.stateId,
-            cityId: addr.cityId,
-            pincode: parseInt(addr.pincode),
-          })),
-        },
+        ...(addresses && addresses.length > 0 && {
+          addresses: {
+            create: addresses.map((addr) => ({
+              addressCategoryId: addr.addressCategoryId,
+              address: addr.address,
+              country: addr.country,
+              stateId: addr.stateId,
+              cityId: addr.cityId,
+              pincode: parseInt(addr.pincode),
+            })),
+          },
+        }),
       },
       include: {
         photoIds: { include: { images: true } },

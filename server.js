@@ -26,6 +26,7 @@ const dashboardRoutes = require("./routes/dashboard.route");
 const publicUserRoutes = require("./routes/publicUser.route");
 const iciciPaymentRoutes = require("./routes/iciciPayment.route");
 const seizedRoutes = require("./routes/seized.route");
+const bulkUploadRoutes = require("./routes/bulkUpload.route");
 
 app.use(
   cors({
@@ -77,6 +78,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/public", publicUserRoutes);
 app.use("/api/icici-payment", iciciPaymentRoutes);
 app.use("/api/seized", seizedRoutes);
+app.use("/api/bulk-upload", bulkUploadRoutes);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {
