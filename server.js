@@ -94,15 +94,15 @@ app.use("/api/icici-payment", iciciPaymentRoutes);
 app.use("/api/seized", seizedRoutes);
 app.use("/api/bulk-upload", bulkUploadRoutes);
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, async () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  initializeCronJobs();
-  console.log('🔄 Running initial fine update on startup...');
-  try {
-    await updateAllOverdueFines();
-    console.log('✅ Initial fine update completed');
-  } catch (error) {
-    console.error('❌ Initial fine update failed:', error.message);
-  }
-});
+// const PORT = process.env.PORT || 3001;
+// app.listen(PORT, async () => {
+//   console.log(`🚀 Server running on http://localhost:${PORT}`);
+//   initializeCronJobs();
+//   console.log('🔄 Running initial fine update on startup...');
+//   try {
+//     await updateAllOverdueFines();
+//     console.log('✅ Initial fine update completed');
+//   } catch (error) {
+//     console.error('❌ Initial fine update failed:', error.message);
+//   }
+// });
