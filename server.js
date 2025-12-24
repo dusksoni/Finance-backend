@@ -49,9 +49,6 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-app.options(/.*/, (req, res) => {
-  res.sendStatus(200);
-});
 
 app.use(express.json());
 app.get("/", async (req, res) => {
