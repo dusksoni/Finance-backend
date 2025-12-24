@@ -4,8 +4,6 @@ const app = express();
 const cors = require("cors");
 const { initializeCronJobs, updateAllOverdueFines } = require("./utils/fineUpdateService");
 
-// app.use(cors());
-
 const adminRoutes = require("./routes/admin.route");
 const employeeRoutes = require("./routes/employee.route");
 const userRoutes = require("./routes/user.route");
@@ -32,30 +30,26 @@ const allowedOrigins = [
   "https://kushal-finance-frontend-git-user-dusksonis-projects.vercel.app",
   "http://localhost:5173",
 ];
-
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow Postman, curl, server-to-server
+    origin: function (origin, callback) {
+      // allow server-to-server & Postman
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      // ❗ IMPORTANT: do NOT throw error
-      return callback(null, false);
+      return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "X-Requested-With",
-      "Accept",
-    ],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+app.options(/.*/, (req, res) => {
+  res.sendStatus(200);
+});
 
 app.use(express.json());
 app.get("/", async (req, res) => {
@@ -94,15 +88,19 @@ app.use("/api/icici-payment", iciciPaymentRoutes);
 app.use("/api/seized", seizedRoutes);
 app.use("/api/bulk-upload", bulkUploadRoutes);
 
-// const PORT = process.env.PORT || 3001;
-// app.listen(PORT, async () => {
-//   console.log(`🚀 Server running on http://localhost:${PORT}`);
-//   initializeCronJobs();
-//   console.log('🔄 Running initial fine update on startup...');
-//   try {
-//     await updateAllOverdueFines();
-//     console.log('✅ Initial fine update completed');
-//   } catch (error) {
-//     console.error('❌ Initial fine update failed:', error.message);
-//   }
-// });
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, async () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+
+  // Initialize cron jobs for automatic fine updates
+  initializeCronJobs();
+
+  // Optionally run fine update once on startup
+  console.log('🔄 Running initial fine update on startup...');
+  try {
+    await updateAllOverdueFines();
+    console.log('✅ Initial fine update completed');
+  } catch (error) {
+    console.error('❌ Initial fine update failed:', error.message);
+  }
+});
