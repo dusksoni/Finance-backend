@@ -12,7 +12,16 @@ const {
   verifyPaymentSignature,
   checkPaymentStatus,
   generatePaymentLink,
+  ICICI_CONFIG,
 } = require("../utils/iciciPaymentGateway");
+const fs = require('fs');
+const path = require('path');
+
+// Check if we're in development mode (keys/credentials missing)
+const isDevelopmentMode = !fs.existsSync(path.join(__dirname, '../keys/icici_public_key.pem')) ||
+                          !fs.existsSync(path.join(__dirname, '../keys/merchant_private_key.pem')) ||
+                          !process.env.ICICI_MERCHANT_ID ||
+                          !process.env.ICICI_API_KEY;
 
 // Configure Decimal.js for precision
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
@@ -29,20 +38,58 @@ exports.getPublicLoanDetails = async (req, res) => {
   try {
     const { loanId } = req.params;
 
+    // Search by loan ID, fileNo, or registration numbers in related tables
     const loan = await prisma.loan.findFirst({
       where: {
         OR: [
           { id: loanId },
-          { fileNo: loanId }
+          { fileNo: loanId },
+          // Search in two-wheeler loan by registration number
+          {
+            twoWheelerLoan: {
+              registrationNumber: {
+                equals: loanId,
+                mode: 'insensitive'
+              }
+            }
+          },
+          // Search in agriculture loan by registration number
+          {
+            agriLoan: {
+              registrationNumber: {
+                equals: loanId,
+                mode: 'insensitive'
+              }
+            }
+          },
+          // Search in MSME loan by registration number
+          {
+            msmeLoan: {
+              registrationNumber: {
+                equals: loanId,
+                mode: 'insensitive'
+              }
+            }
+          }
         ]
       },
       include: {
         emi: true,
         payments: true,
-        twoWheelerLoan: true,
-        agriLoan: true,
+        twoWheelerLoan: {
+          include: {
+            brand: true,
+            model: true,
+            variant: true,
+          },
+        },
+        agriLoan: {
+          include: {
+            equipment: true,
+          },
+        },
         msmeLoan: true,
-        ceaseHistories: true,
+        seizedHistories: true,
         user: {
           select: {
             id: true,
@@ -91,7 +138,7 @@ exports.getPublicLoanDetails = async (req, res) => {
     }
 
     // Only show active/disbursed loans to public
-    if (!["ACTIVE", "OVERDUE", "DEFAULTED", "DISBURSED", "CLOSED"].includes(loan.fileStatus)) {
+    if (!["ACTIVE", "OVERDUE", "DEFAULTED", "DISBURSED", "CLOSED", "SEIZED", "SEIZED_INITIATED"].includes(loan.fileStatus)) {
       return res.status(403).json({
         error: "Loan information not available",
         status: 403
@@ -123,14 +170,15 @@ exports.getPublicLoanDetails = async (req, res) => {
       twoWheelerLoan: loan.twoWheelerLoan,
       agriLoan: loan.agriLoan,
       msmeLoan: loan.msmeLoan,
-      ceaseHistories: loan.ceaseHistories,
+      seizedHistories: loan.seizedHistories,
       emiCount: loan.emi.length,
       paymentsCount: loan.payments.length,
       payments: loan.payments,
       user: {
-        name: [loan.user.firstName, loan.user.middleName, loan.user.lastName]
-          .filter(Boolean)
-          .join(" "),
+        id: loan.user.id,
+        firstName: loan.user.firstName,
+        middleName: loan.user.middleName,
+        lastName: loan.user.lastName,
         phone: loan.user.phone,
         email: loan.user.email,
       },
@@ -950,9 +998,38 @@ exports.createPaymentGatewayOrder = async (req, res) => {
       });
     }
 
-    // Verify loan exists
-    const loan = await prisma.loan.findUnique({
-      where: { id: loanId },
+    // Verify loan exists - search by ID, fileNo, or registration numbers
+    const loan = await prisma.loan.findFirst({
+      where: {
+        OR: [
+          { id: loanId },
+          { fileNo: loanId },
+          {
+            twoWheelerLoan: {
+              registrationNumber: {
+                equals: loanId,
+                mode: 'insensitive'
+              }
+            }
+          },
+          {
+            agriLoan: {
+              registrationNumber: {
+                equals: loanId,
+                mode: 'insensitive'
+              }
+            }
+          },
+          {
+            msmeLoan: {
+              registrationNumber: {
+                equals: loanId,
+                mode: 'insensitive'
+              }
+            }
+          }
+        ]
+      },
       include: {
         user: {
           select: {
@@ -970,15 +1047,15 @@ exports.createPaymentGatewayOrder = async (req, res) => {
       return res.status(404).json({ error: "Loan not found", status: 404 });
     }
 
-    if (!["ACTIVE", "OVERDUE", "DEFAULTED", "DISBURSED"].includes(loan.fileStatus)) {
+    if (!["ACTIVE", "OVERDUE", "DEFAULTED", "DISBURSED", "SEIZED", "SEIZED_INITIATED"].includes(loan.fileStatus)) {
       return res.status(403).json({
         error: "Cannot make payment for this loan",
         status: 403
       });
     }
 
-    // Generate unique order ID
-    const orderId = `LN_${loanId.substring(0, 8)}_${Date.now()}`;
+    // Generate unique order ID using actual loan.id
+    const orderId = `LN_${loan.id.substring(0, 8)}_${Date.now()}`;
 
     const customerName = [
       loan.user.firstName,
@@ -992,29 +1069,48 @@ exports.createPaymentGatewayOrder = async (req, res) => {
       ? `EMI Payment - Loan ${loan.fileNo}`
       : `Bulk Payment - Loan ${loan.fileNo}`;
 
-    // Create payment order with ICICI
-    const orderResult = await createPaymentOrder({
-      orderId,
-      amount: Number(amount),
-      customerName,
-      customerEmail: loan.user.email,
-      customerPhone: loan.user.phone,
-      description,
-    });
+    let orderResult;
 
-    if (!orderResult.success) {
-      return res.status(500).json({
-        error: "Failed to create payment order",
-        details: orderResult.error,
-        status: 500
+    if (isDevelopmentMode) {
+      // DEVELOPMENT MODE: Generate mock payment URL
+      console.log('📱 [DEV MODE] Creating mock payment order');
+
+      orderResult = {
+        success: true,
+        orderId: orderId,
+        paymentUrl: `http://localhost:3001/dev-payment-simulator?orderId=${orderId}&amount=${amount}`,
+        paymentId: `DEV_${Date.now()}`,
+        signature: 'DEV_SIGNATURE',
+        data: {
+          developmentMode: true,
+          note: 'Development mode - no actual payment gateway'
+        }
+      };
+    } else {
+      // PRODUCTION MODE: Create payment order with ICICI
+      orderResult = await createPaymentOrder({
+        orderId,
+        amount: Number(amount),
+        customerName,
+        customerEmail: loan.user.email,
+        customerPhone: loan.user.phone,
+        description,
       });
+
+      if (!orderResult.success) {
+        return res.status(500).json({
+          error: "Failed to create payment order",
+          details: orderResult.error,
+          status: 500
+        });
+      }
     }
 
     // Store pending order in database (optional - for tracking)
     await prisma.paymentOrder.create({
       data: {
         orderId: orderId,
-        loanId: loanId,
+        loanId: loan.id, // Use actual loan UUID, not the search parameter
         emiId: emiId || null,
         amount: Number(amount),
         paymentType: paymentType || "BULK",
@@ -1231,5 +1327,128 @@ exports.checkPublicPaymentStatus = async (req, res) => {
   } catch (err) {
     console.error("checkPublicPaymentStatus error:", err);
     return res.status(500).json({ error: err.message, status: 500 });
+  }
+};
+
+/**
+ * POST /api/public/loan/:loanId/payment/generate-qr
+ * Generate ICICI UPI QR code for public payment (unauthenticated)
+ */
+exports.generatePublicQR = async (req, res) => {
+  try {
+    const { loanId } = req.params;
+    const { amount, paymentType } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        error: 'Valid amount is required',
+        status: 400
+      });
+    }
+
+    // Verify loan exists - search by ID, fileNo, or registration numbers
+    const loan = await prisma.loan.findFirst({
+      where: {
+        OR: [
+          { id: loanId },
+          { fileNo: loanId },
+          {
+            twoWheelerLoan: {
+              registrationNumber: {
+                equals: loanId,
+                mode: 'insensitive'
+              }
+            }
+          },
+          {
+            agriLoan: {
+              registrationNumber: {
+                equals: loanId,
+                mode: 'insensitive'
+              }
+            }
+          },
+          {
+            msmeLoan: {
+              registrationNumber: {
+                equals: loanId,
+                mode: 'insensitive'
+              }
+            }
+          }
+        ]
+      },
+      include: {
+        user: true,
+        loanType: true
+      }
+    });
+
+    if (!loan) {
+      return res.status(404).json({ error: 'Loan not found', status: 404 });
+    }
+
+    if (!["ACTIVE", "OVERDUE", "DEFAULTED", "DISBURSED", "SEIZED", "SEIZED_INITIATED"].includes(loan.fileStatus)) {
+      return res.status(403).json({
+        error: "Cannot make payment for this loan",
+        status: 403
+      });
+    }
+
+    // Use the ICICI payment controller's logic
+    const iciciController = require('./iciciPayment.controller');
+    
+    // Create a modified request object with the actual loan ID
+    const modifiedReq = {
+      ...req,
+      body: {
+        loanId: loan.id, // Use actual loan UUID
+        amount,
+        paymentType
+      },
+      user: null // No user for public payment
+    };
+
+    // Call the ICICI controller
+    await iciciController.generateQR(modifiedReq, res);
+    
+  } catch (error) {
+    console.error('generatePublicQR error:', error);
+    return res.status(500).json({
+      error: error.message || 'Failed to generate QR code',
+      status: 500
+    });
+  }
+};
+
+/**
+ * GET /api/public/loan/:loanId/payment/upi-status/:merchantTranId
+ * Check ICICI UPI transaction status (unauthenticated)
+ */
+exports.checkPublicUPIStatus = async (req, res) => {
+  try {
+    const { merchantTranId } = req.params;
+
+    // Use the ICICI payment controller's logic
+    const iciciController = require('./iciciPayment.controller');
+    
+    // Create a modified request object
+    const modifiedReq = {
+      ...req,
+      params: {
+        merchantTranId
+      },
+      user: null // No user for public payment
+    };
+
+    // Call the ICICI controller
+    await iciciController.checkTransactionStatus(modifiedReq, res);
+    
+  } catch (error) {
+    console.error('checkPublicUPIStatus error:', error);
+    return res.status(500).json({
+      error: error.message || 'Failed to check transaction status',
+      status: 500
+    });
   }
 };

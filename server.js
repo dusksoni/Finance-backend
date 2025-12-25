@@ -27,12 +27,12 @@ const publicUserRoutes = require("./routes/publicUser.route");
 const iciciPaymentRoutes = require("./routes/iciciPayment.route");
 const seizedRoutes = require("./routes/seized.route");
 const bulkUploadRoutes = require("./routes/bulkUpload.route");
+const otpRoutes = require("./routes/otp.route");
 
 app.use(
   cors({
     origin: [
       "https://admin.kushalfinance.com",
-      "https://kushal-finance-frontend-git-user-dusksonis-projects.vercel.app", //uat
       "http://localhost:5173", // local dev
     ],
     credentials: true,
@@ -80,6 +80,7 @@ app.use("/api/public", publicUserRoutes);
 app.use("/api/icici-payment", iciciPaymentRoutes);
 app.use("/api/seized", seizedRoutes);
 app.use("/api/bulk-upload", bulkUploadRoutes);
+app.use("/api/otp", otpRoutes);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {

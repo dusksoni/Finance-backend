@@ -27,7 +27,7 @@ router.post("/loan/:loanId/payment/emi/:emiId", publicUserController.payPublicEm
 // Download payment receipt
 router.get("/loan/:loanId/payment/:paymentId/receipt", publicUserController.getPublicPaymentReceipt);
 
-// ICICI Payment Gateway Integration
+// ICICI Payment Gateway Integration (redirect-based)
 // Create payment order
 router.post("/loan/:loanId/payment/create-order", publicUserController.createPaymentGatewayOrder);
 
@@ -36,5 +36,12 @@ router.post("/payment/callback", publicUserController.handlePaymentCallback);
 
 // Check payment status
 router.get("/payment/status/:orderId", publicUserController.checkPublicPaymentStatus);
+
+// ICICI UPI QR Payment (in-app)
+// Generate QR code for payment
+router.post("/loan/:loanId/payment/generate-qr", publicUserController.generatePublicQR);
+
+// Check UPI transaction status
+router.get("/loan/:loanId/payment/upi-status/:merchantTranId", publicUserController.checkPublicUPIStatus);
 
 module.exports = router;
