@@ -33,6 +33,7 @@ app.use(
   cors({
     origin: [
       "https://admin.kushalfinance.com",
+      "https://uat.kushalfinance.com",
       "http://localhost:5173", // local dev
     ],
     credentials: true,
