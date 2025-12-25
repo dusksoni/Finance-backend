@@ -1,8 +1,8 @@
-import { differenceInDays } from "date-fns";
+const { differenceInDays } = require("date-fns");
 
-export function calculateFine(dueDate, pendingPrincipal) {
+function calculateFine(dueDate, pendingPrincipal) {
   const today = new Date();
-  const daysLate = Math.max(differenceInDays(today, dueDate), 0);
+  const daysLate = Math.max(differenceInDays(today, new Date(dueDate)), 0);
 
   if (!pendingPrincipal || isNaN(pendingPrincipal)) {
     return { daysLate: 0, fineAmt: 0, pct: 0 };
@@ -23,5 +23,11 @@ export function calculateFine(dueDate, pendingPrincipal) {
   const fineAmt = parseFloat(
     ((pct / 100) * Number(pendingPrincipal)).toFixed(2)
   );
+
   return { daysLate, fineAmt, pct };
 }
+
+module.exports = {
+  calculateFine
+};
+
