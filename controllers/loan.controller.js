@@ -80,6 +80,91 @@ const buildUpdateFileRelation = async (tx, filePayload) => {
   return fileId ? { set: [{ id: fileId }] } : { set: [] };
 };
 
+// Helper function to generate EMI schedule
+const generateEMISchedule = ({
+  principalLoanAmount,
+  interestRate,
+  tenureMonths,
+  startDate,
+  dueDay,
+  paymentFrequency = "MONTHLY",
+}) => {
+  const round2 = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
+
+  const P = Number(principalLoanAmount);
+  const n = parseInt(tenureMonths, 10);
+  const annualRate = Number(interestRate);
+
+  // Calculate totals using annual compounding over n months
+  const totalPayableRaw = P * Math.pow(1 + annualRate / 100, n / 12);
+  const totalPayable = round2(totalPayableRaw);
+  const totalInterest = round2(totalPayable - P);
+
+  // Per-month equal split
+  const monthlyPrincipal = P / n;
+  const monthlyInterest = (totalPayable - P) / n;
+  const monthlyEMI = totalPayable / n;
+
+  // Frequency config
+  const freq = (paymentFrequency || "MONTHLY").toUpperCase();
+  const { fn: offsetFn, step } = FREQUENCY_OFFSETS[freq] || FREQUENCY_OFFSETS.MONTHLY;
+  const monthsPerInstallment = FREQUENCY_MONTHS[freq] || 1;
+
+  // Build schedule
+  let firstDue = setDate(new Date(startDate), dueDay);
+  if (new Date(startDate).getDate() > dueDay) {
+    firstDue = offsetFn(firstDue, step);
+  }
+
+  const numInstallments = Math.ceil(n / monthsPerInstallment);
+  const schedule = [];
+
+  let aggPrincipal = 0;
+  let aggInterest = 0;
+
+  for (let i = 0; i < numInstallments; i++) {
+    const monthsInThisBucket = Math.min(
+      monthsPerInstallment,
+      n - i * monthsPerInstallment
+    );
+
+    const dueDate = offsetFn(firstDue, step * i);
+
+    let principalAmt = round2(monthlyPrincipal * monthsInThisBucket);
+    let interestAmt = round2(monthlyInterest * monthsInThisBucket);
+    let emiPayAmount = round2(monthlyEMI * monthsInThisBucket);
+
+    aggPrincipal = round2(aggPrincipal + principalAmt);
+    aggInterest = round2(aggInterest + interestAmt);
+
+    schedule.push({
+      paymentFor: dueDate,
+      paymentDate: dueDate,
+      emiPayAmount,
+      principalAmt,
+      interestAmt,
+      amountPaidSoFar: 0,
+      fineAmount: 0,
+      status: "UNPAID",
+      isDelayed: false,
+      isForeclosure: false,
+    });
+  }
+
+  // Fix rounding drift on the last row
+  const principalDrift = round2(P - aggPrincipal);
+  const interestDrift = round2(totalInterest - aggInterest);
+
+  if (schedule.length > 0) {
+    const lastRow = schedule[schedule.length - 1];
+    lastRow.principalAmt = round2(lastRow.principalAmt + principalDrift);
+    lastRow.interestAmt = round2(lastRow.interestAmt + interestDrift);
+    lastRow.emiPayAmount = round2(lastRow.principalAmt + lastRow.interestAmt);
+  }
+
+  return schedule;
+};
+
 // ====================
 // 🟢 CREATE LOAN (fixed)
 // ====================
@@ -214,9 +299,6 @@ exports.createLoan = async (req, res) => {
           .json({ error: "You do not have permission to create loans" });
       }
     }
-    const canSelfApprove =
-      isAdmin || (await checkVerifyPermission(req.user, "LOAN_APPROVE"));
-    const verified = Boolean(canSelfApprove);
 
     // 5) Transaction: Loan, subtypes, schedule, log
     const created = await prisma.$transaction(
@@ -268,18 +350,18 @@ exports.createLoan = async (req, res) => {
             endDate: schedule[schedule.length - 1].paymentFor,
             dueDay,
 
-            fileStatus: verified ? "ACTIVE" : "PENDING_APPROVAL",
+            fileStatus: "PENDING_APPROVAL",
             disbursedDate: disbursedDate ? new Date(disbursedDate) : null,
             agreementDate: agreementDate ? new Date(agreementDate) : null,
 
-            insuranceAmount: insuranceAmount ?? null,
+            insuranceAmount: insuranceAmount && insuranceAmount !== "" ? parseFloat(insuranceAmount) : null,
             insuranceDate: insuranceDate ? new Date(insuranceDate) : null,
             insuranceValidTill: insuranceValidTill
               ? new Date(insuranceValidTill)
               : null,
             insuranceAlert: String(insuranceAlert) === "true",
-            insuranceNumber,
-            insuranceCompany,
+            insuranceNumber: insuranceNumber || null,
+            insuranceCompany: insuranceCompany || null,
             ...(invoiceDocRelation && {
               loanInvoiceDoc: invoiceDocRelation,
             }),
@@ -290,16 +372,6 @@ exports.createLoan = async (req, res) => {
               registrationDoc: registrationDocRelation,
             }),
             comment,
-            approvalComment: null,
-            approvedAt: verified ? new Date() : null,
-            approvedByAdminId:
-              verified && isAdmin && req.user.adminId
-                ? req.user.adminId
-                : undefined,
-            approvedByEmployeeId:
-              verified && !isAdmin && req.user.employeeId
-                ? req.user.employeeId
-                : undefined,
 
             createdBy: req.user.type,
             admin: isAdmin ? { connect: { id: req.user.adminId } } : undefined,
@@ -347,10 +419,7 @@ exports.createLoan = async (req, res) => {
           });
         }
 
-        // c) EMI schedule
-        await tx.eMI.createMany({
-          data: schedule.map((row) => ({ ...row, loanId: loan.id })),
-        });
+        // c) EMI schedule will be created during approval
 
         // d) Audit log
         await logAction({
@@ -1047,7 +1116,16 @@ exports.approveLoan = async (req, res) => {
 
     const loan = await prisma.loan.findUnique({
       where: { id },
-      select: { id: true, fileStatus: true, tenureMonths: true, paymentFrequency: true, dueDay: true },
+      select: {
+        id: true,
+        fileNo: true,
+        fileStatus: true,
+        tenureMonths: true,
+        paymentFrequency: true,
+        dueDay: true,
+        principalLoanAmount: true,
+        interestRate: true,
+      },
     });
 
     if (!loan) {
@@ -1061,9 +1139,36 @@ exports.approveLoan = async (req, res) => {
       });
     }
 
+    // Check if fileNo is being changed and if it already exists
+    if (fileNo.trim() !== loan.fileNo) {
+      const existingLoan = await prisma.loan.findFirst({
+        where: {
+          fileNo: fileNo.trim(),
+          id: { not: id },
+        },
+      });
+
+      if (existingLoan) {
+        return res.status(400).json({
+          error: "File number already exists for another loan",
+          status: 400,
+        });
+      }
+    }
+
     // Calculate endDate based on startDate and tenureMonths
     const start = new Date(startDate);
     const endDate = addMonths(start, loan.tenureMonths);
+
+    // Generate EMI schedule based on approved startDate
+    const emiSchedule = generateEMISchedule({
+      principalLoanAmount: loan.principalLoanAmount,
+      interestRate: loan.interestRate,
+      tenureMonths: loan.tenureMonths,
+      startDate: new Date(startDate),
+      dueDay: loan.dueDay,
+      paymentFrequency: loan.paymentFrequency,
+    });
 
     const approvedAt = new Date();
     const updated = await prisma.loan.update({
@@ -1072,8 +1177,12 @@ exports.approveLoan = async (req, res) => {
         fileStatus: "ACTIVE",
         approvalComment: null,
         approvedAt,
-        approvedByAdminId: isAdmin ? req.user.adminId ?? null : null,
-        approvedByEmployeeId: !isAdmin ? req.user.employeeId ?? null : null,
+        approvedByAdmin: isAdmin && req.user.adminId
+          ? { connect: { id: req.user.adminId } }
+          : undefined,
+        approvedByEmployee: !isAdmin && req.user.employeeId
+          ? { connect: { id: req.user.employeeId } }
+          : undefined,
         isClosed: false,
         fileNo: fileNo.trim(),
         startDate: new Date(startDate),
@@ -1086,6 +1195,11 @@ exports.approveLoan = async (req, res) => {
         branch: true,
         loanType: true,
       },
+    });
+
+    // Create EMI records
+    await prisma.eMI.createMany({
+      data: emiSchedule.map((row) => ({ ...row, loanId: id })),
     });
 
     await logAction({
@@ -1159,8 +1273,12 @@ exports.rejectLoan = async (req, res) => {
         fileStatus: "REJECTED",
         approvalComment: comment,
         approvedAt,
-        approvedByAdminId: isAdmin ? req.user.adminId ?? null : null,
-        approvedByEmployeeId: !isAdmin ? req.user.employeeId ?? null : null,
+        approvedByAdmin: isAdmin && req.user.adminId
+          ? { connect: { id: req.user.adminId } }
+          : undefined,
+        approvedByEmployee: !isAdmin && req.user.employeeId
+          ? { connect: { id: req.user.employeeId } }
+          : undefined,
         isClosed: true,
       },
       include: {
