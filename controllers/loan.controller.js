@@ -95,14 +95,15 @@ const generateEMISchedule = ({
   const n = parseInt(tenureMonths, 10);
   const annualRate = Number(interestRate);
 
-  // Calculate totals using annual compounding over n months
-  const totalPayableRaw = P * Math.pow(1 + annualRate / 100, n / 12);
-  const totalPayable = round2(totalPayableRaw);
-  const totalInterest = round2(totalPayable - P);
+  // Calculate totals using SIMPLE interest (not compound)
+  // Simple Interest = P × R × T / 100
+  // where T is in years (n months / 12)
+  const totalInterest = round2((P * annualRate * (n / 12)) / 100);
+  const totalPayable = round2(P + totalInterest);
 
   // Per-month equal split
   const monthlyPrincipal = P / n;
-  const monthlyInterest = (totalPayable - P) / n;
+  const monthlyInterest = totalInterest / n;
   const monthlyEMI = totalPayable / n;
 
   // Frequency config
@@ -220,14 +221,15 @@ exports.createLoan = async (req, res) => {
       return res.status(400).json({ error: "interestRate must be >= 0" });
     }
 
-    // 2) Totals using annual compounding over n months
-    const totalPayableRaw = P * Math.pow(1 + annualRate / 100, n / 12);
-    const totalPayable = round2(totalPayableRaw);
-    const totalInterest = round2(totalPayable - P);
+    // 2) Totals using SIMPLE interest (not compound)
+    // Simple Interest = P × R × T / 100
+    // where T is in years (n months / 12)
+    const totalInterest = round2((P * annualRate * (n / 12)) / 100);
+    const totalPayable = round2(P + totalInterest);
 
     // Per-month equal split (used to aggregate into buckets)
     const monthlyPrincipal = P / n;
-    const monthlyInterest = (totalPayable - P) / n;
+    const monthlyInterest = totalInterest / n;
     const monthlyEMI = totalPayable / n;
 
     // Frequency config
