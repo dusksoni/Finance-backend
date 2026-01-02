@@ -25,7 +25,7 @@ exports.createBranch = async (req, res) => {
       });
     }
     const region = await prisma.region.findUnique({
-      where: { id: regionId, isDeleted: false },
+      where: { id: regionId },
     });
     if (!region) {
       return res.status(404).json({
@@ -38,7 +38,7 @@ exports.createBranch = async (req, res) => {
       data: {
         name,
         address,
-        pincode,
+        pincode: pincode ? parseInt(pincode) : null,
         phone,
         email,
         region: {
@@ -121,7 +121,7 @@ exports.getBranches = async (req, res) => {
 
 exports.getBranch = async (req, res) => {
   try {
-    const branch = await prisma.branch.findUnique({
+    const branch = await prisma.branch.findFirst({
       where: {
         id: req.params.id,
         isDeleted: false,
@@ -263,7 +263,7 @@ exports.updateBranch = async (req, res) => {
 exports.deleteBranch = async (req, res) => {
   try {
     // Check if branch exists
-    const branch = await prisma.branch.findUnique({
+    const branch = await prisma.branch.findFirst({
       where: {
         id: req.params.id,
         isDeleted: false,
@@ -349,7 +349,7 @@ exports.getBranchEmployees = async (req, res) => {
     const skip = (page - 1) * limit;
 
     // Check if branch exists
-    const branch = await prisma.branch.findUnique({
+    const branch = await prisma.branch.findFirst({
       where: {
         id: req.params.id,
         isDeleted: false,
@@ -425,7 +425,7 @@ exports.getBranchLoans = async (req, res) => {
     const skip = (page - 1) * limit;
 
     // Check if branch exists
-    const branch = await prisma.branch.findUnique({
+    const branch = await prisma.branch.findFirst({
       where: {
         id: req.params.id,
         isDeleted: false,
@@ -508,7 +508,7 @@ exports.getBranchLoans = async (req, res) => {
 exports.getBranchStatistics = async (req, res) => {
   try {
     // Check if branch exists
-    const branch = await prisma.branch.findUnique({
+    const branch = await prisma.branch.findFirst({
       where: {
         id: req.params.id,
         isDeleted: false,
