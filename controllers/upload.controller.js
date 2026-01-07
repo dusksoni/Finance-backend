@@ -38,7 +38,10 @@ function streamUpload(req) {
 
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      uploadOptions,
+      {
+        resource_type: "auto",
+        folder: "kushal_finance",
+      },
       (error, result) => {
         if (result) {
           resolve(result);
