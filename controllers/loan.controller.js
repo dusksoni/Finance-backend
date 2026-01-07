@@ -186,9 +186,9 @@ exports.createLoan = async (req, res) => {
       fileNo,
       disbursedDate,
       agreementDate,
-      rtoCharges,
-      processingCharges,
-      otherCharges,
+      rtoCharges: rtoChargesRaw,
+      processingCharges: processingChargesRaw,
+      otherCharges: otherChargesRaw,
       // ourPaymentType, // REMOVED: Payment setup section removed
       insuranceAmount,
       insuranceDate,
@@ -206,6 +206,11 @@ exports.createLoan = async (req, res) => {
     } = req.body;
 
     const round2 = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
+
+    // Convert charge fields to Float or null
+    const rtoCharges = rtoChargesRaw && rtoChargesRaw !== "" ? parseFloat(rtoChargesRaw) : null;
+    const processingCharges = processingChargesRaw && processingChargesRaw !== "" ? parseFloat(processingChargesRaw) : null;
+    const otherCharges = otherChargesRaw && otherChargesRaw !== "" ? parseFloat(otherChargesRaw) : null;
 
     // 1) Validate principal & tenure
     const P = Number(principalLoanAmount);
@@ -1023,6 +1028,21 @@ exports.listLoanApprovals = async (req, res) => {
     if (search) {
       where.OR = [
         { fileNo: { contains: search, mode: "insensitive" } },
+        {
+          twoWheelerLoan: {
+            registrationNumber: { contains: search, mode: "insensitive" },
+          },
+        },
+        {
+          agriLoan: {
+            registrationNumber: { contains: search, mode: "insensitive" },
+          },
+        },
+        {
+          msmeLoan: {
+            registrationNumber: { contains: search, mode: "insensitive" },
+          },
+        },
         {
           user: {
             OR: [

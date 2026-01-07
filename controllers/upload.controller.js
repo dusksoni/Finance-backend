@@ -8,13 +8,37 @@ const upload = multer({ storage });
 
 exports.uploadMiddleware = upload.single("image");
 
+const buildUploadOptions = (file) => {
+  const options = {
+    resource_type: "auto",
+    folder: "kushal_finance",
+  };
+
+  if (!file) {
+    return options;
+  }
+
+  const originalName = (file.originalname || "").toLowerCase();
+  const isPdf =
+    file.mimetype === "application/pdf" || originalName.endsWith(".pdf");
+
+  if (isPdf) {
+    return {
+      ...options,
+      resource_type: "raw",
+      async: true, // Cloudinary requires async transformations for PDF outputs
+    };
+  }
+
+  return options;
+};
+
 function streamUpload(req) {
+  const uploadOptions = buildUploadOptions(req.file);
+
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      {
-        resource_type: "auto",
-        folder: "kushal_finance",
-      },
+      uploadOptions,
       (error, result) => {
         if (result) {
           resolve(result);
