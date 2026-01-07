@@ -476,6 +476,18 @@ exports.updateLoan = async (req, res) => {
       return res.status(404).json({ error: "Loan not found" });
     }
 
+    // Check if loan is closed or foreclosed - NO EDITS ALLOWED
+    if (existing.isClosed || existing.isForeclosed || existing.fileStatus === "CLOSED" || existing.fileStatus === "FORECLOSED") {
+      return res.status(403).json({
+        error: "Cannot edit a closed or foreclosed loan"
+      });
+    }
+
+    // Check if loan is approved and has payments - restrict EMI/date changes
+    const isApproved = existing.fileStatus === "ACTIVE" || existing.fileStatus === "DISBURSED" || existing.fileStatus === "APPROVED";
+    const hasPayments = existing.payments && existing.payments.length > 0;
+    const cannotModifySchedule = isApproved && hasPayments;
+
     // 2) new vs old
     const newPct = payload.interestRate ?? existing.interestRate;
     // REMOVED: productAmount and downPayment fields
@@ -507,6 +519,20 @@ exports.updateLoan = async (req, res) => {
       existing.interestRate !== newPct ||
       existing.startDate.getTime() !== newStartDate.getTime() ||
       existing.dueDay !== newDueDay;
+
+    // If loan has payments and is approved, prevent schedule-affecting changes
+    if (cannotModifySchedule && mustReset) {
+      return res.status(403).json({
+        error: "Cannot modify EMI schedule or dates for an approved loan with existing payments. Changes to interest rate, tenure, payment frequency, start date, or due day are not allowed."
+      });
+    }
+
+    // Also prevent principal amount changes if there are payments
+    if (cannotModifySchedule && existing.principalLoanAmount !== newPrincipal) {
+      return res.status(403).json({
+        error: "Cannot modify principal loan amount for an approved loan with existing payments."
+      });
+    }
 
     // 5) permissions
     const canSelfApprove =
