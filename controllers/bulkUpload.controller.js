@@ -333,7 +333,8 @@ exports.bulkUpload = async (req, res) => {
           const tenureMonths = parseInt(getCellValue(row, 6)) || 12;
           const startDateValue = getCellValue(row, 7);
           const startDate = parseExcelDate(startDateValue) || new Date();
-          const dueDay = parseInt(getCellValue(row, 8)) || 5;
+          // Calculate dueDay from startDate (day of month) instead of reading from Excel
+          const dueDay = startDate.getDate();
           const paymentFrequency = getCellValue(row, 9) || "MONTHLY";
 
           // Calculate loan amounts

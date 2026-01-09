@@ -14,6 +14,16 @@ const logAction = require("../utils/adminLogger");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const { calculateFine } = require("../utils/calculateFine");
 
+// Helper function to safely parse dates (handles ISO strings and Date objects)
+// Dates from frontend are already in Indian timezone when sent as ISO strings
+const parseDate = (dateInput) => {
+  if (!dateInput) return null;
+  // If it's already a Date object, return it
+  if (dateInput instanceof Date) return dateInput;
+  // Parse ISO string - browser sends dates in local timezone (Indian time)
+  return new Date(dateInput);
+};
+
 const FREQUENCY_OFFSETS = {
   MONTHLY: { fn: addMonths, step: 1, months: 1 },
   QUARTERLY: { fn: addMonths, step: 3, months: 3 },
@@ -86,7 +96,6 @@ const generateEMISchedule = ({
   interestRate,
   tenureMonths,
   startDate,
-  dueDay,
   paymentFrequency = "MONTHLY",
 }) => {
   const round2 = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
@@ -112,10 +121,8 @@ const generateEMISchedule = ({
   const monthsPerInstallment = FREQUENCY_MONTHS[freq] || 1;
 
   // Build schedule
-  let firstDue = setDate(new Date(startDate), dueDay);
-  if (new Date(startDate).getDate() > dueDay) {
-    firstDue = offsetFn(firstDue, step);
-  }
+  // First due date = startDate itself (dueDay is extracted from startDate)
+  let firstDue = parseDate(startDate);
 
   const numInstallments = Math.ceil(n / monthsPerInstallment);
   const schedule = [];
@@ -180,7 +187,6 @@ exports.createLoan = async (req, res) => {
       interestRate, // Annual %, e.g. 14
       tenureMonths, // total months
       startDate, // JS/ISO date
-      dueDay = 5, // day-of-month
       paymentFrequency = "MONTHLY",
       details, // subtype payload
       fileNo,
@@ -212,7 +218,19 @@ exports.createLoan = async (req, res) => {
     const processingCharges = processingChargesRaw && processingChargesRaw !== "" ? parseFloat(processingChargesRaw) : null;
     const otherCharges = otherChargesRaw && otherChargesRaw !== "" ? parseFloat(otherChargesRaw) : null;
 
-    // 1) Validate principal & tenure
+    // Convert penaltyPercentage to Float
+    const penaltyPct = penaltyPercentage && penaltyPercentage !== "" ? parseFloat(penaltyPercentage) : 0;
+
+    // 1) Validate startDate is provided
+    if (!startDate) {
+      return res.status(400).json({ error: "startDate is required" });
+    }
+
+    // Parse and calculate dueDay from startDate (day of month)
+    const parsedStartDate = parseDate(startDate);
+    const dueDay = parsedStartDate.getDate();
+
+    // 2) Validate principal & tenure
     const P = Number(principalLoanAmount);
     if (!P || P <= 0) {
       return res.status(400).json({ error: "principalLoanAmount must be > 0" });
@@ -244,11 +262,8 @@ exports.createLoan = async (req, res) => {
     const monthsPerInstallment = FREQUENCY_MONTHS[freq] || 1;
 
     // 3) Build schedule (bucket months by frequency)
-    // First due date = same month on dueDay; if startDate's DOM > dueDay, shift by one "step"
-    let firstDue = setDate(new Date(startDate), dueDay);
-    if (new Date(startDate).getDate() > dueDay) {
-      firstDue = offsetFn(firstDue, step);
-    }
+    // First due date = startDate itself (since dueDay is extracted from startDate)
+    let firstDue = parsedStartDate;
 
     const numInstallments = Math.ceil(n / monthsPerInstallment);
     const schedule = [];
@@ -344,7 +359,7 @@ exports.createLoan = async (req, res) => {
             pendingAmount: round2(totalPayable),
             interestRate: annualRate,
             interestType,
-            penaltyPercentage,
+            penaltyPercentage: penaltyPct,
             tenureMonths: n,
             paymentFrequency: freq,
 
@@ -353,19 +368,17 @@ exports.createLoan = async (req, res) => {
             otherCharges,
             // ourPaymentType, // REMOVED
 
-            startDate: new Date(startDate),
+            startDate: parsedStartDate,
             endDate: schedule[schedule.length - 1].paymentFor,
             dueDay,
 
             fileStatus: "PENDING_APPROVAL",
-            disbursedDate: disbursedDate ? new Date(disbursedDate) : null,
-            agreementDate: agreementDate ? new Date(agreementDate) : null,
+            disbursedDate: parseDate(disbursedDate),
+            agreementDate: parseDate(agreementDate),
 
             insuranceAmount: insuranceAmount && insuranceAmount !== "" ? parseFloat(insuranceAmount) : null,
-            insuranceDate: insuranceDate ? new Date(insuranceDate) : null,
-            insuranceValidTill: insuranceValidTill
-              ? new Date(insuranceValidTill)
-              : null,
+            insuranceDate: parseDate(insuranceDate),
+            insuranceValidTill: parseDate(insuranceValidTill),
             insuranceAlert: String(insuranceAlert) === "true",
             insuranceNumber: insuranceNumber || null,
             insuranceCompany: insuranceCompany || null,
@@ -501,10 +514,11 @@ exports.updateLoan = async (req, res) => {
 
     const newTenure = payload.tenureMonths ?? existing.tenureMonths;
     const newFreq = payload.paymentFrequency ?? existing.paymentFrequency;
-    const newDueDay = payload.dueDay ?? existing.dueDay;
     const newStartDate = payload.startDate
-      ? new Date(payload.startDate)
+      ? parseDate(payload.startDate)
       : existing.startDate;
+    // Calculate dueDay from newStartDate (day of month)
+    const newDueDay = newStartDate.getDate();
     const newLoanTypeId = payload.loanTypeId ?? existing.loanTypeId;
 
     // 3) recalc EMI & total
@@ -543,6 +557,7 @@ exports.updateLoan = async (req, res) => {
     // 6) frequency helpers
     const freqCfg = FREQUENCY_OFFSETS[newFreq] || FREQUENCY_OFFSETS.MONTHLY;
     const { fn: offsetFn, step } = freqCfg;
+    const monthsPerInstallment = FREQUENCY_MONTHS[newFreq] || 1;
 
     // 7) transaction
     const updatedLoan = await prisma.$transaction(
@@ -581,32 +596,20 @@ exports.updateLoan = async (req, res) => {
             startDate: newStartDate,
             dueDay: newDueDay,
             endDate: (() => {
-              let fd = setDate(newStartDate, newDueDay);
-              if (newStartDate.getDate() > newDueDay) {
-                fd = offsetFn(fd, step);
-              }
-              return offsetFn(fd, step * (newTenure - 1));
+              // Calculate end date based on tenure and frequency
+              const numInstallments = Math.ceil(newTenure / monthsPerInstallment);
+              return offsetFn(newStartDate, step * (numInstallments - 1));
             })(),
             fileNo: payload.fileNo ?? existing.fileNo,
-            disbursedDate: payload.disbursedDate
-              ? new Date(payload.disbursedDate)
-              : existing.disbursedDate,
-            agreementDate: payload.agreementDate
-              ? new Date(payload.agreementDate)
-              : existing.agreementDate,
-            rtoCharges: payload.rtoCharges ?? existing.rtoCharges,
-            processingCharges:
-              payload.processingCharges ?? existing.processingCharges,
-            otherCharges: payload.otherCharges ?? existing.otherCharges,
+            disbursedDate: payload.disbursedDate ? parseDate(payload.disbursedDate) : existing.disbursedDate,
+            agreementDate: payload.agreementDate ? parseDate(payload.agreementDate) : existing.agreementDate,
+            rtoCharges: payload.rtoCharges ? parseFloat(payload.rtoCharges) : existing.rtoCharges,
+            processingCharges: payload.processingCharges ? parseFloat(payload.processingCharges) : existing.processingCharges,
+            otherCharges: payload.otherCharges ? parseFloat(payload.otherCharges) : existing.otherCharges,
             // ourPaymentType: payload.ourPaymentType ?? existing.ourPaymentType, // REMOVED
-            insuranceAmount:
-              payload.insuranceAmount ?? existing.insuranceAmount,
-            insuranceDate: payload.insuranceDate
-              ? new Date(payload.insuranceDate)
-              : existing.insuranceDate,
-            insuranceValidTill: payload.insuranceValidTill
-              ? new Date(payload.insuranceValidTill)
-              : existing.insuranceValidTill,
+            insuranceAmount: payload.insuranceAmount ? parseFloat(payload.insuranceAmount) : existing.insuranceAmount,
+            insuranceDate: payload.insuranceDate ? parseDate(payload.insuranceDate) : existing.insuranceDate,
+            insuranceValidTill: payload.insuranceValidTill ? parseDate(payload.insuranceValidTill) : existing.insuranceValidTill,
             insuranceAlert:
               payload.insuranceAlert === undefined
                 ? existing.insuranceAlert
@@ -638,9 +641,8 @@ exports.updateLoan = async (req, res) => {
 
           let bal = newPrincipal;
           const newSchedule = [];
-          let firstDue = setDate(newStartDate, newDueDay);
-          if (newStartDate.getDate() > newDueDay)
-            firstDue = offsetFn(firstDue, step);
+          // First due date = newStartDate itself (since dueDay is extracted from newStartDate)
+          let firstDue = newStartDate;
 
           for (let i = 0; i < newTenure; i++) {
             const dueDate = offsetFn(firstDue, step * i);
@@ -1204,17 +1206,20 @@ exports.approveLoan = async (req, res) => {
       }
     }
 
+    // Parse dates and calculate dueDay from startDate (day of month)
+    const parsedStartDate = parseDate(startDate);
+    const parsedDisbursedDate = parseDate(disbursedDate);
+    const dueDay = parsedStartDate.getDate();
+
     // Calculate endDate based on startDate and tenureMonths
-    const start = new Date(startDate);
-    const endDate = addMonths(start, loan.tenureMonths);
+    const endDate = addMonths(parsedStartDate, loan.tenureMonths);
 
     // Generate EMI schedule based on approved startDate
     const emiSchedule = generateEMISchedule({
       principalLoanAmount: loan.principalLoanAmount,
       interestRate: loan.interestRate,
       tenureMonths: loan.tenureMonths,
-      startDate: new Date(startDate),
-      dueDay: loan.dueDay,
+      startDate: parsedStartDate,
       paymentFrequency: loan.paymentFrequency,
     });
 
@@ -1233,9 +1238,10 @@ exports.approveLoan = async (req, res) => {
           : undefined,
         isClosed: false,
         fileNo: fileNo.trim(),
-        startDate: new Date(startDate),
+        startDate: parsedStartDate,
+        dueDay,
         endDate,
-        disbursedDate: new Date(disbursedDate),
+        disbursedDate: parsedDisbursedDate,
       },
       include: {
         user: true,
