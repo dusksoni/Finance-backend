@@ -41,6 +41,7 @@ router.post(
 );
 router.get("/",           authMiddleware, onlyAdminOrEmployee, loanController.listLoans);
 router.get("/download",   authMiddleware, onlyAdminOrEmployee, loanController.listLoansDownload);
+router.get("/:id/closure-status", authMiddleware, onlyAdminOrEmployee, loanController.getLoanClosureStatus);
 router.get("/:id",        authMiddleware, onlyAdminOrEmployee, loanController.getLoanById);
 
 /** ─── PAYMENT ROUTES ──────────────────────────────── */
@@ -71,6 +72,14 @@ router.get(
   authMiddleware,
   onlyAdminOrEmployee,
   paymentController.getPaymentById
+);
+
+// 2.5) Calculate fine for a specific EMI based on custom payment date
+router.post(
+  "/payment/emi/:emiId/calculate-fine",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  paymentController.calculateFineForDate
 );
 
 // 3) Pay a specific installment (full or partial)

@@ -1,7 +1,7 @@
 const { differenceInDays } = require("date-fns");
 
-function calculateFine(dueDate, pendingPrincipal) {
-  const today = new Date();
+function calculateFine(dueDate, pendingPrincipal, referenceDate = null) {
+  const today = referenceDate ? new Date(referenceDate) : new Date();
   const daysLate = Math.max(differenceInDays(today, new Date(dueDate)), 0);
 
   if (!pendingPrincipal || isNaN(pendingPrincipal)) {

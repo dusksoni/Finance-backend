@@ -771,10 +771,85 @@ exports.listLoansByUser = async (req, res) => {
 exports.closeLoan = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate loan exists and check closure eligibility
+    const existingLoan = await prisma.loan.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        fileNo: true,
+        isClosed: true,
+        isForeclosed: true,
+        pendingAmount: true,
+      }
+    });
+
+    if (!existingLoan) {
+      return res.status(404).json({ error: "Loan not found", status: 404 });
+    }
+
+    if (existingLoan.isClosed) {
+      return res.status(400).json({
+        error: "Loan is already closed",
+        status: 400
+      });
+    }
+
+    if (existingLoan.isForeclosed) {
+      return res.status(400).json({
+        error: "Loan is already foreclosed",
+        status: 400
+      });
+    }
+
+    // Check if all EMIs are paid
+    const pendingEmis = await prisma.eMI.count({
+      where: {
+        loanId: id,
+        status: { in: ["UNPAID", "PARTIAL", "VERIFICATION_PENDING"] }
+      },
+    });
+
+    if (pendingEmis > 0) {
+      return res.status(400).json({
+        error: `Cannot close loan: ${pendingEmis} EMI(s) are still pending`,
+        status: 400
+      });
+    }
+
+    // Check for unverified payments
+    const unverifiedPayments = await prisma.payment.count({
+      where: {
+        loanId: id,
+        verified: false,
+        status: { in: ["VERIFICATION_PENDING", "PENDING"] }
+      }
+    });
+
+    if (unverifiedPayments > 0) {
+      return res.status(400).json({
+        error: `Cannot close loan: ${unverifiedPayments} payment(s) awaiting verification`,
+        status: 400
+      });
+    }
+
+    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    if (r2(existingLoan.pendingAmount) > 0) {
+      return res.status(400).json({
+        error: `Cannot close loan: Pending amount of ₹${r2(existingLoan.pendingAmount)} remains`,
+        status: 400
+      });
+    }
+
+    // All validations passed - close the loan
     const loan = await prisma.loan.update({
       where: { id },
-      data: { isClosed: true, actualEndDate: new Date() },
+      data: {
+        isClosed: true,
+        fileStatus: "CLOSED"
+      },
     });
+
     await logAction({
       action: "CLOSED LOAN",
       table: "Loan",
@@ -784,9 +859,15 @@ exports.closeLoan = async (req, res) => {
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
     });
-    res.json({ message: "Loan closed", data: loan });
+
+    res.json({
+      message: "Loan closed successfully",
+      data: loan,
+      status: 200
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Close Loan Error:", err);
+    res.status(500).json({ error: err.message, status: 500 });
   }
 };
 
@@ -1569,5 +1650,110 @@ exports.getLoanById = async (req, res) => {
     return res
       .status(500)
       .json({ error: "Failed to fetch loan details", status: 500 });
+  }
+};
+
+/**
+ * Check if a loan is eligible for manual closure
+ * GET /api/loans/:id/closure-status
+ * Returns whether the loan can be closed and relevant statistics
+ */
+exports.getLoanClosureStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const loan = await prisma.loan.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        fileNo: true,
+        isClosed: true,
+        isForeclosed: true,
+        fileStatus: true,
+        pendingAmount: true,
+        totalPaidAmount: true,
+        totalPaidPrincipal: true,
+        totalPaidInterest: true,
+        totalPaidFine: true,
+        principalLoanAmount: true,
+        interestAmount: true,
+        totalAmount: true,
+      },
+    });
+
+    if (!loan) {
+      return res.status(404).json({ error: "Loan not found", status: 404 });
+    }
+
+    // Check if all EMIs are paid
+    const pendingEmis = await prisma.eMI.count({
+      where: {
+        loanId: id,
+        status: { in: ["UNPAID", "PARTIAL", "VERIFICATION_PENDING"] }
+      },
+    });
+
+    // Check for unverified payments
+    const unverifiedPayments = await prisma.payment.count({
+      where: {
+        loanId: id,
+        verified: false,
+        status: { in: ["VERIFICATION_PENDING", "PENDING"] }
+      }
+    });
+
+    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+
+    // Calculate if loan is eligible for closure
+    const canClose =
+      !loan.isClosed &&
+      !loan.isForeclosed &&
+      pendingEmis === 0 &&
+      unverifiedPayments === 0 &&
+      r2(loan.pendingAmount) <= 0;
+
+    const closureStatus = {
+      canClose,
+      isClosed: loan.isClosed,
+      isForeclosed: loan.isForeclosed,
+      fileStatus: loan.fileStatus,
+      pendingAmount: r2(loan.pendingAmount),
+      pendingEmis,
+      unverifiedPayments,
+      statistics: {
+        totalAmount: r2(loan.totalAmount),
+        principalAmount: r2(loan.principalLoanAmount),
+        interestAmount: r2(loan.interestAmount),
+        totalPaid: r2(loan.totalPaidAmount),
+        principalPaid: r2(loan.totalPaidPrincipal),
+        interestPaid: r2(loan.totalPaidInterest),
+        finePaid: r2(loan.totalPaidFine),
+      },
+      message: canClose
+        ? "Loan is eligible for closure"
+        : loan.isClosed
+        ? "Loan is already closed"
+        : loan.isForeclosed
+        ? "Loan is already foreclosed"
+        : pendingEmis > 0
+        ? `${pendingEmis} EMI(s) still pending`
+        : unverifiedPayments > 0
+        ? `${unverifiedPayments} payment(s) awaiting verification`
+        : r2(loan.pendingAmount) > 0
+        ? `Pending amount: ₹${r2(loan.pendingAmount)}`
+        : "Loan cannot be closed at this time"
+    };
+
+    return res.status(200).json({
+      data: closureStatus,
+      status: 200
+    });
+
+  } catch (err) {
+    console.error("Get Loan Closure Status Error:", err);
+    return res.status(500).json({
+      error: "Failed to fetch loan closure status",
+      status: 500
+    });
   }
 };

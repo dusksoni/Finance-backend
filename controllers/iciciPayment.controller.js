@@ -272,80 +272,81 @@ exports.handleCallback = async (req, res) => {
       }
     });
 
-    // If payment is successful, create payment record and process
+    // If payment is successful, process payment using existing payment logic
     if (TxnStatus === 'SUCCESS') {
-      // Create payment record
-      const payment = await prisma.payment.create({
-        data: {
-          loanId: pendingTxn.loanId,
-          emiId: pendingTxn.emiId,
-          amount: parseFloat(PayerAmount),
-          paymentMode: 'UPI',
-          transactionId: BankRRN,
-          paymentDate: new Date(),
-          status: 'PAID',
-          verified: true, // Auto-approve gateway payments
-          verifiedAt: new Date(),
-          metadata: {
-            gateway: 'ICICI',
-            merchantTranId,
-            refId: pendingTxn.refId,
-            payerName: PayerName,
-            payerMobile: PayerMobile,
-            payerVA: PayerVA,
-            txnInitDate: TxnInitDate,
-            txnCompletionDate: TxnCompletionDate,
-            callbackData: callbackData
-          }
-        }
-      });
+      const paymentController = require('./payment.controller');
 
       // Process payment based on type
       if (pendingTxn.paymentType === 'emi' && pendingTxn.emiId) {
-        // Call payPaymentById logic with useGateway=true
-        // This will auto-approve the payment
-        const paymentController = require('./payment.controller');
-
-        // Mock request object for internal call
+        // Single EMI payment - use payPaymentById logic
         const mockReq = {
           params: { emiId: pendingTxn.emiId },
           body: {
             amount: parseFloat(PayerAmount),
             paymentMode: 'UPI',
             transactionId: BankRRN,
-            paymentDate: new Date(),
+            paymentDate: TxnCompletionDate ? new Date(TxnCompletionDate) : new Date(),
             useGateway: true // This triggers auto-approval
           },
           user: {
-            type: 'ADMIN',
-            id: pendingTxn.createdByAdminId || pendingTxn.createdByEmployeeId
+            type: pendingTxn.createdByAdminId ? 'ADMIN' : 'EMPLOYEE',
+            id: pendingTxn.createdByAdminId || pendingTxn.createdByEmployeeId,
+            adminId: pendingTxn.createdByAdminId,
+            employeeId: pendingTxn.createdByEmployeeId
           }
         };
 
-        // We've already created the payment, so we need to process it
-        // Update the payment we just created instead of creating a new one
+        const mockRes = {
+          status: (code) => ({
+            json: (data) => {
+              console.log('EMI Payment processed via QR:', data);
+              return data;
+            }
+          }),
+          json: (data) => {
+            console.log('EMI Payment processed via QR:', data);
+            return data;
+          }
+        };
+
+        await paymentController.payPaymentById(mockReq, mockRes);
 
       } else {
-        // Bulk payment - call makePayment logic
-        const paymentController = require('./payment.controller');
-
+        // Bulk payment - use makePayment logic (distributes across multiple EMIs)
         const mockReq = {
           params: { loanId: pendingTxn.loanId },
           body: {
             amountPaid: parseFloat(PayerAmount),
             paymentMode: 'UPI',
             transactionId: BankRRN,
-            paymentDate: new Date(),
+            paymentDate: TxnCompletionDate ? new Date(TxnCompletionDate) : new Date(),
             useGateway: true // This triggers auto-approval
           },
           user: {
-            type: 'ADMIN',
-            id: pendingTxn.createdByAdminId || pendingTxn.createdByEmployeeId
+            type: pendingTxn.createdByAdminId ? 'ADMIN' : 'EMPLOYEE',
+            id: pendingTxn.createdByAdminId || pendingTxn.createdByEmployeeId,
+            adminId: pendingTxn.createdByAdminId,
+            employeeId: pendingTxn.createdByEmployeeId
           }
         };
+
+        const mockRes = {
+          status: (code) => ({
+            json: (data) => {
+              console.log('Bulk Payment processed via QR:', data);
+              return data;
+            }
+          }),
+          json: (data) => {
+            console.log('Bulk Payment processed via QR:', data);
+            return data;
+          }
+        };
+
+        await paymentController.makePayment(mockReq, mockRes);
       }
 
-      console.log('Payment processed successfully:', payment.id);
+      console.log('QR Payment processed successfully for transaction:', merchantTranId);
     }
 
     // Send success response to ICICI

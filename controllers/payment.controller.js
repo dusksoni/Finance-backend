@@ -169,7 +169,8 @@ exports.makePayment = async (req, res) => {
     const result = await prisma.$transaction(
       async (tx) => {
         // (A) Check cache and refresh fines if needed
-        const today = new Date();
+        // Use paymentDate as reference for fine calculation
+        const referenceDate = paymentDate;
 
         // Use cache check (1-hour smart caching)
         if (shouldUpdateLoanFines(loanId)) {
@@ -177,7 +178,7 @@ exports.makePayment = async (req, res) => {
             where: {
               loanId,
               status: { in: ["UNPAID", "PARTIAL"] },
-              paymentFor: { lte: today },
+              paymentFor: { lte: referenceDate },
             },
             select: {
               id: true,
@@ -201,7 +202,8 @@ exports.makePayment = async (req, res) => {
               0
             );
 
-            const { daysLate, fineAmt } = calculateFine(e.paymentFor, emiDue);
+            // Use paymentDate for fine calculation instead of today
+            const { daysLate, fineAmt } = calculateFine(e.paymentFor, emiDue, paymentDate);
             const newFine = r2(fineAmt);
             const newDelay = Number(daysLate || 0);
             const isDelayed = newDelay > 0;
@@ -289,8 +291,8 @@ exports.makePayment = async (req, res) => {
             0
           );
 
-          // fine assessment
-          const { fineAmt, daysLate } = calculateFine(emi.paymentFor, emiDue);
+          // fine assessment (using paymentDate for calculation)
+          const { fineAmt, daysLate } = calculateFine(emi.paymentFor, emiDue, paymentDate);
           const fineAssessed = r2(fineAmt);
           const fineAlreadyPaid = r2(emi.finePaid || 0);
           const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
@@ -396,19 +398,8 @@ exports.makePayment = async (req, res) => {
             },
           });
 
-          // ✅ Update loan *totals* for the fine portion (do NOT touch pendingAmount here)
-          if (verified && payToFine > 0) {
-            await tx.loan.update({
-              where: { id: loanId },
-              data: {
-                totalPaidFine: { increment: r2(payToFine) },
-                // keep totalPaidAmount reflecting all money received:
-                totalPaidAmount: { increment: r2(payToFine) },
-              },
-            });
-          }
-
           // Reduce pendingAmount only by EMI (interest + principal)
+          // Note: processPostPayment will re-sync all loan totals from EMI aggregates
           if (verified && payToEmi > 0) {
             await processPostPayment({
               tx,
@@ -609,8 +600,8 @@ exports.payPaymentById = async (req, res) => {
       0
     );
 
-    // Fine assessment on EMI due
-    const { fineAmt, daysLate } = calculateFine(emi.paymentFor, emiDue);
+    // Fine assessment on EMI due (using paymentDate for calculation)
+    const { fineAmt, daysLate } = calculateFine(emi.paymentFor, emiDue, paymentDate);
     const fineAssessed = r2(fineAmt);
     const fineAlreadyPaid = r2(emi.finePaid || 0);
     const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
@@ -719,18 +710,8 @@ exports.payPaymentById = async (req, res) => {
           },
         });
 
-        // 3) Loan: record fine collections but DO NOT reduce pending by fine
-        if (canSelfVerify && payToFine > 0) {
-          await tx.loan.update({
-            where: { id: emi.loanId },
-            data: {
-              totalPaidFine: { increment: r2(payToFine) },
-              totalPaidAmount: { increment: r2(payToFine) }, // tracked as collected
-            },
-          });
-        }
-
         // Return what we need for post-commit work
+        // Note: processPostPayment will re-sync all loan totals from EMI aggregates
         return {
           paymentId: payment.id,
           newStatus: canSelfVerify ? newStatus : "VERIFICATION_PENDING",
@@ -903,18 +884,8 @@ exports.verifyPayment = async (req, res) => {
       const emiPortion = r2(thisPaidToInterest + thisPaidToPrincipal);
       const finePortion = r2(thisPaidToFine);
 
-      // 3) Update loan money totals for FINE (does not reduce pendingAmount)
-      if (finePortion > 0) {
-        await tx.loan.update({
-          where: { id: inst.loanId },
-          data: {
-            totalPaidFine: { increment: finePortion },
-            totalPaidAmount: { increment: finePortion }, // you collect it, so reflect in totalPaidAmount
-          },
-        });
-      }
-
-      // 4) Reduce pendingAmount only by EMI portion via your existing hook
+      // 3) Reduce pendingAmount only by EMI portion via processPostPayment
+      // Note: processPostPayment will re-sync all loan totals (including fine) from EMI aggregates
       const postResult = await processPostPayment({
         tx,
         emiId: inst.emiId,
@@ -1212,7 +1183,6 @@ exports.postForeclosurePayment = async (req, res) => {
     });
     if (!loan) return res.status(404).json({ error: "Loan not found" });
 
-    const today = new Date();
     const rMonthly = (Number(loan.interestRate) || 0) / 100 / 12;
 
     // Remaining EMIs sorted by due date
@@ -1220,14 +1190,15 @@ exports.postForeclosurePayment = async (req, res) => {
       .filter((e) => e.status !== "PAID")
       .sort((a, b) => new Date(a.paymentFor) - new Date(b.paymentFor));
 
-    // Split into overdue (<= today) and future (> today)
+    // Split into overdue (<= paymentDate) and future (> paymentDate)
+    // Use paymentDate as reference instead of today for backdated payments
     const dueNow = [];
     const future = [];
     for (const e of remaining) {
-      (new Date(e.paymentFor) <= today ? dueNow : future).push(e);
+      (new Date(e.paymentFor) <= paymentDate ? dueNow : future).push(e);
     }
 
-    // ---------- Past-due EMIs (<= today): EMI due (P+I) + fine DUE ----------
+    // ---------- Past-due EMIs (<= paymentDate): EMI due (P+I) + fine DUE ----------
     let dueNowTotal = 0;
     let overdueInterestOutstanding = 0; // interest we will collect now
     let overdueFineDueTotal = 0;
@@ -1246,10 +1217,11 @@ exports.postForeclosurePayment = async (req, res) => {
       // EMI (P+I) still due
       const emiDueOnly = Math.max(emiPay - emiPaidComponent, 0);
 
-      // Fine based on outstanding EMI (same approach as GET)
+      // Fine based on outstanding EMI (same approach as GET, using paymentDate)
       const { daysLate, fineAmt, pct } = calculateFine(
         e.paymentFor,
-        emiDueOnly
+        emiDueOnly,
+        paymentDate
       );
       const fineAssessed = r2(fineAmt);
       const fineDue = r2(Math.max(fineAssessed - finePaidAlready, 0));
@@ -1792,5 +1764,117 @@ exports.getPaymentInvoice = async (req, res) => {
   } catch (err) {
     console.error("getPaymentInvoice error:", err);
     res.status(500).json({ error: err.message });
+  }
+};
+
+// ----------------------------------
+// 🧮 CALCULATE FINE FOR CUSTOM DATE
+// ----------------------------------
+exports.calculateFineForDate = async (req, res) => {
+  try {
+    const { emiId } = req.params;
+    const { paymentDate } = req.body;
+
+    if (!paymentDate) {
+      return res.status(400).json({
+        error: "paymentDate is required",
+        status: 400
+      });
+    }
+
+    const r2 = (n) => new Decimal(n || 0).toDecimalPlaces(2).toNumber();
+    const referenceDate = new Date(paymentDate);
+
+    // Validate date is not in future
+    const today = new Date();
+    if (referenceDate > today) {
+      return res.status(400).json({
+        error: "Payment date cannot be in the future",
+        status: 400
+      });
+    }
+
+    // Fetch EMI details
+    const emi = await prisma.eMI.findUnique({
+      where: { id: emiId },
+      select: {
+        id: true,
+        paymentFor: true,
+        emiPayAmount: true,
+        amountPaidSoFar: true,
+        finePaid: true,
+        principalAmt: true,
+        interestAmt: true,
+        principalPaid: true,
+        interestPaid: true,
+      }
+    });
+
+    if (!emi) {
+      return res.status(404).json({
+        error: "EMI not found",
+        status: 404
+      });
+    }
+
+    // Calculate EMI due (excluding fine already paid)
+    const emiPaidComponent = Math.max(
+      Number(emi.amountPaidSoFar || 0) - Number(emi.finePaid || 0),
+      0
+    );
+    const emiDue = Math.max(
+      Number(emi.emiPayAmount || 0) - emiPaidComponent,
+      0
+    );
+
+    // Calculate outstanding principal and interest
+    const principalOutstanding = Math.max(
+      Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+      0
+    );
+    const interestOutstanding = Math.max(
+      Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+      0
+    );
+
+    // Calculate fine based on the provided payment date
+    const { daysLate, fineAmt, pct } = calculateFine(
+      emi.paymentFor,
+      emiDue,
+      referenceDate
+    );
+
+    const fineAssessed = r2(fineAmt);
+    const fineAlreadyPaid = r2(emi.finePaid || 0);
+    const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
+
+    // Calculate total due
+    const totalDue = r2(emiDue + fineDue);
+
+    return res.json({
+      status: 200,
+      data: {
+        emiId: emi.id,
+        paymentFor: emi.paymentFor,
+        calculationDate: referenceDate,
+        emiDue: r2(emiDue),
+        principalOutstanding: r2(principalOutstanding),
+        interestOutstanding: r2(interestOutstanding),
+        fineCalculation: {
+          daysLate,
+          finePercentage: pct,
+          fineAssessed: r2(fineAssessed),
+          fineAlreadyPaid: r2(fineAlreadyPaid),
+          fineDue: r2(fineDue),
+        },
+        totalDue: r2(totalDue),
+      }
+    });
+  } catch (err) {
+    console.error("calculateFineForDate error:", err);
+    return res.status(500).json({
+      error: err.message,
+      status: 500
+    });
   }
 };

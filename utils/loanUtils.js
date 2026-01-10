@@ -53,10 +53,30 @@ async function processPostPayment({
   }
 
   // 2. Update Loan summary
+  // Re-sync loan totals from EMI aggregates to ensure accuracy
+  const emiAgg = await tx.eMI.aggregate({
+    where: { loanId },
+    _sum: { principalPaid: true, interestPaid: true, finePaid: true },
+  });
+
+  const sumPrincipal = Number(emiAgg._sum.principalPaid || 0);
+  const sumInterest = Number(emiAgg._sum.interestPaid || 0);
+  const sumFine = Number(emiAgg._sum.finePaid || 0);
+
+  // Sum of PAID receipts for totalPaidAmount
+  const payAgg = await tx.payment.aggregate({
+    where: { loanId, status: "PAID" },
+    _sum: { amount: true },
+  });
+  const sumPaid = Number(payAgg._sum.amount || 0);
+
   await tx.loan.update({
     where: { id: loanId },
     data: {
-      totalPaidAmount: { increment: paymentAmount },
+      totalPaidPrincipal: sumPrincipal,
+      totalPaidInterest: sumInterest,
+      totalPaidFine: sumFine,
+      totalPaidAmount: sumPaid,
       pendingAmount: { decrement: paymentAmount },
     }
   });
