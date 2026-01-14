@@ -23,18 +23,23 @@ Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
 exports.getPendingPaymentsByLoanId = async (req, res) => {
   try {
     const { loanId } = req.params;
-    const today = new Date();
+    const { date } = req.query;
+
+    // Use provided date or default to today
+    const referenceDate = date ? new Date(date) : new Date();
 
     // Helper for precise rounding using Decimal.js
     const r2 = (n) => new Decimal(n || 0).toDecimalPlaces(2).toNumber();
 
     // 0) Check cache: only refresh fines if > 1 hour since last update
-    if (shouldUpdateLoanFines(loanId)) {
+    // Only update database if using today's date (not for hypothetical future/past dates)
+    const isToday = date === undefined || date === null;
+    if (isToday && shouldUpdateLoanFines(loanId)) {
       const toRefresh = await prisma.eMI.findMany({
         where: {
           loanId,
           status: { in: ["UNPAID", "PARTIAL"] },
-          paymentFor: { lte: today },
+          paymentFor: { lte: referenceDate },
         },
         select: {
           id: true,
@@ -61,7 +66,7 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
           0
         );
 
-        const { daysLate, fineAmt } = calculateFine(e.paymentFor, outstanding);
+        const { daysLate, fineAmt } = calculateFine(e.paymentFor, outstanding, referenceDate);
         const newFine = r2(fineAmt);
         const newDelay = Number(daysLate || 0);
         const isDelayed = newDelay > 0;
@@ -87,17 +92,17 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
       markLoanFinesUpdated(loanId);
     }
 
-    // 1) fetch pending list (<= today)
+    // 1) fetch pending list (<= referenceDate)
     const installments = await prisma.eMI.findMany({
       where: {
         loanId,
         status: { in: ["UNPAID", "PARTIAL"] },
-        paymentFor: { lte: today },
+        paymentFor: { lte: referenceDate },
       },
       orderBy: { paymentFor: "asc" },
     });
 
-    // 2) compute response fields with Decimal.js for precision
+    // 2) compute response fields with Decimal.js for precision based on referenceDate
     let grandTotal = new Decimal(0);
     const pending = installments.map((inst) => {
       const emiPaidComponent = new Decimal(inst.amountPaidSoFar || 0)
@@ -112,7 +117,8 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
       const fineAlreadyPaid = Number(inst.finePaid || 0);
       const { daysLate, fineAmt, pct } = calculateFine(
         inst.paymentFor,
-        outstanding
+        outstanding,
+        referenceDate
       );
       const fineAssessed = r2(fineAmt);
       const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
@@ -137,7 +143,12 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
     });
 
     return res.json({
-      data: { loanId, pending, grandTotal: grandTotal.toDecimalPlaces(2).toNumber() },
+      data: {
+        loanId,
+        pending,
+        grandTotal: grandTotal.toDecimalPlaces(2).toNumber(),
+        referenceDate: referenceDate.toISOString().split('T')[0]
+      },
       status: 200,
     });
   } catch (err) {
@@ -152,16 +163,38 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
 exports.makePayment = async (req, res) => {
   try {
     const { loanId } = req.params;
-    let { amountPaid, paymentMode, transactionId, paymentDate, useGateway } = req.body;
+    let { amountPaid, totalEmiAmount, totalFineAmount, paymentMode, transactionId, paymentDate, useGateway } = req.body;
 
     // Helper for precise rounding using Decimal.js
     const r2 = (n) => new Decimal(n || 0).toDecimalPlaces(2).toNumber();
+
+    // Check if manual breakdown is provided (new simpler approach)
+    const hasManualBreakdown = totalEmiAmount !== undefined && totalFineAmount !== undefined;
 
     amountPaid = r2(Number(amountPaid));
     if (!amountPaid || amountPaid <= 0) {
       return res
         .status(400)
         .json({ error: "amountPaid must be more than 0", status: 400 });
+    }
+
+    // If manual breakdown provided, validate total matches amountPaid
+    if (hasManualBreakdown) {
+      const emiAmt = r2(Number(totalEmiAmount));
+      const fineAmt = r2(Number(totalFineAmount));
+      const breakdownTotal = r2(emiAmt + fineAmt);
+
+      // Allow small rounding difference
+      if (Math.abs(breakdownTotal - amountPaid) > 0.02) {
+        return res.status(400).json({
+          error: `Manual breakdown total (${breakdownTotal}) doesn't match amount paid (${amountPaid})`,
+          status: 400
+        });
+      }
+
+      // Convert to numbers for use in distribution
+      totalEmiAmount = emiAmt;
+      totalFineAmount = fineAmt;
     }
 
     paymentDate = paymentDate ? new Date(paymentDate) : new Date();
@@ -271,6 +304,9 @@ exports.makePayment = async (req, res) => {
         });
 
         let remaining = r2(amountPaid);
+        let remainingEmiAmount = hasManualBreakdown ? r2(totalEmiAmount) : 0;
+        let remainingFineAmount = hasManualBreakdown ? r2(totalFineAmount) : 0;
+
         const updated = [];
         let totalUsed = 0;
         let totalFineCollected = 0;
@@ -279,7 +315,13 @@ exports.makePayment = async (req, res) => {
 
         // Now distribute the payment across EMIs
         for (const emi of installments) {
-          if (remaining <= 0) break;
+          if (hasManualBreakdown) {
+            // In manual mode, check if we have any EMI or Fine amount left to distribute
+            if (remainingEmiAmount <= 0 && remainingFineAmount <= 0) break;
+          } else {
+            // In auto mode, check remaining total amount
+            if (remaining <= 0) break;
+          }
 
           // outstanding EMI uses only EMI-paid component (excludes finePaid)
           const emiPaidComponent = Math.max(
@@ -317,26 +359,54 @@ exports.makePayment = async (req, res) => {
             continue;
           }
 
-          // allocate: fine → interest → principal
-          const toPay = Math.min(remaining, r2(emiDue + fineDue));
-          if (toPay <= 0) break;
+          let payToFine, payToEmi, payInterest, payPrincipal;
 
-          const payToFine = Math.min(toPay, fineDue);
-          const payToEmi = r2(toPay - payToFine);
+          if (hasManualBreakdown) {
+            // Manual mode: distribute from the global EMI/Fine pools
+            // Apply fine first
+            payToFine = Math.min(remainingFineAmount, fineDue);
+            remainingFineAmount = r2(remainingFineAmount - payToFine);
 
-          const interestOutstanding = Math.max(
-            Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
-            0
-          );
-          const principalOutstanding = Math.max(
-            Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
-            0
-          );
-          const payInterest = r2(Math.min(payToEmi, interestOutstanding));
-          const payPrincipal = r2(Math.min(
-            r2(payToEmi - payInterest),
-            principalOutstanding
-          ));
+            // Then apply EMI amount
+            payToEmi = Math.min(remainingEmiAmount, emiDue);
+            remainingEmiAmount = r2(remainingEmiAmount - payToEmi);
+
+            // Split EMI amount between interest and principal
+            const interestOutstanding = Math.max(
+              Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+              0
+            );
+            const principalOutstanding = Math.max(
+              Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+              0
+            );
+
+            let emiToApply = payToEmi;
+            payInterest = r2(Math.min(emiToApply, interestOutstanding));
+            emiToApply = r2(emiToApply - payInterest);
+            payPrincipal = r2(Math.min(emiToApply, principalOutstanding));
+          } else {
+            // Auto mode: allocate fine → interest → principal
+            const toPay = Math.min(remaining, r2(emiDue + fineDue));
+            if (toPay <= 0) break;
+
+            payToFine = Math.min(toPay, fineDue);
+            payToEmi = r2(toPay - payToFine);
+
+            const interestOutstanding = Math.max(
+              Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+              0
+            );
+            const principalOutstanding = Math.max(
+              Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+              0
+            );
+            payInterest = r2(Math.min(payToEmi, interestOutstanding));
+            payPrincipal = r2(Math.min(
+              r2(payToEmi - payInterest),
+              principalOutstanding
+            ));
+          }
 
           // Update EMI (amountPaidSoFar = fine + EMI)
           const newFinePaid = r2(fineAlreadyPaid + payToFine);
@@ -578,12 +648,27 @@ exports.getEmiById = async (req, res) => {
 exports.payPaymentById = async (req, res) => {
   try {
     const { emiId } = req.params;
-    let { amount, paymentMode, transactionId, paymentDate, useGateway } = req.body;
+    let { amount, emiAmount, fineAmount, paymentMode, transactionId, paymentDate, useGateway } = req.body;
 
     const r2 = (n) => Number((Number(n) || 0).toFixed(2));
-    amount = r2(Number(amount));
-    if (!amount || amount <= 0)
-      return res.status(400).json({ error: "amount must be > 0" });
+
+    // Check if manual split amounts are provided
+    const hasManualSplit = emiAmount !== undefined && fineAmount !== undefined;
+
+    if (hasManualSplit) {
+      // Manual mode: use provided emiAmount and fineAmount
+      emiAmount = r2(Number(emiAmount));
+      fineAmount = r2(Number(fineAmount));
+      amount = r2(emiAmount + fineAmount);
+
+      if (amount <= 0)
+        return res.status(400).json({ error: "Total amount must be > 0" });
+    } else {
+      // Auto mode (backward compatibility): use amount and auto-calculate split
+      amount = r2(Number(amount));
+      if (!amount || amount <= 0)
+        return res.status(400).json({ error: "amount must be > 0" });
+    }
 
     paymentDate = paymentDate ? new Date(paymentDate) : new Date();
 
@@ -606,24 +691,60 @@ exports.payPaymentById = async (req, res) => {
     const fineAlreadyPaid = r2(emi.finePaid || 0);
     const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
 
-    // Allocate: fine → interest → principal
-    let remaining = Math.min(amount, r2(emiDue + fineDue));
-    const payToFine = Math.min(remaining, fineDue);
-    remaining = r2(remaining - payToFine);
+    let payToFine, payToInterest, payToPrincipal;
 
-    const interestOutstanding = Math.max(
-      Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
-      0
-    );
-    const principalOutstanding = Math.max(
-      Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
-      0
-    );
-    const payToInterest = Math.min(remaining, interestOutstanding);
-    const payToPrincipal = Math.min(
-      r2(remaining - payToInterest),
-      principalOutstanding
-    );
+    if (hasManualSplit) {
+      // Manual mode: Use provided amounts directly
+      // Validate amounts don't exceed what's due
+      if (fineAmount > fineDue) {
+        return res.status(400).json({
+          error: `Fine amount ${fineAmount} exceeds fine due ${fineDue}`,
+          status: 400
+        });
+      }
+      if (emiAmount > emiDue) {
+        return res.status(400).json({
+          error: `EMI amount ${emiAmount} exceeds EMI due ${emiDue}`,
+          status: 400
+        });
+      }
+
+      payToFine = r2(fineAmount);
+
+      // Split emiAmount between interest and principal
+      const interestOutstanding = Math.max(
+        Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+        0
+      );
+      const principalOutstanding = Math.max(
+        Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+        0
+      );
+
+      let remainingEmi = r2(emiAmount);
+      payToInterest = Math.min(remainingEmi, interestOutstanding);
+      remainingEmi = r2(remainingEmi - payToInterest);
+      payToPrincipal = Math.min(remainingEmi, principalOutstanding);
+    } else {
+      // Auto mode (backward compatibility): allocate fine → interest → principal
+      let remaining = Math.min(amount, r2(emiDue + fineDue));
+      payToFine = Math.min(remaining, fineDue);
+      remaining = r2(remaining - payToFine);
+
+      const interestOutstanding = Math.max(
+        Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+        0
+      );
+      const principalOutstanding = Math.max(
+        Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+        0
+      );
+      payToInterest = Math.min(remaining, interestOutstanding);
+      payToPrincipal = Math.min(
+        r2(remaining - payToInterest),
+        principalOutstanding
+      );
+    }
 
     // Gateway payments are auto-approved, manual payments require permission
     const canSelfVerify = useGateway

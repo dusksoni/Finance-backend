@@ -221,14 +221,14 @@ exports.createLoan = async (req, res) => {
     // Convert penaltyPercentage to Float
     const penaltyPct = penaltyPercentage && penaltyPercentage !== "" ? parseFloat(penaltyPercentage) : 0;
 
-    // 1) Validate startDate is provided
-    if (!startDate) {
-      return res.status(400).json({ error: "startDate is required" });
-    }
+    // // 1) Validate startDate is provided
+    // if (!startDate) {
+    //   return res.status(400).json({ error: "startDate is required" });
+    // }
 
     // Parse and calculate dueDay from startDate (day of month)
     const parsedStartDate = parseDate(startDate);
-    const dueDay = parsedStartDate.getDate();
+    const dueDay = parsedStartDate ? parsedStartDate.getDate() : null;
 
     // 2) Validate principal & tenure
     const P = Number(principalLoanAmount);
@@ -250,66 +250,33 @@ exports.createLoan = async (req, res) => {
     const totalInterest = round2((P * annualRate * (n / 12)) / 100);
     const totalPayable = round2(P + totalInterest);
 
-    // Per-month equal split (used to aggregate into buckets)
-    const monthlyPrincipal = P / n;
-    const monthlyInterest = totalInterest / n;
-    const monthlyEMI = totalPayable / n;
-
-    // Frequency config
     const freq = (paymentFrequency || "MONTHLY").toUpperCase();
-    const { fn: offsetFn, step } =
-      FREQUENCY_OFFSETS[freq] || FREQUENCY_OFFSETS.MONTHLY;
-    const monthsPerInstallment = FREQUENCY_MONTHS[freq] || 1;
 
-    // 3) Build schedule (bucket months by frequency)
-    // First due date = startDate itself (since dueDay is extracted from startDate)
-    let firstDue = parsedStartDate;
-
-    const numInstallments = Math.ceil(n / monthsPerInstallment);
-    const schedule = [];
-
-    let aggPrincipal = 0;
-    let aggInterest = 0;
-
-    for (let i = 0; i < numInstallments; i++) {
-      const monthsInThisBucket = Math.min(
-        monthsPerInstallment,
-        n - i * monthsPerInstallment
-      );
-
-      const dueDate = offsetFn(firstDue, step * i);
-
-      // Aggregate monthly slices into the bucket
-      let principalAmt = round2(monthlyPrincipal * monthsInThisBucket);
-      let interestAmt = round2(monthlyInterest * monthsInThisBucket);
-      let emiPayAmount = round2(monthlyEMI * monthsInThisBucket);
-
-      aggPrincipal = round2(aggPrincipal + principalAmt);
-      aggInterest = round2(aggInterest + interestAmt);
-
-      schedule.push({
-        paymentFor: dueDate,
-        paymentDate: dueDate,
-        emiPayAmount,
-        principalAmt,
-        interestAmt,
-        amountPaidSoFar: 0,
-        fineAmount: 0,
-        status: "UNPAID",
-        isDelayed: false,
-        isForeclosure: false,
-      });
-    }
-
-    // Fix rounding drift on the last row so totals match exactly
-    const principalDrift = round2(P - aggPrincipal);
-    const interestDrift = round2(totalInterest - aggInterest);
-    if (schedule.length > 0 && (principalDrift !== 0 || interestDrift !== 0)) {
-      const last = schedule[schedule.length - 1];
-      last.principalAmt = round2(last.principalAmt + principalDrift);
-      last.interestAmt = round2(last.interestAmt + interestDrift);
-      last.emiPayAmount = round2(last.principalAmt + last.interestAmt);
-    }
+    // 3) Build schedule only if start/end dates are available
+    const schedule = parsedStartDate
+      ? generateEMISchedule({
+          principalLoanAmount: P,
+          interestRate: annualRate,
+          tenureMonths: n,
+          startDate: parsedStartDate,
+          paymentFrequency: freq,
+        })
+      : [];
+    const representativeInstallment =
+      schedule[0]?.emiPayAmount ?? round2(totalPayable / n);
+    const computedEndDate =
+      schedule.length > 0 ? schedule[schedule.length - 1].paymentFor : null;
+    const scheduleFields = parsedStartDate
+      ? {
+          startDate: parsedStartDate,
+          endDate: computedEndDate,
+          dueDay,
+        }
+      : {
+          // start/end will be set during approval when EMI schedule is generated
+          startDate: null,
+          endDate: null,
+        };
 
     // 4) Permission check
     const isAdmin = req.user.type === "ADMIN";
@@ -353,8 +320,7 @@ exports.createLoan = async (req, res) => {
             totalAmount: round2(totalPayable),
 
             // per-installment amount (first row is representative)
-            monthlyPayableAmount:
-              schedule[0]?.emiPayAmount ?? round2(totalPayable / n),
+            monthlyPayableAmount: representativeInstallment,
 
             pendingAmount: round2(totalPayable),
             interestRate: annualRate,
@@ -368,9 +334,7 @@ exports.createLoan = async (req, res) => {
             otherCharges,
             // ourPaymentType, // REMOVED
 
-            startDate: parsedStartDate,
-            endDate: schedule[schedule.length - 1].paymentFor,
-            dueDay,
+            ...scheduleFields,
 
             fileStatus: "PENDING_APPROVAL",
             disbursedDate: parseDate(disbursedDate),
