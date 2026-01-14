@@ -36,6 +36,7 @@ async function updateAllOverdueFines() {
         finePaid: true,
         fineAmount: true,
         delayDays: true,
+        isDelayed: true,
       },
     });
 
@@ -62,15 +63,26 @@ async function updateAllOverdueFines() {
           0
         );
 
-        const { daysLate, fineAmt } = calculateFine(e.paymentFor, emiDue);
-        const newFine = toNumber(toDecimal(fineAmt));
-        const newDelay = Number(daysLate || 0);
-        const isDelayed = newDelay > 0;
+        const storedFine = toNumber(toDecimal(e.fineAmount || 0));
+        const storedDelay = Number(e.delayDays || 0);
+        const storedIsDelayed = Boolean(e.isDelayed || storedDelay > 0);
+
+        let newFine = storedFine;
+        let newDelay = storedDelay;
+        let isDelayed = storedIsDelayed;
+
+        if (emiDue > 0) {
+          const { daysLate, fineAmt } = calculateFine(e.paymentFor, emiDue);
+          newFine = toNumber(toDecimal(fineAmt));
+          newDelay = Number(daysLate || 0);
+          isDelayed = newDelay > 0;
+        }
 
         // Only update if changed
         if (
-          toNumber(toDecimal(e.fineAmount || 0)) !== newFine ||
-          Number(e.delayDays || 0) !== newDelay
+          storedFine !== newFine ||
+          storedDelay !== newDelay ||
+          storedIsDelayed !== isDelayed
         ) {
           await prisma.eMI.update({
             where: { id: e.id },

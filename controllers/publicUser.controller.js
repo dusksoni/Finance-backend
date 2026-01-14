@@ -263,15 +263,28 @@ exports.getPublicPendingPayments = async (req, res) => {
           0
         );
 
-        const { daysLate, fineAmt } = calculateFine(e.paymentFor, outstanding);
-        const newFine = r2(fineAmt);
-        const newDelay = Number(daysLate || 0);
-        const isDelayed = newDelay > 0;
+        const storedFine = r2(e.fineAmount || 0);
+        const storedDelay = Number(e.delayDays || 0);
+        const storedIsDelayed = Boolean(e.isDelayed || storedDelay > 0);
+
+        let newFine = storedFine;
+        let newDelay = storedDelay;
+        let isDelayed = storedIsDelayed;
+
+        if (outstanding > 0) {
+          const { daysLate, fineAmt } = calculateFine(
+            e.paymentFor,
+            outstanding
+          );
+          newFine = r2(fineAmt);
+          newDelay = Number(daysLate || 0);
+          isDelayed = newDelay > 0;
+        }
 
         if (
-          r2(e.fineAmount || 0) !== newFine ||
-          Number(e.delayDays || 0) !== newDelay ||
-          Boolean(e.isDelayed) !== isDelayed
+          storedFine !== newFine ||
+          storedDelay !== newDelay ||
+          storedIsDelayed !== isDelayed
         ) {
           return prisma.eMI.update({
             where: { id: e.id },
@@ -307,11 +320,19 @@ exports.getPublicPendingPayments = async (req, res) => {
       );
 
       const fineAlreadyPaid = Number(inst.finePaid || 0);
-      const { daysLate, fineAmt, pct } = calculateFine(
-        inst.paymentFor,
-        outstanding
-      );
-      const fineAssessed = r2(fineAmt);
+      const storedFine = r2(inst.fineAmount || 0);
+      const storedDelay = Number(inst.delayDays || 0);
+
+      let daysLate = storedDelay;
+      let fineAssessed = storedFine;
+      let pct = 0;
+
+      if (outstanding > 0) {
+        const fineCalc = calculateFine(inst.paymentFor, outstanding);
+        daysLate = Number(fineCalc.daysLate || 0);
+        fineAssessed = r2(fineCalc.fineAmt);
+        pct = fineCalc.pct || 0;
+      }
       const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
 
       const totalDue = r2(outstanding + fineDue);
@@ -471,6 +492,7 @@ exports.makePublicPayment = async (req, res) => {
               finePaid: true,
               fineAmount: true,
               delayDays: true,
+              isDelayed: true,
             },
           });
 
@@ -484,14 +506,28 @@ exports.makePublicPayment = async (req, res) => {
               0
             );
 
-            const { daysLate, fineAmt } = calculateFine(e.paymentFor, emiDue);
-            const newFine = r2(fineAmt);
-            const newDelay = Number(daysLate || 0);
-            const isDelayed = newDelay > 0;
+            const storedFine = r2(e.fineAmount || 0);
+            const storedDelay = Number(e.delayDays || 0);
+            const storedIsDelayed = Boolean(e.isDelayed || storedDelay > 0);
+
+            let newFine = storedFine;
+            let newDelay = storedDelay;
+            let isDelayed = storedIsDelayed;
+
+            if (emiDue > 0) {
+              const { daysLate, fineAmt } = calculateFine(
+                e.paymentFor,
+                emiDue
+              );
+              newFine = r2(fineAmt);
+              newDelay = Number(daysLate || 0);
+              isDelayed = newDelay > 0;
+            }
 
             if (
-              r2(e.fineAmount || 0) !== newFine ||
-              Number(e.delayDays || 0) !== newDelay
+              storedFine !== newFine ||
+              storedDelay !== newDelay ||
+              storedIsDelayed !== isDelayed
             ) {
               return tx.eMI.update({
                 where: { id: e.id },
@@ -564,8 +600,17 @@ exports.makePublicPayment = async (req, res) => {
             0
           );
 
-          const { fineAmt, daysLate } = calculateFine(emi.paymentFor, emiDue);
-          const fineAssessed = r2(fineAmt);
+          const storedFine = r2(emi.fineAmount || 0);
+          const storedDelay = Number(emi.delayDays || 0);
+
+          let fineAssessed = storedFine;
+          let daysLate = storedDelay;
+
+          if (emiDue > 0) {
+            const fineCalc = calculateFine(emi.paymentFor, emiDue);
+            fineAssessed = r2(fineCalc.fineAmt);
+            daysLate = Number(fineCalc.daysLate || 0);
+          }
           const fineAlreadyPaid = r2(emi.finePaid || 0);
           const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
 
@@ -778,8 +823,14 @@ exports.payPublicEmiById = async (req, res) => {
       0
     );
 
-    const { fineAmt, daysLate } = calculateFine(emi.paymentFor, emiDue);
-    const fineAssessed = r2(fineAmt);
+    let fineAssessed = r2(emi.fineAmount || 0);
+    let daysLate = Number(emi.delayDays || 0);
+
+    if (emiDue > 0) {
+      const fineCalc = calculateFine(emi.paymentFor, emiDue);
+      fineAssessed = r2(fineCalc.fineAmt);
+      daysLate = Number(fineCalc.daysLate || 0);
+    }
     const fineAlreadyPaid = r2(emi.finePaid || 0);
     const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
 

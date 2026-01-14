@@ -1520,10 +1520,12 @@ exports.getLoanById = async (req, res) => {
         paymentFor: true,
         emiPayAmount: true,
         amountPaidSoFar: true,
+        finePaid: true,
         fineAmount: true,
         delayDays: true,
         updatedAt: true,
         status: true,
+        isDelayed: true,
       },
     });
 
@@ -1538,28 +1540,39 @@ exports.getLoanById = async (req, res) => {
         const updates = [];
 
         for (const e of openEmis) {
-          // fine base = emiPayAmount - amountPaidSoFar (never negative)
+          const emiPaidComponent = Math.max(
+            Number(e.amountPaidSoFar || 0) - Number(e.finePaid || 0),
+            0
+          );
+          // fine base = emiPayAmount - emiPaidComponent (never negative)
           const outstanding = Math.max(
-            Number(e.emiPayAmount || 0) - Number(e.amountPaidSoFar || 0),
+            Number(e.emiPayAmount || 0) - emiPaidComponent,
             0
           );
 
-          const { daysLate, fineAmt } = calculateFine(
-            e.paymentFor,
-            outstanding
-          );
-          const newFine = Number((Number(fineAmt) || 0).toFixed(2));
-          const newDelay = Number(daysLate || 0);
-          const isDelayed = newDelay > 0;
-
           const storedFine = Number(e.fineAmount || 0);
           const storedDelay = Number(e.delayDays || 0);
+          const storedIsDelayed = Boolean(e.isDelayed || storedDelay > 0);
+
+          let newFine = storedFine;
+          let newDelay = storedDelay;
+          let isDelayed = storedIsDelayed;
+
+          if (outstanding > 0) {
+            const { daysLate, fineAmt } = calculateFine(
+              e.paymentFor,
+              outstanding
+            );
+            newFine = Number((Number(fineAmt) || 0).toFixed(2));
+            newDelay = Number(daysLate || 0);
+            isDelayed = newDelay > 0;
+          }
 
           // only write if changed (saves writes & keeps updatedAt meaningful)
           if (
             storedFine !== newFine ||
             storedDelay !== newDelay ||
-            e.isDelayed !== isDelayed
+            storedIsDelayed !== isDelayed
           ) {
             updates.push(
               prisma.eMI.update({
