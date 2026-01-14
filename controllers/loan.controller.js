@@ -226,8 +226,12 @@ exports.createLoan = async (req, res) => {
     //   return res.status(400).json({ error: "startDate is required" });
     // }
 
-    // Parse and calculate dueDay from startDate (day of month)
+    // Parse core dates
     const parsedStartDate = parseDate(startDate);
+    const parsedDisbursedDate = parseDate(disbursedDate);
+    const parsedAgreementDate = parseDate(agreementDate);
+
+    // Calculate dueDay from startDate when available
     const dueDay = parsedStartDate ? parsedStartDate.getDate() : null;
 
     // 2) Validate principal & tenure
@@ -266,6 +270,10 @@ exports.createLoan = async (req, res) => {
       schedule[0]?.emiPayAmount ?? round2(totalPayable / n);
     const computedEndDate =
       schedule.length > 0 ? schedule[schedule.length - 1].paymentFor : null;
+    // Store placeholder dates when EMI schedule is pending so Prisma's NOT NULL constraints are satisfied.
+    const fallbackStartDate =
+      parsedAgreementDate || parsedDisbursedDate || new Date();
+    const fallbackEndDate = addMonths(new Date(fallbackStartDate), n);
     const scheduleFields = parsedStartDate
       ? {
           startDate: parsedStartDate,
@@ -273,9 +281,8 @@ exports.createLoan = async (req, res) => {
           dueDay,
         }
       : {
-          // start/end will be set during approval when EMI schedule is generated
-          startDate: null,
-          endDate: null,
+          startDate: fallbackStartDate,
+          endDate: fallbackEndDate,
         };
 
     // 4) Permission check
@@ -337,8 +344,8 @@ exports.createLoan = async (req, res) => {
             ...scheduleFields,
 
             fileStatus: "PENDING_APPROVAL",
-            disbursedDate: parseDate(disbursedDate),
-            agreementDate: parseDate(agreementDate),
+            disbursedDate: parsedDisbursedDate,
+            agreementDate: parsedAgreementDate,
 
             insuranceAmount: insuranceAmount && insuranceAmount !== "" ? parseFloat(insuranceAmount) : null,
             insuranceDate: parseDate(insuranceDate),
