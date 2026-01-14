@@ -918,6 +918,8 @@ exports.listLoans = async (req, res) => {
       regionId,
       stateId,
       cityId,
+      branchId,
+      showroomId,
       isClosed,
       isDefaulted,
       fileStatus,
@@ -954,6 +956,8 @@ exports.listLoans = async (req, res) => {
       ...(isClosed !== undefined && { isClosed: isClosed === "true" }),
       ...(isDefaulted !== undefined && { isDefaulted: isDefaulted === "true" }),
       ...(fileStatus && { fileStatus }),
+      ...(branchId && { branchId }),
+      ...(showroomId && { showroomId }),
       ...(fromDate &&
         toDate && {
           startDate: {
@@ -963,20 +967,9 @@ exports.listLoans = async (req, res) => {
         }),
     };
 
-    // Build user filter with search and location
-    const userFilter = {};
-    if (search) {
-      userFilter.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { firstName: { contains: search, mode: "insensitive" } },
-        { lastName: { contains: search, mode: "insensitive" } },
-        { phone: { contains: search } },
-      ];
-    }
-
-    // Add location filters if provided
+    const userLocationFilter = {};
     if (filterStateId || filterCityId) {
-      userFilter.addresses = {
+      userLocationFilter.addresses = {
         some: {
           ...(filterStateId && { stateId: filterStateId }),
           ...(filterCityId && { cityId: filterCityId }),
@@ -984,24 +977,53 @@ exports.listLoans = async (req, res) => {
       };
     }
 
-    // Only add user filter if it has conditions
-    if (Object.keys(userFilter).length > 0) {
-      loanWhere.user = userFilter;
+    const searchOr = [];
+    if (search) {
+      searchOr.push({
+        user: {
+          OR: [
+            { firstName: { contains: search, mode: "insensitive" } },
+            { middleName: { contains: search, mode: "insensitive" } },
+            { lastName: { contains: search, mode: "insensitive" } },
+            { phone: { contains: search } },
+          ],
+        },
+      });
+      searchOr.push({ fileNo: { contains: search, mode: "insensitive" } });
+      searchOr.push({
+        loanType: {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { label: { contains: search, mode: "insensitive" } },
+          ],
+        },
+      });
+      searchOr.push({
+        twoWheelerLoan: {
+          registrationNumber: { contains: search, mode: "insensitive" },
+        },
+      });
+      searchOr.push({
+        agriLoan: {
+          registrationNumber: { contains: search, mode: "insensitive" },
+        },
+      });
+      searchOr.push({
+        msmeLoan: {
+          registrationNumber: { contains: search, mode: "insensitive" },
+        },
+      });
     }
 
-    // Add loanType search
-    if (search) {
-      loanWhere.OR = [
-        ...(loanWhere.OR || []),
-        {
-          loanType: {
-            OR: [
-              { name: { contains: search, mode: "insensitive" } },
-              { label: { contains: search, mode: "insensitive" } },
-            ],
-          },
-        },
-      ];
+    const andConditions = [];
+    if (Object.keys(userLocationFilter).length > 0) {
+      andConditions.push({ user: userLocationFilter });
+    }
+    if (searchOr.length > 0) {
+      andConditions.push({ OR: searchOr });
+    }
+    if (andConditions.length > 0) {
+      loanWhere.AND = andConditions;
     }
 
     // 🔄 Build orderBy based on sortBy parameter
