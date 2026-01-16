@@ -127,6 +127,22 @@ router.get(
   paymentController.getPaymentInvoice
 );
 
+// 8) Edit last payment (for manual corrections)
+router.put(
+  "/payment/:paymentId/edit",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  paymentController.editLastPayment
+);
+
+// 9) Get loan account statement (for Excel export)
+router.get(
+  "/statement/:loanId",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  paymentController.getLoanStatement
+);
+
 /** --------------- Foreclose Approval Routes -------------------- */
 // List all foreclose approval requests
 router.get(

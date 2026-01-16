@@ -190,6 +190,7 @@ model User {
   maritalStatus      String?          @default("")
   email              String?          @unique
   phone              String?          @unique
+  officeNumber       String?          // Office contact number
   createdBy          String?
   adminId            String?
   employeeId         String?
@@ -223,6 +224,7 @@ model User {
   proofOfIncomeImages      File[]              @relation("ProofOfIncomeImages")
   updateRequests           UserUpdateRequest[]
   addresses                UserAddress[]
+  guarantors               UserGuarantor[]     // Guarantors for this user
 }
 
 model UserAddress {
@@ -241,6 +243,31 @@ model UserAddress {
   addressCategory AddressCategory @relation(fields: [addressCategoryId], references: [id])
   state           State           @relation(fields: [stateId], references: [id])
   city            City            @relation(fields: [cityId], references: [id])
+}
+
+// Guarantor model for users - stores guarantor information separately
+// Note: Photo IDs are NOT stored in PhotoID table to avoid conflicts if guarantor becomes a user
+model UserGuarantor {
+  id              String   @id @default(uuid())
+  userId          String
+  name            String   // Full name of guarantor
+  fatherName      String   // Father's name
+  mobileNo        String   // Mobile number
+  address         String   // Full address
+
+  // Photo ID details stored directly (not in PhotoID table to avoid conflicts)
+  photoIdType1    String?  // e.g., "AADHAAR", "PAN", etc.
+  photoIdNumber1  String?  // ID number
+  photoIdImages1  Json?    // Array of image URLs/objects
+
+  photoIdType2    String?  // Second photo ID type
+  photoIdNumber2  String?  // Second ID number
+  photoIdImages2  Json?    // Array of image URLs/objects
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserUpdateRequest {

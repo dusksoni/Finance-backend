@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const reportController = require("../controllers/report.controller");
+const paymentController = require("../controllers/payment.controller");
 const { authMiddleware, onlyAdminOrEmployee } = require("../middleware/auth");
 
 router.get(
@@ -9,6 +10,14 @@ router.get(
   authMiddleware,
   onlyAdminOrEmployee,
   reportController.downloadCibilReport
+);
+
+// Payment reports (daily, monthly, yearly)
+router.get(
+  "/payments",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  paymentController.getPaymentReports
 );
 
 module.exports = router;

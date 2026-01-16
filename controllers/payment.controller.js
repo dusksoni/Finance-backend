@@ -719,9 +719,14 @@ exports.getEmiById = async (req, res) => {
 exports.payPaymentById = async (req, res) => {
   try {
     const { emiId } = req.params;
-    let { amount, emiAmount, fineAmount, paymentMode, transactionId, paymentDate, useGateway } = req.body;
+    let { amount, emiAmount, fineAmount, paymentMode, transactionId, paymentDate, useGateway, discount } = req.body;
 
     const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    // Round fine to nearest 10
+    const roundToTen = (n) => Math.round(n / 10) * 10;
+
+    // Parse discount amount (applied to fine)
+    const discountAmount = r2(Number(discount) || 0);
 
     // Check if manual split amounts are provided
     const hasManualSplit = emiAmount !== undefined && fineAmount !== undefined;
@@ -762,11 +767,14 @@ exports.payPaymentById = async (req, res) => {
 
     if (emiDue > 0) {
       const fineCalc = calculateFine(emi.paymentFor, emiDue, paymentDate);
-      fineAssessed = r2(fineCalc.fineAmt);
+      // Round fine to nearest 10
+      fineAssessed = roundToTen(r2(fineCalc.fineAmt));
       daysLate = Number(fineCalc.daysLate || 0);
     }
     const fineAlreadyPaid = r2(emi.finePaid || 0);
-    const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
+    // Apply discount to fine (fine due after discount)
+    const fineDueBeforeDiscount = Math.max(fineAssessed - fineAlreadyPaid, 0);
+    const fineDue = Math.max(fineDueBeforeDiscount - discountAmount, 0);
 
     let payToFine, payToInterest, payToPrincipal;
 
@@ -2099,5 +2107,413 @@ exports.calculateFineForDate = async (req, res) => {
       error: err.message,
       status: 500
     });
+  }
+};
+
+// --------------------------------
+// ✏️ EDIT LAST PAYMENT
+// Only allows editing the last payment for a loan (if not done via QR/gateway)
+// --------------------------------
+exports.editLastPayment = async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    let { amount, paymentMode, transactionId, paymentDate } = req.body;
+
+    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+
+    // Check permission
+    const isAdmin = req.user?.type === "ADMIN";
+    const canEdit = isAdmin || (await checkVerifyPermission(req.user, "PAYMENT_EDIT"));
+    if (!canEdit) {
+      return res.status(403).json({ error: "Not authorized to edit payments", status: 403 });
+    }
+
+    // Fetch the payment
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { loan: true, emi: true }
+    });
+
+    if (!payment) {
+      return res.status(404).json({ error: "Payment not found", status: 404 });
+    }
+
+    // Check if this is a gateway payment (UPI payments via QR should not be editable)
+    if (payment.transactionId && (payment.paymentMode === "UPI" || payment.paymentMode === "ONLINE")) {
+      // Check if it came from ICICI gateway
+      const pendingTxn = await prisma.pendingUPITransaction.findFirst({
+        where: { merchantTranId: payment.transactionId }
+      });
+      if (pendingTxn) {
+        return res.status(403).json({
+          error: "Cannot edit payments made via QR code/gateway",
+          status: 403
+        });
+      }
+    }
+
+    // Verify this is the last payment for the loan
+    const lastPayment = await prisma.payment.findFirst({
+      where: { loanId: payment.loanId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    if (lastPayment.id !== paymentId) {
+      return res.status(400).json({
+        error: "Only the last payment can be edited",
+        status: 400
+      });
+    }
+
+    const oldAmount = r2(payment.amount);
+    const newAmount = r2(Number(amount) || oldAmount);
+    const amountDiff = r2(newAmount - oldAmount);
+
+    paymentDate = paymentDate ? new Date(paymentDate) : payment.paymentDate;
+
+    // Update in transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Update the payment
+      const updatedPayment = await tx.payment.update({
+        where: { id: paymentId },
+        data: {
+          amount: newAmount,
+          paymentMode: paymentMode || payment.paymentMode,
+          transactionId: transactionId !== undefined ? transactionId : payment.transactionId,
+          paymentDate,
+        }
+      });
+
+      // If amount changed, update EMI and loan accordingly
+      if (amountDiff !== 0 && payment.emiId) {
+        const emi = await tx.eMI.findUnique({ where: { id: payment.emiId } });
+        if (emi) {
+          // Recalculate EMI paid amounts
+          const newAmountPaidSoFar = r2(Number(emi.amountPaidSoFar || 0) + amountDiff);
+          const newTotalPaid = r2(Number(emi.totalPaid || 0) + amountDiff);
+
+          // Determine new status
+          const emiPayAmount = Number(emi.emiPayAmount || 0);
+          const finePaid = Number(emi.finePaid || 0);
+          const emiPaidComponent = Math.max(newAmountPaidSoFar - finePaid, 0);
+          const emiDueAfter = Math.max(emiPayAmount - emiPaidComponent, 0);
+          const fineAssessed = Number(emi.fineAmount || 0);
+          const fineDueAfter = Math.max(fineAssessed - finePaid, 0);
+          const newStatus = emiDueAfter <= 0 && fineDueAfter <= 0 ? "PAID" : "PARTIAL";
+
+          await tx.eMI.update({
+            where: { id: payment.emiId },
+            data: {
+              amountPaidSoFar: Math.max(newAmountPaidSoFar, 0),
+              totalPaid: Math.max(newTotalPaid, 0),
+              status: newStatus
+            }
+          });
+
+          // Update loan totals
+          const loan = await tx.loan.findUnique({ where: { id: payment.loanId } });
+          if (loan) {
+            await tx.loan.update({
+              where: { id: payment.loanId },
+              data: {
+                totalPaidAmount: r2(Number(loan.totalPaidAmount || 0) + amountDiff),
+                pendingAmount: r2(Number(loan.pendingAmount || 0) - amountDiff)
+              }
+            });
+          }
+        }
+      }
+
+      return updatedPayment;
+    });
+
+    // Run post-payment processing to sync all totals
+    if (payment.emiId && amountDiff !== 0) {
+      try {
+        await processPostPayment(payment.loanId, payment.emiId, Math.abs(amountDiff), true);
+      } catch (postErr) {
+        console.error("Post-payment processing error:", postErr);
+      }
+    }
+
+    return res.status(200).json({
+      status: 200,
+      message: "Payment updated successfully",
+      data: result
+    });
+  } catch (err) {
+    console.error("editLastPayment error:", err);
+    return res.status(500).json({ error: err.message, status: 500 });
+  }
+};
+
+// --------------------------------
+// 📊 GET LOAN ACCOUNT STATEMENT (for Excel export)
+// --------------------------------
+exports.getLoanStatement = async (req, res) => {
+  try {
+    const { loanId } = req.params;
+
+    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+
+    const loan = await prisma.loan.findUnique({
+      where: { id: loanId },
+      include: {
+        user: true,
+        loanType: true,
+        branch: true,
+        emi: {
+          orderBy: { paymentFor: "asc" },
+          include: {
+            payments: {
+              orderBy: { paymentDate: "asc" }
+            }
+          }
+        },
+        payments: {
+          orderBy: { paymentDate: "asc" }
+        },
+        twoWheelerLoan: { include: { brand: true, model: true } },
+        agriLoan: { include: { equipment: true } },
+        msmeLoan: true
+      }
+    });
+
+    if (!loan) {
+      return res.status(404).json({ error: "Loan not found", status: 404 });
+    }
+
+    // Build statement data
+    const statement = {
+      loanDetails: {
+        fileNo: loan.fileNo,
+        loanType: loan.loanType?.name || loan.loanType?.label,
+        userName: `${loan.user?.firstName || ''} ${loan.user?.middleName || ''} ${loan.user?.lastName || ''}`.trim(),
+        userPhone: loan.user?.phone,
+        branch: loan.branch?.name,
+        principalAmount: r2(loan.principalLoanAmount),
+        interestRate: loan.interestRate,
+        interestAmount: r2(loan.interestAmount),
+        totalAmount: r2(loan.totalAmount),
+        tenureMonths: loan.tenureMonths,
+        startDate: loan.startDate,
+        endDate: loan.endDate,
+        disbursedDate: loan.disbursedDate,
+        status: loan.fileStatus,
+        isClosed: loan.isClosed,
+        isForeclosed: loan.isForeclosed
+      },
+      summary: {
+        totalPaidAmount: r2(loan.totalPaidAmount),
+        totalPaidPrincipal: r2(loan.totalPaidPrincipal),
+        totalPaidInterest: r2(loan.totalPaidInterest),
+        totalPaidFine: r2(loan.totalPaidFine),
+        pendingAmount: r2(loan.pendingAmount),
+        totalDelayDays: loan.totalDelayDays
+      },
+      emiSchedule: loan.emi.map((emi, index) => ({
+        sNo: index + 1,
+        dueDate: emi.paymentFor,
+        emiAmount: r2(emi.emiPayAmount),
+        principalComponent: r2(emi.principalAmt),
+        interestComponent: r2(emi.interestAmt),
+        fineAssessed: r2(emi.fineAmount),
+        amountPaid: r2(emi.amountPaidSoFar),
+        principalPaid: r2(emi.principalPaid),
+        interestPaid: r2(emi.interestPaid),
+        finePaid: r2(emi.finePaid),
+        status: emi.status,
+        delayDays: emi.delayDays || 0,
+        payments: emi.payments.map(p => ({
+          paymentDate: p.paymentDate,
+          amount: r2(p.amount),
+          mode: p.paymentMode,
+          transactionId: p.transactionId,
+          status: p.status
+        }))
+      })),
+      allPayments: loan.payments.map((p, index) => ({
+        sNo: index + 1,
+        paymentDate: p.paymentDate,
+        amount: r2(p.amount),
+        mode: p.paymentMode,
+        transactionId: p.transactionId,
+        status: p.status,
+        verified: p.verified,
+        isForeclosure: p.isForeclosure
+      }))
+    };
+
+    // Add vehicle/equipment details based on loan type
+    if (loan.twoWheelerLoan) {
+      statement.loanDetails.vehicleDetails = {
+        vehicleName: loan.twoWheelerLoan.vehicleName,
+        brand: loan.twoWheelerLoan.brand?.name,
+        model: loan.twoWheelerLoan.model?.name,
+        registrationNumber: loan.twoWheelerLoan.registrationNumber,
+        chassisNumber: loan.twoWheelerLoan.chassisNumber,
+        engineNumber: loan.twoWheelerLoan.engineNumber
+      };
+    } else if (loan.agriLoan) {
+      statement.loanDetails.equipmentDetails = {
+        equipment: loan.agriLoan.equipment?.name,
+        usageArea: loan.agriLoan.usageArea,
+        isSeasonal: loan.agriLoan.isSeasonal,
+        registrationNumber: loan.agriLoan.registrationNumber
+      };
+    } else if (loan.msmeLoan) {
+      statement.loanDetails.businessDetails = {
+        businessName: loan.msmeLoan.businessName,
+        businessType: loan.msmeLoan.businessType,
+        registrationNumber: loan.msmeLoan.registrationNumber,
+        gstNumber: loan.msmeLoan.gstNumber,
+        monthlyRevenue: loan.msmeLoan.monthlyRevenue
+      };
+    }
+
+    return res.status(200).json({
+      status: 200,
+      data: statement
+    });
+  } catch (err) {
+    console.error("getLoanStatement error:", err);
+    return res.status(500).json({ error: err.message, status: 500 });
+  }
+};
+
+// --------------------------------
+// 📈 GET PAYMENT REPORTS (daily, monthly, yearly)
+// --------------------------------
+exports.getPaymentReports = async (req, res) => {
+  try {
+    const { reportType, date, month, year, branchId } = req.query;
+
+    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+
+    let startDate, endDate;
+    const now = new Date();
+
+    if (reportType === "daily") {
+      // For daily report, use the provided date or today
+      const reportDate = date ? new Date(date) : now;
+      startDate = new Date(reportDate.getFullYear(), reportDate.getMonth(), reportDate.getDate(), 0, 0, 0);
+      endDate = new Date(reportDate.getFullYear(), reportDate.getMonth(), reportDate.getDate(), 23, 59, 59);
+    } else if (reportType === "monthly") {
+      // For monthly report, use month and year
+      const reportMonth = month ? parseInt(month) - 1 : now.getMonth(); // 0-indexed
+      const reportYear = year ? parseInt(year) : now.getFullYear();
+      startDate = new Date(reportYear, reportMonth, 1, 0, 0, 0);
+      endDate = new Date(reportYear, reportMonth + 1, 0, 23, 59, 59); // Last day of month
+    } else if (reportType === "yearly") {
+      // For yearly report, use year
+      const reportYear = year ? parseInt(year) : now.getFullYear();
+      startDate = new Date(reportYear, 0, 1, 0, 0, 0);
+      endDate = new Date(reportYear, 11, 31, 23, 59, 59);
+    } else {
+      return res.status(400).json({ error: "Invalid reportType. Use 'daily', 'monthly', or 'yearly'", status: 400 });
+    }
+
+    // Build where clause
+    const whereClause = {
+      paymentDate: {
+        gte: startDate,
+        lte: endDate
+      },
+      status: { in: ["PAID", "VERIFICATION_PENDING"] }
+    };
+
+    // Add branch filter if provided
+    if (branchId) {
+      whereClause.loan = { branchId };
+    }
+
+    // Fetch payments with related data
+    const payments = await prisma.payment.findMany({
+      where: whereClause,
+      include: {
+        loan: {
+          include: {
+            user: true,
+            branch: true,
+            loanType: true
+          }
+        },
+        emi: true
+      },
+      orderBy: { paymentDate: "asc" }
+    });
+
+    // Aggregate statistics
+    let totalAmount = 0;
+    let totalPrincipal = 0;
+    let totalInterest = 0;
+    let totalFine = 0;
+    let verifiedAmount = 0;
+    let pendingAmount = 0;
+
+    const paymentModes = {};
+    const branchWise = {};
+
+    const paymentDetails = payments.map((p) => {
+      const amount = r2(p.amount);
+      totalAmount += amount;
+
+      if (p.verified) {
+        verifiedAmount += amount;
+      } else {
+        pendingAmount += amount;
+      }
+
+      // Count by payment mode
+      paymentModes[p.paymentMode] = (paymentModes[p.paymentMode] || 0) + amount;
+
+      // Branch-wise collection
+      const branchName = p.loan?.branch?.name || "Unknown";
+      branchWise[branchName] = (branchWise[branchName] || 0) + amount;
+
+      return {
+        paymentId: p.id,
+        paymentDate: p.paymentDate,
+        amount: amount,
+        paymentMode: p.paymentMode,
+        transactionId: p.transactionId,
+        status: p.status,
+        verified: p.verified,
+        loanFileNo: p.loan?.fileNo,
+        loanType: p.loan?.loanType?.name || p.loan?.loanType?.label,
+        userName: p.loan?.user ? `${p.loan.user.firstName || ''} ${p.loan.user.lastName || ''}`.trim() : '',
+        userPhone: p.loan?.user?.phone,
+        branch: p.loan?.branch?.name
+      };
+    });
+
+    return res.status(200).json({
+      status: 200,
+      data: {
+        reportType,
+        period: {
+          startDate,
+          endDate
+        },
+        summary: {
+          totalPayments: payments.length,
+          totalAmount: r2(totalAmount),
+          verifiedAmount: r2(verifiedAmount),
+          pendingVerificationAmount: r2(pendingAmount)
+        },
+        byPaymentMode: Object.entries(paymentModes).map(([mode, amount]) => ({
+          mode,
+          amount: r2(amount)
+        })),
+        byBranch: Object.entries(branchWise).map(([branch, amount]) => ({
+          branch,
+          amount: r2(amount)
+        })),
+        payments: paymentDetails
+      }
+    });
+  } catch (err) {
+    console.error("getPaymentReports error:", err);
+    return res.status(500).json({ error: err.message, status: 500 });
   }
 };

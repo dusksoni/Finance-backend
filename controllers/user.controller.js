@@ -21,6 +21,7 @@ exports.createUser = async (req, res) => {
     maritalStatus,
     qualification,
     phone,
+    officeNumber,
     email,
     isDefaulter,
     photo,
@@ -30,11 +31,33 @@ exports.createUser = async (req, res) => {
     profession,
     addresses = [], // Array of address objects
     proofOfIncomeImages = [],
+    guarantors = [], // Array of guarantor objects
   } = req.body;
 
   if (!firstName || !phone) {
     return res.status(400).json({ error: "First name and phone are required" });
   }
+
+  // Validate guarantors - minimum 2 required
+  if (!guarantors || guarantors.length < 2) {
+    return res.status(400).json({ error: "Minimum 2 guarantors are required" });
+  }
+
+  // Validate each guarantor has required fields
+  for (let i = 0; i < guarantors.length; i++) {
+    const g = guarantors[i];
+    if (!g.name || !g.fatherName || !g.mobileNo || !g.address) {
+      return res.status(400).json({
+        error: `Guarantor ${i + 1}: name, fatherName, mobileNo, and address are required`
+      });
+    }
+  }
+
+  // Check for Aadhar in photoIds - at least one Aadhar is required
+  const hasAadhar = photoIds.some(pid => {
+    // Check if it's Aadhar by photoIdTypeId - we'll validate this later with the actual type
+    return pid.photoIdNumber && pid.photoIdNumber.length === 12;
+  });
 
   try {
     const matches = await prisma.user.findMany({
@@ -117,6 +140,7 @@ exports.createUser = async (req, res) => {
         relationLastName,
         dateOfBirth,
         phone,
+        officeNumber,
         genderId: genderId,
         maritalStatus,
         email,
@@ -154,6 +178,23 @@ exports.createUser = async (req, res) => {
             })),
           },
         }),
+        // Create guarantors - stored separately, not in PhotoID table
+        ...(guarantors && guarantors.length > 0 && {
+          guarantors: {
+            create: guarantors.map((g) => ({
+              name: g.name,
+              fatherName: g.fatherName,
+              mobileNo: g.mobileNo,
+              address: g.address,
+              photoIdType1: g.photoIdType1 || null,
+              photoIdNumber1: g.photoIdNumber1 || null,
+              photoIdImages1: g.photoIdImages1 || null,
+              photoIdType2: g.photoIdType2 || null,
+              photoIdNumber2: g.photoIdNumber2 || null,
+              photoIdImages2: g.photoIdImages2 || null,
+            })),
+          },
+        }),
       },
       include: {
         photoIds: { include: { images: true } },
@@ -171,6 +212,7 @@ exports.createUser = async (req, res) => {
             city: true,
           },
         },
+        guarantors: true,
       },
     });
 
@@ -296,6 +338,7 @@ exports.getAllUsers = async (req, res) => {
               city: true,
             },
           },
+          guarantors: true,
         },
       }),
       prisma.user.count({ where: filters }),
@@ -415,6 +458,7 @@ exports.getUserById = async (req, res) => {
             loanType: true,
           },
         },
+        guarantors: true,
       },
     });
 
@@ -441,6 +485,7 @@ exports.updateUser = async (req, res) => {
     maritalStatus,
     qualification,
     phone,
+    officeNumber,
     email,
     isDefaulter,
     photo,
@@ -450,6 +495,7 @@ exports.updateUser = async (req, res) => {
     profession,
     addresses = [], // Array of address objects
     proofOfIncomeImages = [],
+    guarantors = [], // Array of guarantor objects
   } = req.body;
 
   try {
@@ -567,6 +613,7 @@ exports.updateUser = async (req, res) => {
           profession,
           maritalStatus,
           qualification,
+          officeNumber,
 
           relationType: relationTypeId ? { connect: { id: relationTypeId } } : undefined,
           gender:        genderId      ? { connect: { id: genderId } }       : undefined,
@@ -602,6 +649,27 @@ exports.updateUser = async (req, res) => {
                 },
               }
             : {}),
+
+          // Update guarantors: delete all existing and create new ones
+          ...(guarantors?.length
+            ? {
+                guarantors: {
+                  deleteMany: {},
+                  create: guarantors.map((g) => ({
+                    name: g.name,
+                    fatherName: g.fatherName,
+                    mobileNo: g.mobileNo,
+                    address: g.address,
+                    photoIdType1: g.photoIdType1 || null,
+                    photoIdNumber1: g.photoIdNumber1 || null,
+                    photoIdImages1: g.photoIdImages1 || null,
+                    photoIdType2: g.photoIdType2 || null,
+                    photoIdNumber2: g.photoIdNumber2 || null,
+                    photoIdImages2: g.photoIdImages2 || null,
+                  })),
+                },
+              }
+            : {}),
         },
         include: {
           photoIds: { include: { images: true, photoIdType: true } },
@@ -614,6 +682,7 @@ exports.updateUser = async (req, res) => {
               city: true,
             },
           },
+          guarantors: true,
         },
       });
 
