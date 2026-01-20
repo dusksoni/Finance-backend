@@ -20,4 +20,12 @@ router.get(
   paymentController.getPaymentReports
 );
 
+// EMI reports (overdue, partial, upcoming, paid)
+router.get(
+  "/emis",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  paymentController.getEmiReports
+);
+
 module.exports = router;

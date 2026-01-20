@@ -28,8 +28,8 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
     // Use provided date or default to today
     const referenceDate = date ? new Date(date) : new Date();
 
-    // Helper for precise rounding using Decimal.js
-    const r2 = (n) => new Decimal(n || 0).toDecimalPlaces(2).toNumber();
+    // Helper for rounding to whole numbers (no decimals)
+    const r2 = (n) => Math.round(Number(n) || 0);
 
     // 0) Check cache: only refresh fines if > 1 hour since last update
     // Only update database if using today's date (not for hypothetical future/past dates)
@@ -171,7 +171,7 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
       data: {
         loanId,
         pending,
-        grandTotal: grandTotal.toDecimalPlaces(2).toNumber(),
+        grandTotal: Math.round(grandTotal.toNumber()),
         referenceDate: referenceDate.toISOString().split('T')[0]
       },
       status: 200,
@@ -190,8 +190,8 @@ exports.makePayment = async (req, res) => {
     const { loanId } = req.params;
     let { amountPaid, totalEmiAmount, totalFineAmount, paymentMode, transactionId, paymentDate, useGateway } = req.body;
 
-    // Helper for precise rounding using Decimal.js
-    const r2 = (n) => new Decimal(n || 0).toDecimalPlaces(2).toNumber();
+    // Helper for rounding to whole numbers (no decimals)
+    const r2 = (n) => Math.round(Number(n) || 0);
 
     // Check if manual breakdown is provided (new simpler approach)
     const hasManualBreakdown = totalEmiAmount !== undefined && totalFineAmount !== undefined;
@@ -656,7 +656,7 @@ exports.getEmiById = async (req, res) => {
       return res.status(404).json({ error: "Payment not found" });
     }
 
-    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    const r2 = (n) => Math.round(Number(n) || 0);
 
     const emiPaidComponent = Math.max(
       Number(inst.amountPaidSoFar || 0) - Number(inst.finePaid || 0),
@@ -721,7 +721,7 @@ exports.payPaymentById = async (req, res) => {
     const { emiId } = req.params;
     let { amount, emiAmount, fineAmount, paymentMode, transactionId, paymentDate, useGateway, discount } = req.body;
 
-    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    const r2 = (n) => Math.round(Number(n) || 0);
     // Round fine to nearest 10
     const roundToTen = (n) => Math.round(n / 10) * 10;
 
@@ -997,7 +997,7 @@ exports.verifyPayment = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    const r2 = (n) => Math.round(Number(n) || 0);
 
     const result = await prisma.$transaction(async (tx) => {
       // 1) Mark payment verified
@@ -1202,7 +1202,7 @@ exports.getForeclosureDetails = async (req, res) => {
       return res.status(404).json({ status: 404, error: "Loan not found" });
     }
 
-    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    const r2 = (n) => Math.round(Number(n) || 0);
     // Round to nearest 10: amounts ending in 1-5 round down, 6-9 round up, no decimals
     const roundToNearest10 = (amount) => {
       if (typeof amount !== "number") return 0;
@@ -1380,7 +1380,7 @@ exports.postForeclosurePayment = async (req, res) => {
     const { loanId } = req.params;
     let { amountPaid, paymentMode, transactionId, paymentDate } = req.body;
 
-    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    const r2 = (n) => Math.round(Number(n) || 0);
     amountPaid = r2(Number(amountPaid));
     if (!amountPaid || amountPaid <= 0) {
       return res.status(400).json({ error: "amountPaid must be > 0" });
@@ -1772,7 +1772,7 @@ exports.postForeclosurePayment = async (req, res) => {
 exports.reversePayment = async (req, res) => {
   try {
     const { paymentId } = req.params;
-    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    const r2 = (n) => Math.round(Number(n) || 0);
 
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
@@ -2008,7 +2008,7 @@ exports.calculateFineForDate = async (req, res) => {
       });
     }
 
-    const r2 = (n) => new Decimal(n || 0).toDecimalPlaces(2).toNumber();
+    const r2 = (n) => Math.round(Number(n) || 0);
     const referenceDate = new Date(paymentDate);
 
     // Validate date is not in future
@@ -2119,7 +2119,7 @@ exports.editLastPayment = async (req, res) => {
     const { paymentId } = req.params;
     let { amount, paymentMode, transactionId, paymentDate } = req.body;
 
-    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    const r2 = (n) => Math.round(Number(n) || 0);
 
     // Check permission
     const isAdmin = req.user?.type === "ADMIN";
@@ -2254,7 +2254,7 @@ exports.getLoanStatement = async (req, res) => {
   try {
     const { loanId } = req.params;
 
-    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    const r2 = (n) => Math.round(Number(n) || 0);
 
     const loan = await prisma.loan.findUnique({
       where: { id: loanId },
@@ -2386,14 +2386,21 @@ exports.getLoanStatement = async (req, res) => {
 // --------------------------------
 exports.getPaymentReports = async (req, res) => {
   try {
-    const { reportType, date, month, year, branchId } = req.query;
+    const { reportType, date, month, year, branchId, from, to, status, paymentMode, download } = req.query;
 
-    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    const r2 = (n) => Math.round(Number(n) || 0);
 
     let startDate, endDate;
     const now = new Date();
 
-    if (reportType === "daily") {
+    // Support both from/to date range OR reportType approach
+    if (from && to) {
+      // Use from/to date range directly
+      startDate = new Date(from);
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(to);
+      endDate.setHours(23, 59, 59, 999);
+    } else if (reportType === "daily") {
       // For daily report, use the provided date or today
       const reportDate = date ? new Date(date) : now;
       startDate = new Date(reportDate.getFullYear(), reportDate.getMonth(), reportDate.getDate(), 0, 0, 0);
@@ -2410,7 +2417,7 @@ exports.getPaymentReports = async (req, res) => {
       startDate = new Date(reportYear, 0, 1, 0, 0, 0);
       endDate = new Date(reportYear, 11, 31, 23, 59, 59);
     } else {
-      return res.status(400).json({ error: "Invalid reportType. Use 'daily', 'monthly', or 'yearly'", status: 400 });
+      return res.status(400).json({ error: "Invalid parameters. Provide either 'from' and 'to' dates, or 'reportType' (daily, monthly, yearly)", status: 400 });
     }
 
     // Build where clause
@@ -2418,9 +2425,20 @@ exports.getPaymentReports = async (req, res) => {
       paymentDate: {
         gte: startDate,
         lte: endDate
-      },
-      status: { in: ["PAID", "VERIFICATION_PENDING"] }
+      }
     };
+
+    // Add status filter if provided, otherwise default to PAID and VERIFICATION_PENDING
+    if (status) {
+      whereClause.status = status;
+    } else {
+      whereClause.status = { in: ["PAID", "VERIFICATION_PENDING"] };
+    }
+
+    // Add payment mode filter if provided
+    if (paymentMode) {
+      whereClause.paymentMode = paymentMode;
+    }
 
     // Add branch filter if provided
     if (branchId) {
@@ -2438,9 +2456,11 @@ exports.getPaymentReports = async (req, res) => {
             loanType: true
           }
         },
-        emi: true
+        emi: true,
+        admin: { select: { id: true, name: true } },
+        employee: { select: { id: true, name: true } }
       },
-      orderBy: { paymentDate: "asc" }
+      orderBy: { paymentDate: "desc" }
     });
 
     // Aggregate statistics
@@ -2472,6 +2492,7 @@ exports.getPaymentReports = async (req, res) => {
       branchWise[branchName] = (branchWise[branchName] || 0) + amount;
 
       return {
+        id: p.id,
         paymentId: p.id,
         paymentDate: p.paymentDate,
         amount: amount,
@@ -2479,41 +2500,246 @@ exports.getPaymentReports = async (req, res) => {
         transactionId: p.transactionId,
         status: p.status,
         verified: p.verified,
+        loanId: p.loanId,
         loanFileNo: p.loan?.fileNo,
         loanType: p.loan?.loanType?.name || p.loan?.loanType?.label,
         userName: p.loan?.user ? `${p.loan.user.firstName || ''} ${p.loan.user.lastName || ''}`.trim() : '',
         userPhone: p.loan?.user?.phone,
-        branch: p.loan?.branch?.name
+        branch: p.loan?.branch?.name,
+        loan: p.loan,
+        admin: p.admin,
+        employee: p.employee
+      };
+    });
+
+    // Count verified and unverified payments
+    const verifiedCount = payments.filter(p => p.verified).length;
+    const unverifiedCount = payments.filter(p => !p.verified).length;
+
+    return res.status(200).json({
+      status: 200,
+      data: paymentDetails,
+      summary: {
+        totalCount: payments.length,
+        totalAmount: r2(totalAmount),
+        verifiedCount,
+        unverifiedCount,
+        verifiedAmount: r2(verifiedAmount),
+        pendingVerificationAmount: r2(pendingAmount)
+      },
+      period: {
+        startDate,
+        endDate
+      },
+      byPaymentMode: Object.entries(paymentModes).map(([mode, amount]) => ({
+        mode,
+        amount: r2(amount)
+      })),
+      byBranch: Object.entries(branchWise).map(([branch, amount]) => ({
+        branch,
+        amount: r2(amount)
+      }))
+    });
+  } catch (err) {
+    console.error("getPaymentReports error:", err);
+    return res.status(500).json({ error: err.message, status: 500 });
+  }
+};
+
+// --------------------------------
+// 📊 GET EMI REPORTS (overdue, partial, upcoming, paid)
+// --------------------------------
+exports.getEmiReports = async (req, res) => {
+  try {
+    const { status, from, to, branchId, loanTypeId } = req.query;
+
+    const r2 = (n) => Math.round(Number(n) || 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Build where clause
+    const whereClause = {};
+
+    // Filter by EMI status
+    if (status === "overdue") {
+      // Overdue: UNPAID EMIs with paymentFor date in the past
+      whereClause.status = "UNPAID";
+      whereClause.paymentFor = { lt: today };
+    } else if (status === "partial") {
+      // Partial: EMIs with PARTIAL status
+      whereClause.status = "PARTIAL";
+    } else if (status === "upcoming") {
+      // Upcoming: UNPAID EMIs with paymentFor date in the future (next 30 days)
+      const next30Days = new Date(today);
+      next30Days.setDate(next30Days.getDate() + 30);
+      whereClause.status = "UNPAID";
+      whereClause.paymentFor = { gte: today, lte: next30Days };
+    } else if (status === "paid") {
+      // Paid: EMIs with PAID status
+      whereClause.status = "PAID";
+    } else if (status === "all_pending") {
+      // All pending: UNPAID or PARTIAL
+      whereClause.status = { in: ["UNPAID", "PARTIAL"] };
+    }
+
+    // Filter by date range if provided
+    if (from && to) {
+      whereClause.paymentFor = {
+        ...whereClause.paymentFor,
+        gte: new Date(from),
+        lte: new Date(to)
+      };
+    }
+
+    // Filter by branch
+    if (branchId) {
+      whereClause.loan = { branchId };
+    }
+
+    // Filter by loan type
+    if (loanTypeId) {
+      whereClause.loan = { ...whereClause.loan, loanTypeId };
+    }
+
+    // Fetch EMIs with related data
+    const emis = await prisma.eMI.findMany({
+      where: whereClause,
+      include: {
+        loan: {
+          include: {
+            user: true,
+            branch: true,
+            loanType: true
+          }
+        }
+      },
+      orderBy: [
+        { paymentFor: "asc" },
+        { createdAt: "asc" }
+      ]
+    });
+
+    // Calculate statistics
+    let totalEmiAmount = 0;
+    let totalPaidAmount = 0;
+    let totalPendingAmount = 0;
+    let totalFineAmount = 0;
+
+    const statusCounts = {
+      overdue: 0,
+      partial: 0,
+      upcoming: 0,
+      paid: 0
+    };
+
+    const branchWise = {};
+    const loanTypeWise = {};
+
+    const emiDetails = emis.map((emi) => {
+      const emiAmount = r2(emi.emiPayAmount || 0);
+      const paidAmount = r2(emi.amountPaidSoFar || 0);
+      const fineAmount = r2(emi.fineAmount || 0);
+      const finePaid = r2(emi.finePaid || 0);
+      const pendingAmount = r2(Math.max(emiAmount - (paidAmount - finePaid), 0) + Math.max(fineAmount - finePaid, 0));
+
+      totalEmiAmount += emiAmount;
+      totalPaidAmount += paidAmount;
+      totalPendingAmount += pendingAmount;
+      totalFineAmount += fineAmount;
+
+      // Count by status
+      const paymentForDate = new Date(emi.paymentFor);
+      if (emi.status === "PAID") {
+        statusCounts.paid++;
+      } else if (emi.status === "PARTIAL") {
+        statusCounts.partial++;
+      } else if (paymentForDate < today) {
+        statusCounts.overdue++;
+      } else {
+        statusCounts.upcoming++;
+      }
+
+      // Branch-wise aggregation
+      const branchName = emi.loan?.branch?.name || "Unknown";
+      if (!branchWise[branchName]) {
+        branchWise[branchName] = { count: 0, amount: 0, pending: 0 };
+      }
+      branchWise[branchName].count++;
+      branchWise[branchName].amount += emiAmount;
+      branchWise[branchName].pending += pendingAmount;
+
+      // Loan type-wise aggregation
+      const loanTypeName = emi.loan?.loanType?.name || "Unknown";
+      if (!loanTypeWise[loanTypeName]) {
+        loanTypeWise[loanTypeName] = { count: 0, amount: 0, pending: 0 };
+      }
+      loanTypeWise[loanTypeName].count++;
+      loanTypeWise[loanTypeName].amount += emiAmount;
+      loanTypeWise[loanTypeName].pending += pendingAmount;
+
+      // Determine display status
+      let displayStatus = emi.status;
+      if (emi.status === "UNPAID" && paymentForDate < today) {
+        displayStatus = "OVERDUE";
+      }
+
+      return {
+        id: emi.id,
+        emiId: emi.id,
+        loanId: emi.loanId,
+        paymentFor: emi.paymentFor,
+        emiPayAmount: emiAmount,
+        principalAmt: r2(emi.principalAmt || 0),
+        interestAmt: r2(emi.interestAmt || 0),
+        amountPaidSoFar: paidAmount,
+        fineAmount: fineAmount,
+        finePaid: finePaid,
+        fineDue: r2(Math.max(fineAmount - finePaid, 0)),
+        pendingAmount: pendingAmount,
+        delayDays: emi.delayDays || 0,
+        status: emi.status,
+        displayStatus: displayStatus,
+        isDelayed: emi.isDelayed,
+        loan: {
+          id: emi.loan?.id,
+          fileNo: emi.loan?.fileNo,
+          loanType: emi.loan?.loanType?.name,
+          branch: emi.loan?.branch?.name,
+          user: emi.loan?.user ? {
+            id: emi.loan.user.id,
+            name: `${emi.loan.user.firstName || ''} ${emi.loan.user.middleName || ''} ${emi.loan.user.lastName || ''}`.trim(),
+            phone: emi.loan.user.phone
+          } : null
+        }
       };
     });
 
     return res.status(200).json({
       status: 200,
-      data: {
-        reportType,
-        period: {
-          startDate,
-          endDate
-        },
-        summary: {
-          totalPayments: payments.length,
-          totalAmount: r2(totalAmount),
-          verifiedAmount: r2(verifiedAmount),
-          pendingVerificationAmount: r2(pendingAmount)
-        },
-        byPaymentMode: Object.entries(paymentModes).map(([mode, amount]) => ({
-          mode,
-          amount: r2(amount)
-        })),
-        byBranch: Object.entries(branchWise).map(([branch, amount]) => ({
-          branch,
-          amount: r2(amount)
-        })),
-        payments: paymentDetails
-      }
+      data: emiDetails,
+      summary: {
+        totalCount: emis.length,
+        totalEmiAmount: r2(totalEmiAmount),
+        totalPaidAmount: r2(totalPaidAmount),
+        totalPendingAmount: r2(totalPendingAmount),
+        totalFineAmount: r2(totalFineAmount),
+        statusCounts
+      },
+      byBranch: Object.entries(branchWise).map(([branch, data]) => ({
+        branch,
+        count: data.count,
+        amount: r2(data.amount),
+        pending: r2(data.pending)
+      })),
+      byLoanType: Object.entries(loanTypeWise).map(([loanType, data]) => ({
+        loanType,
+        count: data.count,
+        amount: r2(data.amount),
+        pending: r2(data.pending)
+      }))
     });
   } catch (err) {
-    console.error("getPaymentReports error:", err);
+    console.error("getEmiReports error:", err);
     return res.status(500).json({ error: err.message, status: 500 });
   }
 };
