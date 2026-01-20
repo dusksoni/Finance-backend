@@ -308,13 +308,11 @@ exports.makePayment = async (req, res) => {
         });
 
         // Check verification permission once
-        // Gateway payments are auto-approved, manual payments require permission
+        // Gateway payments are auto-approved, manual CASH payments require permission
+        // CHEQUE and manual ONLINE payments should NOT be auto-verified
         const verified = useGateway
           ? true // Auto-approve gateway payments
-          : paymentMode === "CASH"
-          ? req.user.type === "ADMIN" ||
-            checkVerifyPermission(req.user, "PAYMENT_VERIFY")
-          : true;
+          : (paymentMode === "CASH" && (await checkVerifyPermission(req.user, "PAYMENT_VERIFY")));
 
         // CREATE ONE PAYMENT RECORD FOR THE ENTIRE AMOUNT
         const payment = await tx.payment.create({
@@ -831,10 +829,11 @@ exports.payPaymentById = async (req, res) => {
       );
     }
 
-    // Gateway payments are auto-approved, manual payments require permission
+    // Gateway payments are auto-approved, manual CASH payments require permission
+    // CHEQUE and manual ONLINE payments should NOT be auto-verified
     const canSelfVerify = useGateway
       ? true
-      : (await checkVerifyPermission(req.user, "PAYMENT_VERIFY"));
+      : (paymentMode === "CASH" && (await checkVerifyPermission(req.user, "PAYMENT_VERIFY")));
 
     // --- Keep the transaction TINY; post-processing happens AFTER commit ---
     const txResult = await prisma.$transaction(

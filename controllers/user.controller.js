@@ -793,8 +793,7 @@ exports.rejectUserUpdate = async (req, res) => {
 
     res.json({
       status: 200,
-      message: "Update approved and applied",
-      data: updatedUser,
+      message: "Update request rejected",
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

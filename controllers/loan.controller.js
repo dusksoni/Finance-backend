@@ -492,12 +492,7 @@ exports.updateLoan = async (req, res) => {
     const newDueDay = newStartDate.getDate();
     const newLoanTypeId = payload.loanTypeId ?? existing.loanTypeId;
 
-    // 3) recalc EMI & total
-    const totalPayable =
-      newPrincipal * Math.pow(1 + newPct / 100, newTenure / 12);
-    const EMI = totalPayable / newTenure;
-
-    // 4) schedule reset?
+    // 3) schedule reset?
     const mustReset =
       existing.paymentFrequency !== newFreq ||
       existing.tenureMonths !== newTenure ||
@@ -518,6 +513,22 @@ exports.updateLoan = async (req, res) => {
         error: "Cannot modify principal loan amount for an approved loan with existing payments."
       });
     }
+
+    // 4) recalc EMI & total using SIMPLE interest (matching createLoan)
+    const round2 = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
+
+    // Generate temporary schedule to get precise totals and representative EMI
+    const tempSchedule = generateEMISchedule({
+      principalLoanAmount: newPrincipal,
+      interestRate: newPct,
+      tenureMonths: newTenure,
+      startDate: newStartDate,
+      paymentFrequency: newFreq,
+    });
+
+    const totalInterest = round2(tempSchedule.reduce((sum, row) => sum + row.interestAmt, 0));
+    const totalPayable = round2(newPrincipal + totalInterest);
+    const representativeEMI = tempSchedule[0]?.emiPayAmount ?? round2(totalPayable / newTenure);
 
     // 5) permissions
     const canSelfApprove =
@@ -553,11 +564,9 @@ exports.updateLoan = async (req, res) => {
             // productAmount: newProd, // REMOVED
             // downPayment: newDown, // REMOVED
             principalLoanAmount: newPrincipal,
-            interestAmount: parseFloat(
-              (totalPayable - newPrincipal).toFixed(2)
-            ),
-            totalAmount: parseFloat(totalPayable.toFixed(2)),
-            monthlyPayableAmount: parseFloat(EMI.toFixed(2)),
+            interestAmount: totalInterest,
+            totalAmount: totalPayable,
+            monthlyPayableAmount: representativeEMI,
             pendingAmount: parseFloat(
               (totalPayable - existing.totalPaidAmount).toFixed(2)
             ),
@@ -606,37 +615,21 @@ exports.updateLoan = async (req, res) => {
           },
         });
 
-        // b) reset schedule?
+        // b) reset schedule? (Flat Rate matching createLoan)
         if (mustReset) {
           await tx.eMI.deleteMany({ where: { loanId } });
 
-          let bal = newPrincipal;
-          const newSchedule = [];
-          // First due date = newStartDate itself (since dueDay is extracted from newStartDate)
-          let firstDue = newStartDate;
+          const schedule = generateEMISchedule({
+            principalLoanAmount: newPrincipal,
+            interestRate: newPct,
+            tenureMonths: newTenure,
+            startDate: newStartDate,
+            paymentFrequency: newFreq,
+          });
 
-          for (let i = 0; i < newTenure; i++) {
-            const dueDate = offsetFn(firstDue, step * i);
-            const intPort = parseFloat((bal * (newPct / 100 / 12)).toFixed(2));
-            const priPort = parseFloat((EMI - intPort).toFixed(2));
-            bal = parseFloat((bal - priPort).toFixed(2));
-
-            newSchedule.push({
-              loanId: loan.id,
-              paymentFor: dueDate,
-              paymentDate: dueDate,
-              emiPayAmount: parseFloat(EMI.toFixed(2)),
-              principalAmt: priPort,
-              interestAmt: intPort,
-              amountPaidSoFar: 0,
-              fineAmount: 0,
-              status: "UNPAID",
-              paymentStatus: "PENDING",
-              isDelayed: false,
-              isForeclosure: false,
-            });
-          }
-          await tx.eMI.createMany({ data: newSchedule });
+          await tx.eMI.createMany({
+            data: schedule.map((row) => ({ ...row, loanId: loan.id })),
+          });
         }
 
         // c) upsert subtype

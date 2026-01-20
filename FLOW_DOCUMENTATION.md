@@ -121,3 +121,10 @@ This document describes the end-to-end lifecycle of a loan in the Kushal Finance
     - All payments are `verified`.
 - `fileStatus` becomes `CLOSED`.
 - `isClosed` is set to `true`.
+
+---
+
+## 🛡️ Security & Integrity (Updated)
+- **Interest Consistency:** Both creation and updates now use **Simple Interest (Flat Rate)** for consistent EMI scheduling.
+- **Payment Verification:** `CHEQUE` and manual `ONLINE` entries now require manual verification, while `CASH` (for authorized users) and `Gateway` payments remain auto-verified.
+- **Permissions:** Sensitive actions like User Update Approval now require specific permissions (`USER_UPDATE_APPROVE`).
