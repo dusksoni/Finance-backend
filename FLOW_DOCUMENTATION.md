@@ -10,7 +10,7 @@ This document describes the end-to-end lifecycle of a loan in the Kushal Finance
 
 - **Input:** Basic details (name, DOB, gender, etc.), addresses, contact info, photo, proof of income, and **at least 2 guarantors**.
 - **Process:**
-    - Validates that the user doesn't already exist (via photo ID or phone/email).
+    - Validates that the user doesn't already exist (Robust Check: Flags duplicate if **any** of Photo ID, Email, or Phone already exist).
     - Creates `File` records for any uploaded images (photos, proof of income).
     - Creates a `User` record in the database.
     - Stores `UserAddress` and `UserGuarantor` records.
@@ -127,4 +127,5 @@ This document describes the end-to-end lifecycle of a loan in the Kushal Finance
 ## 🛡️ Security & Integrity (Updated)
 - **Interest Consistency:** Both creation and updates now use **Simple Interest (Flat Rate)** for consistent EMI scheduling.
 - **Payment Verification:** `CHEQUE` and manual `ONLINE` entries now require manual verification, while `CASH` (for authorized users) and `Gateway` payments remain auto-verified.
-- **Permissions:** Sensitive actions like User Update Approval now require specific permissions (`USER_UPDATE_APPROVE`).
+- **Balance Integrity:** `pendingAmount` is recalculated from EMI aggregates after every verified payment to prevent rounding drift.
+- **Permissions:** Sensitive actions like User Update Approval (`USER_UPDATE_APPROVE`) and Direct Foreclosure (`FORECLOSE_VERIFY`) now require specific permissions.

@@ -118,6 +118,7 @@ router.post(
   "/payment/foreclose/:loanId",
   authMiddleware,
   onlyAdminOrEmployee,
+  requirePermission("FORECLOSE_VERIFY"),
   paymentController.postForeclosurePayment
 );
 router.get(

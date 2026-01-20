@@ -62,16 +62,20 @@ exports.createUser = async (req, res) => {
   try {
     const matches = await prisma.user.findMany({
       where: {
-        photoIds: {
-          some: {
-            OR: photoIds.map((pid) => ({
-              photoIdTypeId: pid.photoIdTypeId,
-              photoIdNumber: pid.photoIdNumber,
-            })),
-          },
-        },
-        email: email,
-        phone: phone,
+        OR: [
+          ...(photoIds.length > 0 ? [{
+            photoIds: {
+              some: {
+                OR: photoIds.map((pid) => ({
+                  photoIdTypeId: pid.photoIdTypeId,
+                  photoIdNumber: pid.photoIdNumber,
+                })),
+              },
+            }
+          }] : []),
+          ...(email ? [{ email }] : []),
+          ...(phone ? [{ phone }] : []),
+        ].filter(Boolean),
       },
       select: {
         id: true,
