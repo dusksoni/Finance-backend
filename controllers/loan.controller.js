@@ -494,12 +494,7 @@ exports.updateLoan = async (req, res) => {
     const newDueDay = newStartDate.getDate();
     const newLoanTypeId = payload.loanTypeId ?? existing.loanTypeId;
 
-    // 3) recalc EMI & total
-    const totalPayable =
-      newPrincipal * Math.pow(1 + newPct / 100, newTenure / 12);
-    const EMI = totalPayable / newTenure;
-
-    // 4) schedule reset?
+    // 3) schedule reset?
     const mustReset =
       existing.paymentFrequency !== newFreq ||
       existing.tenureMonths !== newTenure ||
@@ -520,6 +515,22 @@ exports.updateLoan = async (req, res) => {
         error: "Cannot modify principal loan amount for an approved loan with existing payments."
       });
     }
+
+    // 4) recalc EMI & total using SIMPLE interest (matching createLoan)
+    const round2 = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
+
+    // Generate temporary schedule to get precise totals and representative EMI
+    const tempSchedule = generateEMISchedule({
+      principalLoanAmount: newPrincipal,
+      interestRate: newPct,
+      tenureMonths: newTenure,
+      startDate: newStartDate,
+      paymentFrequency: newFreq,
+    });
+
+    const totalInterest = round2(tempSchedule.reduce((sum, row) => sum + row.interestAmt, 0));
+    const totalPayable = round2(newPrincipal + totalInterest);
+    const representativeEMI = tempSchedule[0]?.emiPayAmount ?? round2(totalPayable / newTenure);
 
     // 5) permissions
     const canSelfApprove =
@@ -604,7 +615,7 @@ exports.updateLoan = async (req, res) => {
           },
         });
 
-        // b) reset schedule?
+        // b) reset schedule? (Flat Rate matching createLoan)
         if (mustReset) {
           await tx.eMI.deleteMany({ where: { loanId } });
 

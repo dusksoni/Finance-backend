@@ -70,6 +70,13 @@ async function processPostPayment({
   });
   const sumPaid = Number(payAgg._sum.amount || 0);
 
+  // Recalculate pendingAmount as source-of-truth to avoid drift
+  const loan = await tx.loan.findUnique({
+    where: { id: loanId },
+    select: { totalAmount: true }
+  });
+  const newPendingAmount = Math.max(Number(loan.totalAmount || 0) - sumPrincipal - sumInterest, 0);
+
   await tx.loan.update({
     where: { id: loanId },
     data: {
@@ -77,7 +84,7 @@ async function processPostPayment({
       totalPaidInterest: sumInterest,
       totalPaidFine: sumFine,
       totalPaidAmount: sumPaid,
-      pendingAmount: { decrement: paymentAmount },
+      pendingAmount: newPendingAmount,
     }
   });
 
