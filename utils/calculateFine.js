@@ -20,9 +20,8 @@ function calculateFine(dueDate, pendingPrincipal, referenceDate = null) {
     pct = 5 + extraMonths * 5; // 5% + 5% for each month after 30 days
   }
 
-  const fineAmt = parseFloat(
-    ((pct / 100) * Number(pendingPrincipal)).toFixed(2)
-  );
+  // Round fine to whole number (no decimals)
+  const fineAmt = Math.round((pct / 100) * Number(pendingPrincipal));
 
   return { daysLate, fineAmt, pct };
 }

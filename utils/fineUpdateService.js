@@ -12,7 +12,8 @@ Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
 
 // Helper functions for Decimal.js operations
 const toDecimal = (n) => new Decimal(n || 0);
-const toNumber = (d) => Number(d.toFixed(2));
+// Round to whole number (no decimals)
+const toNumber = (d) => Math.round(Number(d));
 
 async function updateAllOverdueFines() {
   const startTime = Date.now();

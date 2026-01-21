@@ -98,7 +98,8 @@ const generateEMISchedule = ({
   startDate,
   paymentFrequency = "MONTHLY",
 }) => {
-  const round2 = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
+  // Round to whole numbers (no decimals)
+  const round2 = (x) => Math.round(Number(x) || 0);
 
   const P = Number(principalLoanAmount);
   const n = parseInt(tenureMonths, 10);
@@ -211,7 +212,8 @@ exports.createLoan = async (req, res) => {
       penaltyPercentage,
     } = req.body;
 
-    const round2 = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
+    // Round to whole numbers (no decimals)
+  const round2 = (x) => Math.round(Number(x) || 0);
 
     // Convert charge fields to Float or null
     const rtoCharges = rtoChargesRaw && rtoChargesRaw !== "" ? parseFloat(rtoChargesRaw) : null;
@@ -564,12 +566,10 @@ exports.updateLoan = async (req, res) => {
             // productAmount: newProd, // REMOVED
             // downPayment: newDown, // REMOVED
             principalLoanAmount: newPrincipal,
-            interestAmount: totalInterest,
-            totalAmount: totalPayable,
-            monthlyPayableAmount: representativeEMI,
-            pendingAmount: parseFloat(
-              (totalPayable - existing.totalPaidAmount).toFixed(2)
-            ),
+            interestAmount: Math.round(totalPayable - newPrincipal),
+            totalAmount: Math.round(totalPayable),
+            monthlyPayableAmount: Math.round(EMI),
+            pendingAmount: Math.round(totalPayable - existing.totalPaidAmount),
             interestRate: newPct,
             tenureMonths: newTenure,
             paymentFrequency: newFreq,
@@ -619,17 +619,33 @@ exports.updateLoan = async (req, res) => {
         if (mustReset) {
           await tx.eMI.deleteMany({ where: { loanId } });
 
-          const schedule = generateEMISchedule({
-            principalLoanAmount: newPrincipal,
-            interestRate: newPct,
-            tenureMonths: newTenure,
-            startDate: newStartDate,
-            paymentFrequency: newFreq,
-          });
+          let bal = newPrincipal;
+          const newSchedule = [];
+          // First due date = newStartDate itself (since dueDay is extracted from newStartDate)
+          let firstDue = newStartDate;
 
-          await tx.eMI.createMany({
-            data: schedule.map((row) => ({ ...row, loanId: loan.id })),
-          });
+          for (let i = 0; i < newTenure; i++) {
+            const dueDate = offsetFn(firstDue, step * i);
+            const intPort = Math.round(bal * (newPct / 100 / 12));
+            const priPort = Math.round(EMI - intPort);
+            bal = Math.round(bal - priPort);
+
+            newSchedule.push({
+              loanId: loan.id,
+              paymentFor: dueDate,
+              paymentDate: dueDate,
+              emiPayAmount: Math.round(EMI),
+              principalAmt: priPort,
+              interestAmt: intPort,
+              amountPaidSoFar: 0,
+              fineAmount: 0,
+              status: "UNPAID",
+              paymentStatus: "PENDING",
+              isDelayed: false,
+              isForeclosure: false,
+            });
+          }
+          await tx.eMI.createMany({ data: newSchedule });
         }
 
         // c) upsert subtype
@@ -797,7 +813,7 @@ exports.closeLoan = async (req, res) => {
       });
     }
 
-    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    const r2 = (n) => Math.round(Number(n) || 0);
     if (r2(existingLoan.pendingAmount) > 0) {
       return res.status(400).json({
         error: `Cannot close loan: Pending amount of ₹${r2(existingLoan.pendingAmount)} remains`,
@@ -1578,7 +1594,7 @@ exports.getLoanById = async (req, res) => {
               e.paymentFor,
               outstanding
             );
-            newFine = Number((Number(fineAmt) || 0).toFixed(2));
+            newFine = Math.round(Number(fineAmt) || 0);
             newDelay = Number(daysLate || 0);
             isDelayed = newDelay > 0;
           }
@@ -1701,7 +1717,7 @@ exports.getLoanClosureStatus = async (req, res) => {
       }
     });
 
-    const r2 = (n) => Number((Number(n) || 0).toFixed(2));
+    const r2 = (n) => Math.round(Number(n) || 0);
 
     // Calculate if loan is eligible for closure
     const canClose =
