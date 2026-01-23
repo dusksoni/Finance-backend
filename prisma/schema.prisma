@@ -559,9 +559,14 @@ model Payment {
   verifiedAt           DateTime?
   verifiedByAdminId    String?
   verifiedByEmployeeId String?
+  fineDiscount         Decimal?     @default(0) // Discount applied on fine/penal charges
+  loanPendingBefore    Decimal?     // Loan pending amount before this payment
+  loanPendingAfter     Decimal?     // Loan pending amount after this payment
   metadata             Json?
   adminId              String?
   employeeId           String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @default(now()) @updatedAt
   emi                  EMI?         @relation(fields: [emiId], references: [id])
   verifiedByAdmin      Admin?       @relation("VerifiedByAdmin", fields: [verifiedByAdminId], references: [id])
   verifiedByEmployee   Employee?    @relation("VerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])

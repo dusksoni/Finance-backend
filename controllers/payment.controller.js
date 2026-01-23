@@ -229,6 +229,13 @@ exports.makePayment = async (req, res) => {
 
     const result = await prisma.$transaction(
       async (tx) => {
+        // Capture loan's pending amount BEFORE payment for audit trail
+        const loanBefore = await tx.loan.findUnique({
+          where: { id: loanId },
+          select: { pendingAmount: true },
+        });
+        const loanPendingBefore = r2(loanBefore?.pendingAmount || 0);
+
         // (A) Check cache and refresh fines if needed
         // Use paymentDate as reference for fine calculation
         const referenceDate = paymentDate;
@@ -338,6 +345,7 @@ exports.makePayment = async (req, res) => {
             adminId: req.user.type === "ADMIN" ? req.user.id : undefined,
             employeeId:
               req.user.type === "EMPLOYEE" ? req.user.id : undefined,
+            loanPendingBefore, // Loan pending amount before this payment
             metadata: {
               note: "Payment distributed across multiple EMIs",
               affectedEmis: [], // Will be populated below
@@ -573,10 +581,18 @@ exports.makePayment = async (req, res) => {
           });
         }
 
-        // Update payment metadata with distribution details
+        // Capture loan's pending amount AFTER payment for audit trail
+        const loanAfter = await tx.loan.findUnique({
+          where: { id: loanId },
+          select: { pendingAmount: true },
+        });
+        const loanPendingAfter = r2(loanAfter?.pendingAmount || 0);
+
+        // Update payment metadata with distribution details and pending amounts
         await tx.payment.update({
           where: { id: payment.id },
           data: {
+            loanPendingAfter, // Loan pending amount after this payment
             metadata: {
               note: "Payment distributed across multiple EMIs",
               affectedEmis: updated,
@@ -848,6 +864,13 @@ exports.payPaymentById = async (req, res) => {
       ? true
       : (paymentMode === "CASH" && (await checkVerifyPermission(req.user, "PAYMENT_VERIFY")));
 
+    // Capture loan's pending amount BEFORE payment for audit trail
+    const loanBefore = await prisma.loan.findUnique({
+      where: { id: emi.loanId },
+      select: { pendingAmount: true },
+    });
+    const loanPendingBefore = r2(loanBefore?.pendingAmount || 0);
+
     // --- Keep the transaction TINY; post-processing happens AFTER commit ---
     const txResult = await prisma.$transaction(
       async (tx) => {
@@ -855,6 +878,7 @@ exports.payPaymentById = async (req, res) => {
         const payment = await tx.payment.create({
           data: {
             loanId: emi.loanId,
+            loanPendingBefore, // Loan pending amount before this payment
             emiId,
             amount: r2(payToFine + payToInterest + payToPrincipal),
             paymentMode,
@@ -967,9 +991,25 @@ exports.payPaymentById = async (req, res) => {
           },
         });
       } catch (e) {
-        // Don’t fail the main request if the post hook is slow; log & let a job re-run reconciliation if needed
+        // Don't fail the main request if the post hook is slow; log & let a job re-run reconciliation if needed
         console.warn("processPostPayment post-commit failed:", e?.message);
       }
+    }
+
+    // Capture loan's pending amount AFTER payment and update the payment record
+    try {
+      const loanAfter = await prisma.loan.findUnique({
+        where: { id: txResult.loanId },
+        select: { pendingAmount: true },
+      });
+      const loanPendingAfter = r2(loanAfter?.pendingAmount || 0);
+
+      await prisma.payment.update({
+        where: { id: txResult.paymentId },
+        data: { loanPendingAfter },
+      });
+    } catch (e) {
+      console.warn("Failed to update loanPendingAfter:", e?.message);
     }
 
     return res.status(200).json({
@@ -1584,6 +1624,9 @@ exports.postForeclosurePayment = async (req, res) => {
       return res.status(403).json({ error: "Access denied", status: 403 });
     }
 
+    // Capture loan's pending amount BEFORE payment for audit trail
+    const loanPendingBefore = r2(loan.pendingAmount || 0);
+
     // ---- TX: ONE Payment row + bulk EMI updates + loan aggregates (re-synced)
     const result = await prisma.$transaction(
       async (tx) => {
@@ -1612,6 +1655,8 @@ exports.postForeclosurePayment = async (req, res) => {
             verified: true,
             verifiedAt: new Date(),
             isForeclosure: true,
+            loanPendingBefore, // Loan pending amount before this payment
+            loanPendingAfter: 0, // Foreclosure sets pending to 0
             metadata: {
               type: "FORECLOSURE",
               asOfDate: new Date(),
@@ -1979,6 +2024,9 @@ exports.getPaymentInvoice = async (req, res) => {
       verifiedAt: payment.verifiedAt,
       isForeclosure: payment.isForeclosure,
       metadata: payment.metadata,
+      // Loan pending amount audit trail
+      loanPendingBefore: payment.loanPendingBefore != null ? Math.round(Number(payment.loanPendingBefore)) : null,
+      loanPendingAfter: payment.loanPendingAfter != null ? Math.round(Number(payment.loanPendingAfter)) : null,
       emiId: emi?.id || null,
       emiDueDate: emi?.paymentFor || null,
       emiAmount: emi?.emiPayAmount || null,
@@ -2375,6 +2423,20 @@ exports.editLastPayment = async (req, res) => {
       } catch (postErr) {
         console.error("Post-payment processing error:", postErr);
       }
+    }
+
+    // Update loanPendingAfter after edit is complete
+    try {
+      const loanAfter = await prisma.loan.findUnique({
+        where: { id: payment.loanId },
+        select: { pendingAmount: true },
+      });
+      await prisma.payment.update({
+        where: { id: paymentId },
+        data: { loanPendingAfter: r2(loanAfter?.pendingAmount || 0) },
+      });
+    } catch (e) {
+      console.warn("Failed to update loanPendingAfter after edit:", e?.message);
     }
 
     return res.status(200).json({
