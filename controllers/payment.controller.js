@@ -188,10 +188,13 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
 exports.makePayment = async (req, res) => {
   try {
     const { loanId } = req.params;
-    let { amountPaid, totalEmiAmount, totalFineAmount, paymentMode, transactionId, paymentDate, useGateway } = req.body;
+    let { amountPaid, totalEmiAmount, totalFineAmount, paymentMode, transactionId, paymentDate, useGateway, fineDiscount } = req.body;
 
     // Helper for rounding to whole numbers (no decimals)
     const r2 = (n) => Math.round(Number(n) || 0);
+
+    // Parse fine discount amount
+    const fineDiscountAmount = r2(Number(fineDiscount) || 0);
 
     // Check if manual breakdown is provided (new simpler approach)
     const hasManualBreakdown = totalEmiAmount !== undefined && totalFineAmount !== undefined;
@@ -345,12 +348,14 @@ exports.makePayment = async (req, res) => {
         let remaining = r2(amountPaid);
         let remainingEmiAmount = hasManualBreakdown ? r2(totalEmiAmount) : 0;
         let remainingFineAmount = hasManualBreakdown ? r2(totalFineAmount) : 0;
+        let remainingFineDiscount = fineDiscountAmount; // Track remaining discount to apply across EMIs
 
         const updated = [];
         let totalUsed = 0;
         let totalFineCollected = 0;
         let totalInterestCollected = 0;
         let totalPrincipalCollected = 0;
+        let totalFineDiscountApplied = 0;
 
         // Now distribute the payment across EMIs
         for (const emi of installments) {
@@ -389,7 +394,13 @@ exports.makePayment = async (req, res) => {
             daysLate = Number(fineCalc.daysLate || 0);
           }
           const fineAlreadyPaid = r2(emi.finePaid || 0);
-          const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
+          const fineDueBeforeDiscount = Math.max(fineAssessed - fineAlreadyPaid, 0);
+
+          // Apply fine discount to this EMI's fine due
+          const discountForThisEmi = Math.min(remainingFineDiscount, fineDueBeforeDiscount);
+          remainingFineDiscount = r2(remainingFineDiscount - discountForThisEmi);
+          totalFineDiscountApplied = r2(totalFineDiscountApplied + discountForThisEmi);
+          const fineDue = Math.max(fineDueBeforeDiscount - discountForThisEmi, 0);
 
           // nothing due
           if (emiDue <= 0 && fineDue <= 0) {
@@ -574,6 +585,7 @@ exports.makePayment = async (req, res) => {
                 usedAmount: totalUsed,
                 unallocatedAmount: remaining,
                 fineCollected: totalFineCollected,
+                fineDiscountApplied: totalFineDiscountApplied,
                 interestCollected: totalInterestCollected,
                 principalCollected: totalPrincipalCollected,
                 emisAffected: updated.length,
@@ -589,6 +601,7 @@ exports.makePayment = async (req, res) => {
           unallocatedAmount: remaining,
           summary: {
             fineCollected: totalFineCollected,
+            fineDiscountApplied: totalFineDiscountApplied,
             interestCollected: totalInterestCollected,
             principalCollected: totalPrincipalCollected,
           },
@@ -862,6 +875,14 @@ exports.payPaymentById = async (req, res) => {
                   employeeId: req.user.id,
                 }
               : {}),
+            metadata: {
+              summary: {
+                principalCollected: r2(payToPrincipal),
+                interestCollected: r2(payToInterest),
+                fineCollected: r2(payToFine),
+                fineDiscountApplied: discountAmount,
+              },
+            },
           },
         });
 
@@ -2110,13 +2131,15 @@ exports.calculateFineForDate = async (req, res) => {
 };
 
 // --------------------------------
-// ✏️ EDIT LAST PAYMENT
-// Only allows editing the last payment for a loan (if not done via QR/gateway)
+// ✏️ EDIT PAYMENT
+// - Last payment: Can edit amounts (EMI, fine), payment method, transaction ID, date
+// - Other payments: Can only change payment method and transaction ID
+// - Gateway/QR payments: Cannot be edited at all
 // --------------------------------
 exports.editLastPayment = async (req, res) => {
   try {
     const { paymentId } = req.params;
-    let { amount, paymentMode, transactionId, paymentDate } = req.body;
+    let { amount, emiAmount, fineAmount, fineDiscount, paymentMode, transactionId, paymentDate } = req.body;
 
     const r2 = (n) => Math.round(Number(n) || 0);
 
@@ -2127,7 +2150,7 @@ exports.editLastPayment = async (req, res) => {
       return res.status(403).json({ error: "Not authorized to edit payments", status: 403 });
     }
 
-    // Fetch the payment
+    // Fetch the payment with EMI and loan details
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
       include: { loan: true, emi: true }
@@ -2137,7 +2160,7 @@ exports.editLastPayment = async (req, res) => {
       return res.status(404).json({ error: "Payment not found", status: 404 });
     }
 
-    // Check if this is a gateway payment (UPI payments via QR should not be editable)
+    // Check if this is a gateway payment (QR payments should not be editable)
     if (payment.transactionId && (payment.paymentMode === "UPI" || payment.paymentMode === "ONLINE")) {
       // Check if it came from ICICI gateway
       const pendingTxn = await prisma.pendingUPITransaction.findFirst({
@@ -2151,27 +2174,137 @@ exports.editLastPayment = async (req, res) => {
       }
     }
 
-    // Verify this is the last payment for the loan
+    // Check if this is the last payment for the loan
     const lastPayment = await prisma.payment.findFirst({
       where: { loanId: payment.loanId },
       orderBy: { createdAt: "desc" }
     });
 
-    if (lastPayment.id !== paymentId) {
+    const isLastPayment = lastPayment.id === paymentId;
+
+    // For non-last payments, only allow payment method changes
+    if (!isLastPayment) {
+      // Block amount changes for non-last payments
+      if (amount !== undefined && r2(amount) !== r2(payment.amount)) {
+        return res.status(400).json({
+          error: "Only the last payment can have its amount edited",
+          status: 400
+        });
+      }
+      if (emiAmount !== undefined || fineAmount !== undefined) {
+        return res.status(400).json({
+          error: "Only the last payment can have its amounts edited",
+          status: 400
+        });
+      }
+      if (paymentDate !== undefined && new Date(paymentDate).getTime() !== new Date(payment.paymentDate).getTime()) {
+        return res.status(400).json({
+          error: "Only the last payment can have its date edited",
+          status: 400
+        });
+      }
+
+      // Validate new payment mode is not QR
+      const newMode = paymentMode || payment.paymentMode;
+      if (newMode === "QR" || (transactionId && newMode === "UPI")) {
+        // Check if trying to switch to QR/gateway mode
+        const existingGatewayTxn = await prisma.pendingUPITransaction.findFirst({
+          where: { merchantTranId: transactionId }
+        });
+        if (existingGatewayTxn) {
+          return res.status(400).json({
+            error: "Cannot change payment mode to QR/gateway",
+            status: 400
+          });
+        }
+      }
+
+      // Only update payment method and transaction ID
+      const updatedPayment = await prisma.payment.update({
+        where: { id: paymentId },
+        data: {
+          paymentMode: paymentMode || payment.paymentMode,
+          transactionId: transactionId !== undefined ? transactionId : payment.transactionId,
+        }
+      });
+
+      return res.status(200).json({
+        status: 200,
+        message: "Payment method updated successfully",
+        data: updatedPayment
+      });
+    }
+
+    // --- LAST PAYMENT: Full edit capability ---
+
+    // Validate new payment mode is not QR
+    const newMode = paymentMode || payment.paymentMode;
+    if (newMode === "QR") {
       return res.status(400).json({
-        error: "Only the last payment can be edited",
+        error: "Cannot change payment mode to QR",
         status: 400
       });
     }
 
     const oldAmount = r2(payment.amount);
-    const newAmount = r2(Number(amount) || oldAmount);
+    let newEmiAmount = r2(emiAmount ?? 0);
+    let newFineAmount = r2(fineAmount ?? 0);
+    let newFineDiscount = r2(fineDiscount ?? 0);
+    let newAmount;
+
+    // Get previous distribution from metadata
+    const oldMetadata = payment.metadata || {};
+    const oldSummary = oldMetadata.summary || {};
+    const oldEmiPaid = r2(oldSummary.emiCollected ?? oldSummary.paidToEmi ?? oldAmount);
+    const oldFinePaid = r2(oldSummary.fineCollected ?? oldSummary.paidToFine ?? 0);
+    const oldFineDiscount = r2(oldSummary.fineDiscountApplied ?? 0);
+
+    // If detailed amounts provided (emiAmount, fineAmount), use them
+    if (emiAmount !== undefined || fineAmount !== undefined) {
+      newAmount = r2(newEmiAmount + newFineAmount);
+    } else {
+      newAmount = r2(Number(amount) || oldAmount);
+      // If only total amount changed without distribution, keep old distribution ratio
+      newEmiAmount = oldEmiPaid;
+      newFineAmount = oldFinePaid;
+    }
+
     const amountDiff = r2(newAmount - oldAmount);
+    const emiDiff = r2(newEmiAmount - oldEmiPaid);
+    const fineDiff = r2(newFineAmount - oldFinePaid);
+    const discountDiff = r2(newFineDiscount - oldFineDiscount);
 
     paymentDate = paymentDate ? new Date(paymentDate) : payment.paymentDate;
 
     // Update in transaction
     const result = await prisma.$transaction(async (tx) => {
+      // Build updated metadata
+      const newMetadata = {
+        ...oldMetadata,
+        summary: {
+          ...oldSummary,
+          emiCollected: newEmiAmount,
+          fineCollected: newFineAmount,
+          fineDiscountApplied: newFineDiscount,
+          totalCollected: newAmount,
+        },
+        editHistory: [
+          ...(oldMetadata.editHistory || []),
+          {
+            editedAt: new Date().toISOString(),
+            editedBy: req.user?.id || 'unknown',
+            previousAmount: oldAmount,
+            newAmount: newAmount,
+            previousEmi: oldEmiPaid,
+            newEmi: newEmiAmount,
+            previousFine: oldFinePaid,
+            newFine: newFineAmount,
+            previousDiscount: oldFineDiscount,
+            newDiscount: newFineDiscount,
+          }
+        ]
+      };
+
       // Update the payment
       const updatedPayment = await tx.payment.update({
         where: { id: paymentId },
@@ -2180,24 +2313,28 @@ exports.editLastPayment = async (req, res) => {
           paymentMode: paymentMode || payment.paymentMode,
           transactionId: transactionId !== undefined ? transactionId : payment.transactionId,
           paymentDate,
+          metadata: newMetadata,
         }
       });
 
-      // If amount changed, update EMI and loan accordingly
-      if (amountDiff !== 0 && payment.emiId) {
+      // Update EMI if linked
+      if (payment.emiId) {
         const emi = await tx.eMI.findUnique({ where: { id: payment.emiId } });
         if (emi) {
-          // Recalculate EMI paid amounts
+          // Calculate new EMI values based on distribution changes
+          const emiPayAmount = Number(emi.emiPayAmount || 0);
+          const fineAssessed = Number(emi.fineAmount || 0);
+
+          // Adjust paid amounts
           const newAmountPaidSoFar = r2(Number(emi.amountPaidSoFar || 0) + amountDiff);
           const newTotalPaid = r2(Number(emi.totalPaid || 0) + amountDiff);
+          const newFinePaid = r2(Number(emi.finePaid || 0) + fineDiff);
+          const newPrincipalPaid = r2(Number(emi.principalPaid || 0) + emiDiff);
 
           // Determine new status
-          const emiPayAmount = Number(emi.emiPayAmount || 0);
-          const finePaid = Number(emi.finePaid || 0);
-          const emiPaidComponent = Math.max(newAmountPaidSoFar - finePaid, 0);
+          const emiPaidComponent = Math.max(newAmountPaidSoFar - newFinePaid, 0);
           const emiDueAfter = Math.max(emiPayAmount - emiPaidComponent, 0);
-          const fineAssessed = Number(emi.fineAmount || 0);
-          const fineDueAfter = Math.max(fineAssessed - finePaid, 0);
+          const fineDueAfter = Math.max(fineAssessed - newFinePaid - newFineDiscount, 0);
           const newStatus = emiDueAfter <= 0 && fineDueAfter <= 0 ? "PAID" : "PARTIAL";
 
           await tx.eMI.update({
@@ -2205,7 +2342,9 @@ exports.editLastPayment = async (req, res) => {
             data: {
               amountPaidSoFar: Math.max(newAmountPaidSoFar, 0),
               totalPaid: Math.max(newTotalPaid, 0),
-              status: newStatus
+              finePaid: Math.max(newFinePaid, 0),
+              principalPaid: Math.max(newPrincipalPaid, 0),
+              status: newStatus,
             }
           });
 
@@ -2216,7 +2355,10 @@ exports.editLastPayment = async (req, res) => {
               where: { id: payment.loanId },
               data: {
                 totalPaidAmount: r2(Number(loan.totalPaidAmount || 0) + amountDiff),
-                pendingAmount: r2(Number(loan.pendingAmount || 0) - amountDiff)
+                totalPaidPrincipal: r2(Number(loan.totalPaidPrincipal || 0) + emiDiff),
+                totalFinePaid: r2(Number(loan.totalFinePaid || 0) + fineDiff),
+                totalFineDiscount: r2(Number(loan.totalFineDiscount || 0) + discountDiff),
+                pendingAmount: r2(Number(loan.pendingAmount || 0) - amountDiff),
               }
             });
           }
@@ -2238,7 +2380,14 @@ exports.editLastPayment = async (req, res) => {
     return res.status(200).json({
       status: 200,
       message: "Payment updated successfully",
-      data: result
+      data: result,
+      isLastPayment: true,
+      changes: {
+        amountDiff,
+        emiDiff,
+        fineDiff,
+        discountDiff,
+      }
     });
   } catch (err) {
     console.error("editLastPayment error:", err);

@@ -47,11 +47,14 @@ if (isDevelopmentMode) {
 /**
  * Generate QR Code for payment
  * POST /api/icici-payment/generate-qr
- * Body: { loanId, emiId?, amount, paymentType: 'bulk' | 'emi' }
+ * Body: {
+ *   loanId, emiId?, amount, paymentType: 'bulk' | 'emi',
+ *   emiAmount?, fineAmount?, fineDiscount?  // Optional pre-configured distribution
+ * }
  */
 exports.generateQR = async (req, res) => {
   try {
-    const { loanId, emiId, amount, paymentType } = req.body;
+    const { loanId, emiId, amount, paymentType, emiAmount, fineAmount, fineDiscount } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({
@@ -169,6 +172,7 @@ exports.generateQR = async (req, res) => {
     }
 
     // Store pending transaction in database
+    // Include pre-configured distribution if provided
     const pendingPayment = await prisma.pendingUPITransaction.create({
       data: {
         loanId,
@@ -181,6 +185,10 @@ exports.generateQR = async (req, res) => {
         status: 'PENDING',
         qrString,
         intentURL,
+        // Pre-configured distribution (optional)
+        emiAmount: emiAmount !== undefined ? parseFloat(emiAmount) : null,
+        fineAmount: fineAmount !== undefined ? parseFloat(fineAmount) : null,
+        fineDiscount: fineDiscount !== undefined ? parseFloat(fineDiscount) : null,
         createdByAdminId: req.user?.type === 'ADMIN' ? req.user.id : null,
         createdByEmployeeId: req.user?.type === 'EMPLOYEE' ? req.user.id : null,
       }
@@ -199,6 +207,12 @@ exports.generateQR = async (req, res) => {
         message: isDevelopmentMode ? 'QR generated (Development Mode - Simulated)' : 'QR generated successfully',
         expiresIn: 900, // 15 minutes typical UPI timeout
         developmentMode: isDevelopmentMode,
+        // Return distribution info if configured
+        distribution: (emiAmount !== undefined || fineAmount !== undefined) ? {
+          emiAmount: emiAmount !== undefined ? parseFloat(emiAmount) : null,
+          fineAmount: fineAmount !== undefined ? parseFloat(fineAmount) : null,
+          fineDiscount: fineDiscount !== undefined ? parseFloat(fineDiscount) : null,
+        } : null,
       }
     });
 
@@ -276,18 +290,36 @@ exports.handleCallback = async (req, res) => {
     if (TxnStatus === 'SUCCESS') {
       const paymentController = require('./payment.controller');
 
+      // Extract pre-configured distribution from pending transaction
+      const hasDistribution = pendingTxn.emiAmount !== null || pendingTxn.fineAmount !== null;
+
       // Process payment based on type
       if (pendingTxn.paymentType === 'emi' && pendingTxn.emiId) {
         // Single EMI payment - use payPaymentById logic
+        const bodyData = {
+          amount: parseFloat(PayerAmount),
+          paymentMode: 'UPI',
+          transactionId: BankRRN,
+          paymentDate: TxnCompletionDate ? new Date(TxnCompletionDate) : new Date(),
+          useGateway: true // This triggers auto-approval
+        };
+
+        // Add pre-configured distribution if available
+        if (hasDistribution) {
+          if (pendingTxn.emiAmount !== null) {
+            bodyData.emiAmount = parseFloat(pendingTxn.emiAmount);
+          }
+          if (pendingTxn.fineAmount !== null) {
+            bodyData.fineAmount = parseFloat(pendingTxn.fineAmount);
+          }
+          if (pendingTxn.fineDiscount !== null) {
+            bodyData.discount = parseFloat(pendingTxn.fineDiscount);
+          }
+        }
+
         const mockReq = {
           params: { emiId: pendingTxn.emiId },
-          body: {
-            amount: parseFloat(PayerAmount),
-            paymentMode: 'UPI',
-            transactionId: BankRRN,
-            paymentDate: TxnCompletionDate ? new Date(TxnCompletionDate) : new Date(),
-            useGateway: true // This triggers auto-approval
-          },
+          body: bodyData,
           user: {
             type: pendingTxn.createdByAdminId ? 'ADMIN' : 'EMPLOYEE',
             id: pendingTxn.createdByAdminId || pendingTxn.createdByEmployeeId,
@@ -313,15 +345,30 @@ exports.handleCallback = async (req, res) => {
 
       } else {
         // Bulk payment - use makePayment logic (distributes across multiple EMIs)
+        const bodyData = {
+          amountPaid: parseFloat(PayerAmount),
+          paymentMode: 'UPI',
+          transactionId: BankRRN,
+          paymentDate: TxnCompletionDate ? new Date(TxnCompletionDate) : new Date(),
+          useGateway: true // This triggers auto-approval
+        };
+
+        // Add pre-configured distribution if available (for bulk payments)
+        if (hasDistribution) {
+          if (pendingTxn.emiAmount !== null) {
+            bodyData.totalEmiAmount = parseFloat(pendingTxn.emiAmount);
+          }
+          if (pendingTxn.fineAmount !== null) {
+            bodyData.totalFineAmount = parseFloat(pendingTxn.fineAmount);
+          }
+          if (pendingTxn.fineDiscount !== null) {
+            bodyData.fineDiscount = parseFloat(pendingTxn.fineDiscount);
+          }
+        }
+
         const mockReq = {
           params: { loanId: pendingTxn.loanId },
-          body: {
-            amountPaid: parseFloat(PayerAmount),
-            paymentMode: 'UPI',
-            transactionId: BankRRN,
-            paymentDate: TxnCompletionDate ? new Date(TxnCompletionDate) : new Date(),
-            useGateway: true // This triggers auto-approval
-          },
+          body: bodyData,
           user: {
             type: pendingTxn.createdByAdminId ? 'ADMIN' : 'EMPLOYEE',
             id: pendingTxn.createdByAdminId || pendingTxn.createdByEmployeeId,

@@ -633,6 +633,12 @@ model PendingUPITransaction {
   qrString              String?   // UPI QR string
   intentURL             String?   // UPI Intent URL for mobile apps
 
+  // Pre-configured payment distribution (optional)
+  // When specified, payment will be distributed according to these values
+  emiAmount             Decimal?  // Amount to apply towards EMI
+  fineAmount            Decimal?  // Amount to apply towards fine/penal charges
+  fineDiscount          Decimal?  // Discount to apply on fine
+
   // Callback data (populated when callback received)
   bankRRN               String?
   payerName             String?
