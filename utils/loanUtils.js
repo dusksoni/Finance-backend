@@ -91,11 +91,11 @@ async function processPostPayment({
   // 3. Loan closure & hypothecation (unless partial only)
   let hypothecationResult = null;
   if (forceFullUpdate || await shouldCloseLoan(tx, loanId)) {
-    const closedLoan = await tx.loan.update({
-      where: { id: loanId },
-      data: { isClosed: true, fileStatus: "CLOSED", actualEndDate: new Date() },
-      include: { twoWheelerLoan: true }
-    });
+    // const closedLoan = await tx.loan.update({
+    //   where: { id: loanId },
+    //   data: { isClosed: true, fileStatus: "CLOSED", actualEndDate: new Date() },
+    //   include: { twoWheelerLoan: true }
+    // });
 
     // NOTE: Auto-termination is temporarily disabled
     // Uncomment the block below to re-enable auto-termination on loan end
