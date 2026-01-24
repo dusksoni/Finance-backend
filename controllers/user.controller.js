@@ -150,7 +150,7 @@ exports.createUser = async (req, res) => {
         email,
         isDefaulter: isDefaulter === "true" ? true : false,
         proofOfIncome,
-        creditScore,
+        creditScore: creditScore ? parseInt(creditScore) : null,
         profession,
         qualification,
         regionId: regionId,
