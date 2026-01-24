@@ -147,7 +147,7 @@ exports.createUser = async (req, res) => {
         officeNumber,
         genderId: genderId,
         maritalStatus,
-        email,
+        email: email || null,
         isDefaulter: isDefaulter === "true" ? true : false,
         proofOfIncome,
         creditScore: creditScore ? parseInt(creditScore) : null,
