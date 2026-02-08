@@ -1,17 +1,17 @@
 module.exports = {
   apps: [
     {
-      name: "kushalfinance-prod",
+      name: "kushalfinance-uat",
       script: "server.js",
       instances: 1,
       exec_mode: "fork",
       env: {
-        NODE_ENV: "production",
-        PORT: 3001
+        NODE_ENV: "staging",
+        PORT: 3002
       },
       autorestart: true,
       watch: false,
-      max_memory_restart: "500M",
+      max_memory_restart: "400M",
       time: true
     }
   ]
