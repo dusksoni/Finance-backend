@@ -13,8 +13,8 @@
     "pm2:logs:prod": "pm2 logs kushalfinance-prod",
 
     "pm2:start:uat": "pm2 start ecosystem-uat.config.js",
-    "pm2:restart:uat": "pm2 restart kushalfinance-uat",
-    "pm2:logs:uat": "pm2 logs kushalfinance-uat"
+    "pm2:restart:uat": "pm2 restart kushal-finance-backend-uat",
+    "pm2:logs:uat": "pm2 logs kushal-finance-backend-uat"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
