@@ -258,6 +258,17 @@ exports.createLoan = async (req, res) => {
 
     const freq = (paymentFrequency || "MONTHLY").toUpperCase();
 
+    // Validate EMI is a whole number
+    const freqMonths = FREQUENCY_MONTHS[freq] || 1;
+    const numInstallments = Math.ceil(n / freqMonths);
+    const rawEMI = totalPayable / numInstallments;
+    if (!Number.isInteger(rawEMI) && Math.abs(rawEMI - Math.round(rawEMI)) > 0.001) {
+      return res.status(400).json({
+        error: `EMI amount (${rawEMI.toFixed(2)}) is not a whole number. Adjust the interest rate or installment amount so the total payable (${totalPayable}) divides evenly into ${numInstallments} installments.`,
+        status: 400,
+      });
+    }
+
     // 3) Build schedule only if start/end dates are available
     const schedule = parsedStartDate
       ? generateEMISchedule({
@@ -1296,6 +1307,23 @@ exports.approveLoan = async (req, res) => {
 
     // Calculate endDate based on startDate and tenureMonths
     const endDate = addMonths(parsedStartDate, loan.tenureMonths);
+
+    // Validate EMI is a whole number before generating schedule
+    const round2Approve = (x) => Math.round(Number(x) || 0);
+    const approveP = Number(loan.principalLoanAmount);
+    const approveN = Number(loan.tenureMonths);
+    const approveRate = Number(loan.interestRate);
+    const approveFreq = (loan.paymentFrequency || "MONTHLY").toUpperCase();
+    const approveFreqMonths = FREQUENCY_MONTHS[approveFreq] || 1;
+    const approveTotal = round2Approve(approveP + round2Approve((approveP * approveRate * (approveN / 12)) / 100));
+    const approveInstallments = Math.ceil(approveN / approveFreqMonths);
+    const approveRawEMI = approveTotal / approveInstallments;
+    if (!Number.isInteger(approveRawEMI) && Math.abs(approveRawEMI - Math.round(approveRawEMI)) > 0.001) {
+      return res.status(400).json({
+        error: `EMI amount (${approveRawEMI.toFixed(2)}) is not a whole number. The loan's interest rate or principal must be adjusted so the total (${approveTotal}) divides evenly into ${approveInstallments} installments.`,
+        status: 400,
+      });
+    }
 
     // Generate EMI schedule based on approved startDate
     const emiSchedule = generateEMISchedule({
