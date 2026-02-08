@@ -9,9 +9,12 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "pm2:start": "pm2 start ecosystem.config.cjs",
-    "pm2:stop": "pm2 stop kushal-finance-backend",
-    "pm2:restart": "npm i && npm run build && pm2 restart kushal-finance-backend",
-    "pm2:logs": "pm2 logs kushal-finance-backend"
+    "pm2:reload": "pm2 startOrReload ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop kushal-finance-backend kushal-finance-backend-uat",
+    "pm2:restart": "npm install && pm2 restart kushal-finance-backend kushal-finance-backend-uat",
+    "pm2:logs": "pm2 logs",
+    "pm2:logs:prod": "pm2 logs kushal-finance-backend",
+    "pm2:logs:uat": "pm2 logs kushal-finance-backend-uat"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
