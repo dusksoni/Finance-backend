@@ -445,3 +445,451 @@ exports.downloadCibilReport = async (req, res) => {
     });
   }
 };
+
+// --------------------------------
+// LOAN REPORT
+// --------------------------------
+exports.getLoanReport = async (req, res) => {
+  try {
+    const { branchId, loanTypeId, status, download, from, to } = req.query;
+
+    const whereClause = {};
+
+    if (branchId) whereClause.branchId = branchId;
+    if (loanTypeId) whereClause.loanTypeId = loanTypeId;
+
+    // Date range filter on disbursement date
+    if (from || to) {
+      whereClause.disbursedDate = {};
+      if (from) {
+        const fromDate = parseISO(from);
+        if (isValid(fromDate)) whereClause.disbursedDate.gte = startOfDay(fromDate);
+      }
+      if (to) {
+        const toDate = parseISO(to);
+        if (isValid(toDate)) whereClause.disbursedDate.lte = endOfDay(toDate);
+      }
+    }
+
+    if (status === "active") {
+      whereClause.isClosed = false;
+      whereClause.fileStatus = {
+        notIn: ["CLOSED", "CANCELLED", "REJECTED", "WRITTEN_OFF", "INITIATED", "IN_PROGRESS", "PENDING_APPROVAL"],
+      };
+    } else if (status === "closed") {
+      whereClause.isClosed = true;
+    } else if (status === "defaulted") {
+      whereClause.isDefaulted = true;
+    } else {
+      // default: all disbursed/active loans (exclude pre-approval stages)
+      whereClause.fileStatus = {
+        notIn: ["CANCELLED", "REJECTED", "INITIATED", "IN_PROGRESS", "PENDING_APPROVAL"],
+      };
+    }
+
+    const loans = await prisma.loan.findMany({
+      where: whereClause,
+      include: {
+        user: {
+          include: {
+            addresses: { include: { city: true, state: true }, take: 1 },
+          },
+        },
+        loanType: true,
+        branch: true,
+        twoWheelerLoan: { include: { brand: true, model: true } },
+        agriLoan: { include: { equipment: true } },
+        msmeLoan: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const r2 = (n) => Math.round(Number(n) || 0);
+
+    const getRegModel = (loan) => {
+      if (loan.twoWheelerLoan) {
+        const reg = loan.twoWheelerLoan.registrationNumber || "";
+        const model = [
+          loan.twoWheelerLoan.brand?.name,
+          loan.twoWheelerLoan.model?.name,
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return { reg, model };
+      }
+      if (loan.agriLoan) {
+        return {
+          reg: loan.agriLoan.registrationNumber || "",
+          model: loan.agriLoan.equipment?.name || "",
+        };
+      }
+      return { reg: "", model: "" };
+    };
+
+    const getUserAddress = (user) => {
+      if (!user?.addresses?.length) return "";
+      const addr = user.addresses[0];
+      return [addr.address, addr.city?.name, addr.state?.name, addr.pincode]
+        .filter(Boolean)
+        .join(", ");
+    };
+
+    const getLoanStatus = (loan) => {
+      if (loan.isForeclosed) return "FORECLOSED";
+      if (loan.isClosed) return "CLOSED";
+      if (loan.isDefaulted) return "DEFAULTED";
+      return "ACTIVE";
+    };
+
+    const data = loans.map((loan) => {
+      const { reg, model } = getRegModel(loan);
+      const userName = [loan.user?.firstName, loan.user?.middleName, loan.user?.lastName]
+        .filter(Boolean)
+        .join(" ");
+
+      return {
+        id: loan.id,
+        fileNo: loan.fileNo,
+        userName,
+        phone: loan.user?.phone || "",
+        regNo: reg,
+        model: model,
+        address: getUserAddress(loan.user),
+        loanAmount: r2(loan.principalLoanAmount),
+        emi: r2(loan.monthlyPayableAmount),
+        disbursementDate: loan.disbursedDate,
+        totalInterest: r2(loan.interestAmount),
+        totalAmount: r2(loan.totalAmount),
+        tenureMonths: loan.tenureMonths,
+        status: getLoanStatus(loan),
+        branch: loan.branch?.name || "",
+        loanType: loan.loanType?.name || "",
+      };
+    });
+
+    // Excel download
+    if (String(download).toLowerCase() === "true") {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Loan Report");
+
+      const fmtDate = (d) => {
+        if (!d) return "";
+        const dt = new Date(d);
+        if (isNaN(dt.getTime())) return "";
+        return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+      };
+
+      const headers = [
+        "S.No", "File No", "Customer Name", "Mobile No", "Reg No", "Model",
+        "Address", "Loan Amount", "EMI", "Disbursement Date", "Total Interest",
+        "Total Amount", "Tenure (Months)", "Status"
+      ];
+      const headerRow = sheet.addRow(headers);
+      headerRow.font = { bold: true };
+      headerRow.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+        cell.border = { bottom: { style: "thin", color: { argb: "FF94A3B8" } } };
+      });
+
+      data.forEach((row, idx) => {
+        sheet.addRow([
+          idx + 1, row.fileNo, row.userName, row.phone, row.regNo, row.model,
+          row.address, row.loanAmount, row.emi, fmtDate(row.disbursementDate),
+          row.totalInterest, row.totalAmount, row.tenureMonths, row.status,
+        ]);
+      });
+
+      sheet.addRow([]);
+      const summaryRow = sheet.addRow(["Total Loans", data.length]);
+      summaryRow.font = { bold: true };
+
+      sheet.columns.forEach((col) => {
+        let maxLen = 10;
+        col.eachCell({ includeEmpty: false }, (cell) => {
+          const len = cell.value ? String(cell.value).length : 0;
+          if (len > maxLen) maxLen = len;
+        });
+        col.width = Math.min(maxLen + 2, 40);
+      });
+
+      const filename = `Loan_Report_${format(new Date(), "yyyy-MM-dd")}.xlsx`;
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      return res.send(Buffer.from(buffer));
+    }
+
+    return res.status(200).json({
+      status: 200,
+      data,
+      summary: { totalCount: data.length },
+    });
+  } catch (error) {
+    console.error("getLoanReport error:", error);
+    return res.status(500).json({ error: error.message, status: 500 });
+  }
+};
+
+// --------------------------------
+// PENDING EMI REPORT (month-wise)
+// --------------------------------
+exports.getPendingEmiReport = async (req, res) => {
+  try {
+    const { branchId, loanTypeId, download, from, to } = req.query;
+
+    const r2 = (n) => Math.round(Number(n) || 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Date range filter on EMI due date (paymentFor)
+    const paymentForFilter = {};
+    if (from) {
+      const fromDate = parseISO(from);
+      if (isValid(fromDate)) paymentForFilter.gte = startOfDay(fromDate);
+    }
+    if (to) {
+      const toDate = parseISO(to);
+      if (isValid(toDate)) paymentForFilter.lte = endOfDay(toDate);
+    }
+    // Default: all overdue EMIs up to today
+    if (!paymentForFilter.lte) paymentForFilter.lte = today;
+
+    // Find all EMIs that are UNPAID or PARTIAL within the date range
+    const emiWhere = {
+      status: { in: ["UNPAID", "PARTIAL"] },
+      paymentFor: paymentForFilter,
+      loan: {
+        isClosed: false,
+        fileStatus: {
+          notIn: ["CLOSED", "CANCELLED", "REJECTED", "WRITTEN_OFF", "INITIATED", "IN_PROGRESS", "PENDING_APPROVAL"],
+        },
+      },
+    };
+
+    if (branchId) emiWhere.loan.branchId = branchId;
+    if (loanTypeId) emiWhere.loan.loanTypeId = loanTypeId;
+
+    const emis = await prisma.eMI.findMany({
+      where: emiWhere,
+      include: {
+        loan: {
+          include: {
+            user: {
+              include: {
+                addresses: { include: { city: true, state: true }, take: 1 },
+                guarantors: true,
+              },
+            },
+            guarantors: {
+              include: {
+                guarantor: {
+                  include: {
+                    addresses: { include: { city: true, state: true }, take: 1 },
+                  },
+                },
+              },
+            },
+            twoWheelerLoan: { include: { brand: true, model: true } },
+            agriLoan: { include: { equipment: true } },
+            branch: true,
+            loanType: true,
+          },
+        },
+      },
+      orderBy: { paymentFor: "asc" },
+    });
+
+    // Group by loan to aggregate dues
+    const loanMap = new Map();
+
+    for (const emi of emis) {
+      const loanId = emi.loanId;
+      if (!loanMap.has(loanId)) {
+        loanMap.set(loanId, {
+          loan: emi.loan,
+          totalDueAmount: 0,
+          totalDuePenalty: 0,
+          overdueEmis: 0,
+        });
+      }
+      const entry = loanMap.get(loanId);
+
+      const emiAmount = Number(emi.emiPayAmount || 0);
+      const paidSoFar = Number(emi.amountPaidSoFar || 0);
+      const finePaid = Number(emi.finePaid || 0);
+      const fineAmount = Number(emi.fineAmount || 0);
+
+      // EMI component due (excluding fine)
+      const emiPaidComponent = Math.max(paidSoFar - finePaid, 0);
+      const emiDue = Math.max(emiAmount - emiPaidComponent, 0);
+      const fineDue = Math.max(fineAmount - finePaid, 0);
+
+      entry.totalDueAmount += emiDue;
+      entry.totalDuePenalty += fineDue;
+      entry.overdueEmis += 1;
+    }
+
+    const getUserAddress = (user) => {
+      if (!user?.addresses?.length) return "";
+      const addr = user.addresses[0];
+      return [addr.address, addr.city?.name, addr.state?.name, addr.pincode]
+        .filter(Boolean)
+        .join(", ");
+    };
+
+    const getRegModel = (loan) => {
+      if (loan.twoWheelerLoan) {
+        const reg = loan.twoWheelerLoan.registrationNumber || "";
+        const model = [
+          loan.twoWheelerLoan.brand?.name,
+          loan.twoWheelerLoan.model?.name,
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return { reg, model };
+      }
+      if (loan.agriLoan) {
+        return {
+          reg: loan.agriLoan.registrationNumber || "",
+          model: loan.agriLoan.equipment?.name || "",
+        };
+      }
+      return { reg: "", model: "" };
+    };
+
+    const data = Array.from(loanMap.values()).map((entry) => {
+      const { loan } = entry;
+      const user = loan.user;
+      const { reg, model } = getRegModel(loan);
+
+      const userName = [user?.firstName, user?.middleName, user?.lastName]
+        .filter(Boolean)
+        .join(" ");
+
+      // Father's name from relation fields
+      const fathersName = [user?.relationFirstName, user?.relationMiddleName, user?.relationLastName]
+        .filter(Boolean)
+        .join(" ");
+
+      // Guarantor info from LoanGuarantor (linked users)
+      const loanGuarantors = (loan.guarantors || []).map((lg) => {
+        const g = lg.guarantor;
+        return {
+          name: [g?.firstName, g?.middleName, g?.lastName].filter(Boolean).join(" "),
+          phone: g?.phone || "",
+          address: getUserAddress(g),
+        };
+      });
+
+      // Family guarantors from UserGuarantor
+      const familyGuarantors = (user?.guarantors || []).map((ug) => ({
+        name: ug.name || "",
+        familyMemberName: ug.fatherName || "",
+        phone: ug.mobileNo || "",
+        address: ug.address || "",
+      }));
+
+      const dueAmount = r2(entry.totalDueAmount);
+      const duePenalty = r2(entry.totalDuePenalty);
+
+      return {
+        id: loan.id,
+        fileNo: loan.fileNo,
+        userName,
+        fathersName,
+        phone: user?.phone || "",
+        address: getUserAddress(user),
+        regNo: reg,
+        model,
+        dueAmount,
+        duePenalty,
+        totalAmount: r2(dueAmount + duePenalty),
+        overdueEmis: entry.overdueEmis,
+        guarantors: [...loanGuarantors, ...familyGuarantors],
+        branch: loan.branch?.name || "",
+        loanType: loan.loanType?.name || "",
+      };
+    });
+
+    // Sort by totalAmount descending (worst first)
+    data.sort((a, b) => b.totalAmount - a.totalAmount);
+
+    // Excel download
+    if (String(download).toLowerCase() === "true") {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Pending EMI Report");
+
+      const headers = [
+        "S.No", "File No", "Customer Name", "Father's Name", "Mobile No",
+        "Address", "Reg No", "Model", "Due Amount", "Due Penalty",
+        "Total Amount", "Overdue EMIs", "Guarantor Name", "Guarantor Mobile", "Guarantor Address"
+      ];
+      const headerRow = sheet.addRow(headers);
+      headerRow.font = { bold: true };
+      headerRow.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+        cell.border = { bottom: { style: "thin", color: { argb: "FF94A3B8" } } };
+      });
+
+      data.forEach((row, idx) => {
+        // First guarantor info for main row
+        const g = row.guarantors[0] || {};
+        sheet.addRow([
+          idx + 1, row.fileNo, row.userName, row.fathersName, row.phone,
+          row.address, row.regNo, row.model, row.dueAmount, row.duePenalty,
+          row.totalAmount, row.overdueEmis,
+          g.name || g.familyMemberName || "", g.phone || "", g.address || "",
+        ]);
+
+        // Additional guarantors as extra rows
+        for (let i = 1; i < row.guarantors.length; i++) {
+          const gx = row.guarantors[i];
+          sheet.addRow([
+            "", "", "", "", "", "", "", "", "", "", "", "",
+            gx.name || gx.familyMemberName || "", gx.phone || "", gx.address || "",
+          ]);
+        }
+      });
+
+      sheet.addRow([]);
+      const summaryRow = sheet.addRow(["Total Loans with Pending EMIs", data.length]);
+      summaryRow.font = { bold: true };
+      const totalDue = data.reduce((s, d) => s + d.dueAmount, 0);
+      const totalPenalty = data.reduce((s, d) => s + d.duePenalty, 0);
+      sheet.addRow(["Total Due Amount", r2(totalDue)]);
+      sheet.addRow(["Total Due Penalty", r2(totalPenalty)]);
+      sheet.addRow(["Total", r2(totalDue + totalPenalty)]);
+
+      sheet.columns.forEach((col) => {
+        let maxLen = 10;
+        col.eachCell({ includeEmpty: false }, (cell) => {
+          const len = cell.value ? String(cell.value).length : 0;
+          if (len > maxLen) maxLen = len;
+        });
+        col.width = Math.min(maxLen + 2, 40);
+      });
+
+      const filename = `Pending_EMI_Report_${format(new Date(), "yyyy-MM-dd")}.xlsx`;
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      return res.send(Buffer.from(buffer));
+    }
+
+    return res.status(200).json({
+      status: 200,
+      data,
+      summary: {
+        totalCount: data.length,
+        totalDueAmount: r2(data.reduce((s, d) => s + d.dueAmount, 0)),
+        totalDuePenalty: r2(data.reduce((s, d) => s + d.duePenalty, 0)),
+        totalAmount: r2(data.reduce((s, d) => s + d.totalAmount, 0)),
+      },
+    });
+  } catch (error) {
+    console.error("getPendingEmiReport error:", error);
+    return res.status(500).json({ error: error.message, status: 500 });
+  }
+};

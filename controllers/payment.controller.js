@@ -1,6 +1,7 @@
 // payment.controller.js
 const prisma = require("../lib/prisma");
 const Decimal = require("decimal.js");
+const ExcelJS = require("exceljs");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const {
   shouldCloseLoan,
@@ -1996,7 +1997,12 @@ exports.getPaymentInvoice = async (req, res) => {
       include: {
         loan: {
           include: {
-            user: true,
+            user: {
+              include: {
+                relationType: true,
+                addresses: true,
+              },
+            },
             loanType: true,
             branch: true,
           },
@@ -2012,6 +2018,15 @@ exports.getPaymentInvoice = async (req, res) => {
     const user = payment.loan.user;
     const loan = payment.loan;
     const emi = payment.emi;
+
+    // Build relation name (S/O, D/O, W/O etc.)
+    const relationName = [user.relationFirstName, user.relationMiddleName, user.relationLastName]
+      .filter(Boolean)
+      .join(" ");
+    const relationLabel = user.relationType?.name || "S/O";
+
+    // Get primary address (first address or user.address field)
+    const primaryAddress = user.addresses?.[0]?.address || user.address || "";
 
     const invoice = {
       invoiceNo: payment.id,
@@ -2036,9 +2051,11 @@ exports.getPaymentInvoice = async (req, res) => {
         name: [user.firstName, user.middleName, user.lastName]
           .filter(Boolean)
           .join(" "),
+        relationName,
+        relationLabel,
         phone: user.phone,
         email: user.email,
-        address: user.address,
+        address: primaryAddress,
       },
       loan: {
         fileNo: loan.fileNo,
@@ -2596,7 +2613,7 @@ exports.getLoanStatement = async (req, res) => {
 // --------------------------------
 exports.getPaymentReports = async (req, res) => {
   try {
-    const { reportType, date, month, year, branchId, from, to, status, paymentMode, download } = req.query;
+    const { reportType, date, month, year, branchId, from, to, paymentMode, download } = req.query;
 
     const r2 = (n) => Math.round(Number(n) || 0);
 
@@ -2630,20 +2647,14 @@ exports.getPaymentReports = async (req, res) => {
       return res.status(400).json({ error: "Invalid parameters. Provide either 'from' and 'to' dates, or 'reportType' (daily, monthly, yearly)", status: 400 });
     }
 
-    // Build where clause
+    // Build where clause — only verified payments
     const whereClause = {
       paymentDate: {
         gte: startDate,
         lte: endDate
-      }
+      },
+      verified: true,
     };
-
-    // Add status filter if provided, otherwise default to PAID and VERIFICATION_PENDING
-    if (status) {
-      whereClause.status = status;
-    } else {
-      whereClause.status = { in: ["PAID", "VERIFICATION_PENDING"] };
-    }
 
     // Add payment mode filter if provided
     if (paymentMode) {
@@ -2675,11 +2686,8 @@ exports.getPaymentReports = async (req, res) => {
 
     // Aggregate statistics
     let totalAmount = 0;
-    let totalPrincipal = 0;
-    let totalInterest = 0;
-    let totalFine = 0;
-    let verifiedAmount = 0;
-    let pendingAmount = 0;
+    let totalEmiAmount = 0;
+    let totalOdpAmount = 0;
 
     const paymentModes = {};
     const branchWise = {};
@@ -2688,11 +2696,14 @@ exports.getPaymentReports = async (req, res) => {
       const amount = r2(p.amount);
       totalAmount += amount;
 
-      if (p.verified) {
-        verifiedAmount += amount;
-      } else {
-        pendingAmount += amount;
-      }
+      // Extract breakdown from metadata
+      const meta = p.metadata || {};
+      const summary = meta.summary || {};
+      const fineCollected = r2(summary.fineCollected || 0);
+      const emiComponent = r2(amount - fineCollected); // principal + interest
+
+      totalEmiAmount += emiComponent;
+      totalOdpAmount += fineCollected;
 
       // Count by payment mode
       paymentModes[p.paymentMode] = (paymentModes[p.paymentMode] || 0) + amount;
@@ -2703,28 +2714,90 @@ exports.getPaymentReports = async (req, res) => {
 
       return {
         id: p.id,
-        paymentId: p.id,
         paymentDate: p.paymentDate,
         amount: amount,
+        emiAmount: emiComponent,
+        odpAmount: fineCollected,
         paymentMode: p.paymentMode,
-        transactionId: p.transactionId,
-        status: p.status,
-        verified: p.verified,
         loanId: p.loanId,
         loanFileNo: p.loan?.fileNo,
-        loanType: p.loan?.loanType?.name || p.loan?.loanType?.label,
         userName: p.loan?.user ? `${p.loan.user.firstName || ''} ${p.loan.user.lastName || ''}`.trim() : '',
-        userPhone: p.loan?.user?.phone,
-        branch: p.loan?.branch?.name,
         loan: p.loan,
-        admin: p.admin,
-        employee: p.employee
       };
     });
 
-    // Count verified and unverified payments
-    const verifiedCount = payments.filter(p => p.verified).length;
-    const unverifiedCount = payments.filter(p => !p.verified).length;
+    // If download=true, generate and return an Excel file
+    if (String(download).toLowerCase() === "true") {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Payment Report");
+
+      const fmtDate = (d) => {
+        if (!d) return "";
+        const dt = new Date(d);
+        if (isNaN(dt.getTime())) return "";
+        return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+      };
+
+      // Header row
+      const headers = [
+        "S.No", "Name", "File No", "Receipt ID", "Receipt Date",
+        "Mode", "Amount", "ODP", "Total Pay"
+      ];
+      const headerRow = sheet.addRow(headers);
+      headerRow.font = { bold: true };
+      headerRow.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+        cell.border = {
+          bottom: { style: "thin", color: { argb: "FF94A3B8" } }
+        };
+      });
+
+      // Data rows
+      paymentDetails.forEach((p, idx) => {
+        sheet.addRow([
+          idx + 1,
+          p.userName || "",
+          p.loanFileNo || "",
+          p.id || "",
+          fmtDate(p.paymentDate),
+          p.paymentMode || "",
+          p.emiAmount,
+          p.odpAmount,
+          p.amount,
+        ]);
+      });
+
+      // Summary rows at the bottom
+      sheet.addRow([]);
+      const summaryHeaderRow = sheet.addRow(["Summary"]);
+      summaryHeaderRow.font = { bold: true };
+      sheet.addRow(["Total Payments", payments.length]);
+      sheet.addRow(["Total Amount (P+I)", r2(totalEmiAmount)]);
+      sheet.addRow(["Total ODP (Fine)", r2(totalOdpAmount)]);
+      sheet.addRow(["Total Pay", r2(totalAmount)]);
+
+      // Auto-fit column widths
+      sheet.columns.forEach((column) => {
+        let maxLen = 10;
+        column.eachCell({ includeEmpty: false }, (cell) => {
+          const len = cell.value ? String(cell.value).length : 0;
+          if (len > maxLen) maxLen = len;
+        });
+        column.width = Math.min(maxLen + 2, 40);
+      });
+
+      const fromStr = startDate.toISOString().split("T")[0];
+      const toStr = endDate.toISOString().split("T")[0];
+      const filename = `Payment_Report_${fromStr}_to_${toStr}.xlsx`;
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      return res.send(Buffer.from(buffer));
+    }
 
     return res.status(200).json({
       status: 200,
@@ -2732,10 +2805,8 @@ exports.getPaymentReports = async (req, res) => {
       summary: {
         totalCount: payments.length,
         totalAmount: r2(totalAmount),
-        verifiedCount,
-        unverifiedCount,
-        verifiedAmount: r2(verifiedAmount),
-        pendingVerificationAmount: r2(pendingAmount)
+        totalEmiAmount: r2(totalEmiAmount),
+        totalOdpAmount: r2(totalOdpAmount),
       },
       period: {
         startDate,
@@ -2761,7 +2832,7 @@ exports.getPaymentReports = async (req, res) => {
 // --------------------------------
 exports.getEmiReports = async (req, res) => {
   try {
-    const { status, from, to, branchId, loanTypeId } = req.query;
+    const { status, from, to, branchId, loanTypeId, download } = req.query;
 
     const r2 = (n) => Math.round(Number(n) || 0);
     const today = new Date();
@@ -2923,6 +2994,81 @@ exports.getEmiReports = async (req, res) => {
         }
       };
     });
+
+    // If download=true, generate and return an Excel file
+    if (String(download).toLowerCase() === "true") {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("EMI Report");
+
+      const fmtDate = (d) => {
+        if (!d) return "";
+        const dt = new Date(d);
+        if (isNaN(dt.getTime())) return "";
+        return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+      };
+
+      const headers = [
+        "S.No", "Due Date", "File No", "Customer Name", "Phone", "Branch",
+        "Loan Type", "EMI Amount", "Paid", "Pending", "Fine",
+        "Delay Days", "Status"
+      ];
+      const headerRow = sheet.addRow(headers);
+      headerRow.font = { bold: true };
+      headerRow.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+        cell.border = {
+          bottom: { style: "thin", color: { argb: "FF94A3B8" } }
+        };
+      });
+
+      emiDetails.forEach((emi, idx) => {
+        sheet.addRow([
+          idx + 1,
+          fmtDate(emi.paymentFor),
+          emi.loan?.fileNo || "",
+          emi.loan?.user?.name || "",
+          emi.loan?.user?.phone || "",
+          emi.loan?.branch || "",
+          emi.loan?.loanType || "",
+          emi.emiPayAmount,
+          emi.amountPaidSoFar,
+          emi.pendingAmount,
+          emi.fineAmount,
+          emi.delayDays,
+          emi.displayStatus || emi.status,
+        ]);
+      });
+
+      // Summary rows
+      sheet.addRow([]);
+      const summaryHeaderRow = sheet.addRow(["Summary"]);
+      summaryHeaderRow.font = { bold: true };
+      sheet.addRow(["Total EMIs", emis.length]);
+      sheet.addRow(["Total EMI Amount", r2(totalEmiAmount)]);
+      sheet.addRow(["Total Paid", r2(totalPaidAmount)]);
+      sheet.addRow(["Total Pending", r2(totalPendingAmount)]);
+      sheet.addRow(["Total Fine", r2(totalFineAmount)]);
+
+      // Auto-fit column widths
+      sheet.columns.forEach((column) => {
+        let maxLen = 10;
+        column.eachCell({ includeEmpty: false }, (cell) => {
+          const len = cell.value ? String(cell.value).length : 0;
+          if (len > maxLen) maxLen = len;
+        });
+        column.width = Math.min(maxLen + 2, 40);
+      });
+
+      const filename = `EMI_Report_${status || "all"}_${new Date().toISOString().split("T")[0]}.xlsx`;
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      return res.send(Buffer.from(buffer));
+    }
 
     return res.status(200).json({
       status: 200,

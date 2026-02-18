@@ -28,4 +28,20 @@ router.get(
   paymentController.getEmiReports
 );
 
+// Loan report (all loans summary)
+router.get(
+  "/loans",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  reportController.getLoanReport
+);
+
+// Pending EMI report (month-wise overdue)
+router.get(
+  "/pending-emis",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  reportController.getPendingEmiReport
+);
+
 module.exports = router;

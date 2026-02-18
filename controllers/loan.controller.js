@@ -1657,7 +1657,11 @@ exports.getLoanById = async (req, res) => {
     const loan = await prisma.loan.findUnique({
       where: { id },
       include: {
-        user: true,
+        user: {
+          include: {
+            addresses: { include: { city: true, state: true }, take: 1 },
+          },
+        },
         loanType: true,
         emi: {
           orderBy: { paymentFor: "asc" },
