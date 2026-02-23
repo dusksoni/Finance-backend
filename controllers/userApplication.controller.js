@@ -1,0 +1,355 @@
+const prisma = require("../lib/prisma");
+const logAction = require("../utils/adminLogger");
+
+const clampStep = (step) => {
+  const parsed = Number(step);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.min(Math.max(Math.floor(parsed), 1), 5);
+};
+
+const resolveCreator = (req) => {
+  const isAdmin = req.user?.type === "ADMIN";
+  return {
+    isAdmin,
+    adminId: isAdmin ? req.user?.adminId : null,
+    employeeId: !isAdmin ? req.user?.employeeId : null,
+  };
+};
+
+const buildCreatorFilter = (creator) => {
+  if (creator.isAdmin) return { createdByAdminId: creator.adminId };
+  return { createdByEmployeeId: creator.employeeId };
+};
+
+const normalizeDraftData = (data) => {
+  if (!data || typeof data !== "object") return null;
+  return data;
+};
+
+exports.getDrafts = async (req, res) => {
+  try {
+    const creator = resolveCreator(req);
+    const creatorFilter = buildCreatorFilter(creator);
+
+    const drafts = await prisma.userApplicationDraft.findMany({
+      where: { status: "DRAFT", ...creatorFilter },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    return res.status(200).json({ status: 200, data: drafts });
+  } catch (error) {
+    console.error("User application drafts list error:", error);
+    return res.status(500).json({
+      status: 500,
+      error: "Failed to fetch user application drafts",
+      message: error.message,
+    });
+  }
+};
+
+exports.createDraft = async (req, res) => {
+  try {
+    const { data, step } = req.body || {};
+    const creator = resolveCreator(req);
+    const creatorFilter = buildCreatorFilter(creator);
+
+    let draft = await prisma.userApplicationDraft.findFirst({
+      where: { status: "DRAFT", ...creatorFilter },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const nextStep = clampStep(step);
+    const nextData = normalizeDraftData(data);
+
+    if (draft) {
+      if (nextData || step) {
+        draft = await prisma.userApplicationDraft.update({
+          where: { id: draft.id },
+          data: {
+            step: step ? Math.max(draft.step, nextStep) : draft.step,
+            data: nextData || draft.data,
+          },
+        });
+      }
+      return res.status(200).json({ status: 200, data: draft });
+    }
+
+    const created = await prisma.userApplicationDraft.create({
+      data: {
+        status: "DRAFT",
+        step: nextStep,
+        data: nextData,
+        createdByAdmin: creator.adminId
+          ? { connect: { id: creator.adminId } }
+          : undefined,
+        createdByEmployee: creator.employeeId
+          ? { connect: { id: creator.employeeId } }
+          : undefined,
+      },
+    });
+
+    return res.status(201).json({ status: 201, data: created });
+  } catch (error) {
+    console.error("User application draft create error:", error);
+    return res.status(500).json({
+      status: 500,
+      error: "Failed to create user application draft",
+      message: error.message,
+    });
+  }
+};
+
+exports.getDraft = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ status: 400, error: "Draft id required" });
+    }
+
+    const creator = resolveCreator(req);
+
+    const draft = await prisma.userApplicationDraft.findUnique({ where: { id } });
+
+    if (draft) {
+      const isCreatorMatch = creator.isAdmin
+        ? draft.createdByAdminId === creator.adminId
+        : draft.createdByEmployeeId === creator.employeeId;
+      if (!isCreatorMatch) {
+        return res.status(404).json({ status: 404, error: "Draft not found" });
+      }
+    }
+
+    if (!draft) {
+      return res.status(404).json({ status: 404, error: "Draft not found" });
+    }
+
+    return res.status(200).json({ status: 200, data: draft });
+  } catch (error) {
+    console.error("User application draft fetch error:", error);
+    return res.status(500).json({
+      status: 500,
+      error: "Failed to fetch user application draft",
+      message: error.message,
+    });
+  }
+};
+
+exports.updateStep = async (req, res) => {
+  try {
+    const { id, step } = req.params;
+    if (!id) {
+      return res.status(400).json({ status: 400, error: "Draft id required" });
+    }
+
+    const existing = await prisma.userApplicationDraft.findUnique({ where: { id } });
+
+    if (!existing) {
+      return res.status(404).json({ status: 404, error: "Draft not found" });
+    }
+
+    const nextStep = clampStep(step);
+    const incoming = normalizeDraftData(req.body?.data);
+    const currentData =
+      existing.data && typeof existing.data === "object" ? existing.data : {};
+    const merged = incoming ? { ...currentData, ...incoming } : currentData;
+
+    const updated = await prisma.userApplicationDraft.update({
+      where: { id },
+      data: {
+        step: Math.max(existing.step, nextStep),
+        data: merged,
+      },
+    });
+
+    return res.status(200).json({ status: 200, data: updated });
+  } catch (error) {
+    console.error("User application draft update error:", error);
+    return res.status(500).json({
+      status: 500,
+      error: "Failed to update user application draft",
+      message: error.message,
+    });
+  }
+};
+
+exports.submitDraft = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ status: 400, error: "Draft id required" });
+    }
+
+    const existing = await prisma.userApplicationDraft.findUnique({ where: { id } });
+
+    if (!existing) {
+      return res.status(404).json({ status: 404, error: "Draft not found" });
+    }
+
+    const incoming = normalizeDraftData(req.body?.data);
+    const currentData =
+      existing.data && typeof existing.data === "object" ? existing.data : {};
+    const merged = incoming ? { ...currentData, ...incoming } : currentData;
+
+    // Mark draft as submitted
+    const draft = await prisma.userApplicationDraft.update({
+      where: { id },
+      data: { status: "SUBMITTED", step: 5, data: merged },
+    });
+
+    // Create the actual user from merged draft data
+    const {
+      firstName,
+      middleName,
+      lastName,
+      relationFirstName,
+      relationMiddleName,
+      relationLastName,
+      genderId,
+      relationTypeId,
+      dateOfBirth,
+      maritalStatus,
+      qualification,
+      phone,
+      officeNumber,
+      email,
+      isDefaulter,
+      photo,
+      photoIds = [],
+      proofOfIncome,
+      creditScore,
+      profession,
+      addresses = [],
+      proofOfIncomeImages = [],
+      guarantors = [],
+    } = merged;
+
+    // Get region from first address
+    let regionId = null;
+    if (addresses.length > 0) {
+      const region = await prisma.region.findFirst({
+        where: { stateId: addresses[0].stateId, cityId: addresses[0].cityId },
+        select: { id: true },
+      });
+      regionId = region?.id || null;
+    }
+    if (!regionId) {
+      const defaultRegion = await prisma.region.findFirst();
+      regionId = defaultRegion?.id || null;
+    }
+
+    const createFiles = async (files = []) =>
+      Promise.all(
+        files.map((file) =>
+          prisma.file.create({
+            data: {
+              url: file.secure_url || file.url,
+              publicId: file.public_id || file.publicId,
+              resourceType: file.resource_type || file.resourceType,
+              format: file.format,
+            },
+          })
+        )
+      ).then((created) => created.map((f) => ({ id: f.id })));
+
+    const proofIncomeImages = await createFiles(proofOfIncomeImages);
+    const profilePhoto =
+      photo && typeof photo === "object" && Object.keys(photo).length > 0
+        ? await createFiles([photo])
+        : [];
+
+    const user = await prisma.user.create({
+      data: {
+        firstName,
+        middleName,
+        lastName,
+        relationTypeId,
+        relationFirstName,
+        relationMiddleName,
+        relationLastName,
+        dateOfBirth,
+        phone,
+        officeNumber,
+        genderId,
+        maritalStatus,
+        email: email || null,
+        isDefaulter: isDefaulter === "true" || isDefaulter === true,
+        proofOfIncome,
+        creditScore: creditScore ? parseInt(creditScore) : null,
+        profession,
+        qualification,
+        regionId,
+        createdBy: req.user?.type || "unknown",
+        adminId: req.user?.adminId || null,
+        employeeId: req.user?.employeeId || null,
+        proofOfIncomeImages: { connect: proofIncomeImages },
+        photoId: profilePhoto.length ? profilePhoto[0].id : null,
+        photoIds: {
+          create: await Promise.all(
+            photoIds.map(async (pid) => ({
+              photoIdNumber: pid.photoIdNumber,
+              photoIdTypeId: pid.photoIdTypeId,
+              images: { connect: await createFiles(pid.images || []) },
+            }))
+          ),
+        },
+        ...(addresses.length > 0 && {
+          addresses: {
+            create: addresses.map((addr) => ({
+              addressCategoryId: addr.addressCategoryId,
+              address: addr.address,
+              country: addr.country,
+              stateId: addr.stateId,
+              cityId: addr.cityId,
+              pincode: parseInt(addr.pincode),
+            })),
+          },
+        }),
+        ...(guarantors.length > 0 && {
+          guarantors: {
+            create: guarantors.map((g) => ({
+              name: g.name,
+              fatherName: g.fatherName,
+              mobileNo: g.mobileNo,
+              address: g.address,
+              photoIdType1: g.photoIdType1 || null,
+              photoIdNumber1: g.photoIdNumber1 || null,
+              photoIdImages1: g.photoIdImages1 || null,
+              photoIdType2: g.photoIdType2 || null,
+              photoIdNumber2: g.photoIdNumber2 || null,
+              photoIdImages2: g.photoIdImages2 || null,
+            })),
+          },
+        }),
+      },
+      include: {
+        photoIds: { include: { images: true } },
+        proofOfIncomeImages: true,
+        photo: true,
+        region: true,
+        gender: true,
+        relationType: true,
+        addresses: { include: { addressCategory: true, state: true, city: true } },
+        guarantors: true,
+      },
+    });
+
+    await logAction({
+      action: "CREATED USER VIA APPLICATION DRAFT",
+      table: "User",
+      targetId: user.id,
+      metadata: { draftId: draft.id, userId: user.id },
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
+    return res.status(201).json({ status: 201, data: { draft, user } });
+  } catch (error) {
+    console.error("User application draft submit error:", error);
+    return res.status(500).json({
+      status: 500,
+      error: "Failed to submit user application draft",
+      message: error.message,
+    });
+  }
+};

@@ -85,6 +85,7 @@ model Admin {
   approvedForecloseRequests ForecloseRequest[] @relation("ForecloseApprovedByAdmin")
   requestedForecloseRequests ForecloseRequest[] @relation("ForecloseRequestedByAdmin")
   loanApplicationDrafts    LoanApplicationDraft[]
+  userApplicationDrafts    UserApplicationDraft[]
 }
 
 model Role {
@@ -141,6 +142,7 @@ model Employee {
   approvedForecloseRequests ForecloseRequest[] @relation("ForecloseApprovedByEmployee")
   requestedForecloseRequests ForecloseRequest[] @relation("ForecloseRequestedByEmployee")
   loanApplicationDrafts    LoanApplicationDraft[]
+  userApplicationDrafts    UserApplicationDraft[]
 }
 
 model LoginActivity {
@@ -891,6 +893,30 @@ model LoanApplicationDraft {
 
   user              User      @relation(fields: [userId], references: [id])
   sourceLoan        Loan?     @relation(fields: [sourceLoanId], references: [id])
+  createdByAdmin    Admin?    @relation(fields: [createdByAdminId], references: [id])
+  createdByEmployee Employee? @relation(fields: [createdByEmployeeId], references: [id])
+}
+
+// ==========================
+// 👤 User Application Draft
+// ==========================
+
+enum UserApplicationStatus {
+  DRAFT
+  SUBMITTED
+  CANCELLED
+}
+
+model UserApplicationDraft {
+  id                  String              @id @default(uuid())
+  status              UserApplicationStatus @default(DRAFT)
+  step                Int                 @default(1)
+  data                Json?
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
   createdByAdmin    Admin?    @relation(fields: [createdByAdminId], references: [id])
   createdByEmployee Employee? @relation(fields: [createdByEmployeeId], references: [id])
 }
