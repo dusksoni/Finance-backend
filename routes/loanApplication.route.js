@@ -40,4 +40,12 @@ router.post(
   loanApplicationController.submitDraft
 );
 
+router.post(
+  "/from-loan/:loanId",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  requirePermission("LOAN_EDIT"),
+  loanApplicationController.createDraftFromLoan
+);
+
 module.exports = router;

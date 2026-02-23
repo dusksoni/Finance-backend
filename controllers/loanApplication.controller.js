@@ -231,3 +231,148 @@ exports.submitDraft = async (req, res) => {
     });
   }
 };
+
+exports.createDraftFromLoan = async (req, res) => {
+  try {
+    const { loanId } = req.params;
+    if (!loanId) {
+      return res.status(400).json({ status: 400, error: "loanId is required" });
+    }
+
+    const loan = await prisma.loan.findUnique({
+      where: { id: loanId },
+      include: {
+        twoWheelerLoan: true,
+        agriLoan: true,
+        msmeLoan: true,
+        loanInvoiceDoc: true,
+        insuranceDoc: true,
+        registrationDoc: true,
+        payments: { select: { id: true }, take: 1 },
+      },
+    });
+
+    if (!loan) {
+      return res.status(404).json({ status: 404, error: "Loan not found" });
+    }
+
+    const creator = resolveCreator(req);
+    const creatorFilter = buildCreatorFilter(creator);
+
+    // Idempotent: return existing DRAFT for this loan+creator if one exists
+    const existing = await prisma.loanApplicationDraft.findFirst({
+      where: { sourceLoanId: loanId, status: "DRAFT", ...creatorFilter },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existing) {
+      return res.status(200).json({ status: 200, data: existing });
+    }
+
+    const hasPayments = loan.payments.length > 0;
+
+    // Map loan subtype data
+    let twoWheeler = null;
+    let agriculture = null;
+    let msme = null;
+
+    if (loan.twoWheelerLoan) {
+      const tw = loan.twoWheelerLoan;
+      twoWheeler = {
+        brandId: tw.brandId,
+        modelId: tw.modelId,
+        variantId: tw.variantId,
+        vehicleName: tw.vehicleName,
+        registrationNumber: tw.registrationNumber,
+        chassisNumber: tw.chassisNumber,
+        engineNumber: tw.engineNumber,
+        rcNumber: tw.rcNumber,
+      };
+    }
+
+    if (loan.agriLoan) {
+      const ag = loan.agriLoan;
+      agriculture = {
+        equipmentId: ag.equipmentId,
+        registrationNumber: ag.registrationNumber,
+        usageArea: ag.usageArea,
+        isSeasonal: ag.isSeasonal,
+      };
+    }
+
+    if (loan.msmeLoan) {
+      const ms = loan.msmeLoan;
+      msme = {
+        businessName: ms.businessName,
+        registrationNumber: ms.registrationNumber,
+        businessType: ms.businessType,
+        monthlyRevenue: ms.monthlyRevenue,
+        gstNumber: ms.gstNumber,
+      };
+    }
+
+    const draftData = {
+      // Step 1
+      branchId: loan.branchId,
+      showroomId: loan.showroomId,
+      loanTypeId: loan.loanTypeId,
+      // Step 2
+      principalLoanAmount: loan.principalLoanAmount,
+      interestRate: loan.interestRate,
+      tenureMonths: loan.tenureMonths,
+      paymentFrequency: loan.paymentFrequency,
+      agreementDate: loan.agreementDate,
+      monthlyPayableAmount: loan.monthlyPayableAmount,
+      // Step 3
+      twoWheeler,
+      agriculture,
+      msme,
+      // Step 4
+      loanInvoiceDoc: loan.loanInvoiceDoc,
+      insuranceDoc: loan.insuranceDoc,
+      registrationDoc: loan.registrationDoc,
+      // Step 5
+      insuranceAmount: loan.insuranceAmount,
+      insuranceAlert: loan.insuranceAlert,
+      insuranceDate: loan.insuranceDate,
+      insuranceValidTill: loan.insuranceValidTill,
+      insuranceNumber: loan.insuranceNumber,
+      insuranceCompany: loan.insuranceCompany,
+      processingCharges: loan.processingCharges,
+      rtoCharges: loan.rtoCharges,
+      otherCharges: loan.otherCharges,
+      penaltyPercentage: loan.penaltyPercentage,
+      comment: loan.comment,
+      // Meta
+      _editMeta: {
+        sourceLoanId: loan.id,
+        hasPayments,
+      },
+    };
+
+    const draft = await prisma.loanApplicationDraft.create({
+      data: {
+        user: { connect: { id: loan.userId } },
+        sourceLoan: { connect: { id: loanId } },
+        status: "DRAFT",
+        step: 5,
+        data: draftData,
+        createdByAdmin: creator.adminId
+          ? { connect: { id: creator.adminId } }
+          : undefined,
+        createdByEmployee: creator.employeeId
+          ? { connect: { id: creator.employeeId } }
+          : undefined,
+      },
+    });
+
+    return res.status(201).json({ status: 201, data: draft });
+  } catch (error) {
+    console.error("createDraftFromLoan error:", error);
+    return res.status(500).json({
+      status: 500,
+      error: "Failed to create draft from loan",
+      message: error.message,
+    });
+  }
+};
