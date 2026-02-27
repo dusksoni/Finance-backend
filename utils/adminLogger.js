@@ -18,9 +18,19 @@ const logAction = async ({
   action,
   table,
   targetId,
+  message,
   metadata = {},
 }) => {
   try {
+    let normalizedMetadata = metadata;
+    if (!normalizedMetadata || typeof normalizedMetadata !== "object" || Array.isArray(normalizedMetadata)) {
+      normalizedMetadata = { value: normalizedMetadata };
+    }
+    if (message) {
+      if (!normalizedMetadata.message) normalizedMetadata.message = message;
+      if (!normalizedMetadata.summary) normalizedMetadata.summary = message;
+    }
+
     await prisma.actionLog.create({
       data: {
         adminId,
@@ -29,7 +39,7 @@ const logAction = async ({
         action,
         table,
         targetId,
-        metadata,
+        metadata: normalizedMetadata,
       },
     });
   } catch (error) {

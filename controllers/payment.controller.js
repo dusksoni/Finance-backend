@@ -13,9 +13,17 @@ const {
   shouldUpdateLoanFines,
   markLoanFinesUpdated,
 } = require("../utils/fineUpdateCache");
+const logAction = require("../utils/adminLogger");
 
 // Configure Decimal.js for precision
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
+
+const getActorContext = (user = {}) => ({
+  loginActivityId: user?.loginActivityId,
+  adminId: user?.adminId || (user?.type === "ADMIN" ? user?.id : undefined),
+  employeeId:
+    user?.employeeId || (user?.type === "EMPLOYEE" ? user?.id : undefined),
+});
 
 // --- Utility: calculate fine for any pending principal & dueDate ---
 // -----------------------------
@@ -628,6 +636,25 @@ exports.makePayment = async (req, res) => {
       { timeout: 30000 } // Increased to 30s for complex payment processing
     );
 
+    await logAction({
+      action: "CREATED_PAYMENT",
+      table: "Loan",
+      targetId: loanId,
+      message: `Created payment of ${amountPaid} via ${paymentMode || "mode"}`,
+      metadata: {
+        paymentId: result?.paymentId || null,
+        loanId,
+        amount: amountPaid,
+        paymentMode: paymentMode || null,
+        breakdown: {
+          principal: result?.summary?.principalCollected || 0,
+          interest: result?.summary?.interestCollected || 0,
+          penal: result?.summary?.fineCollected || 0,
+        },
+      },
+      ...getActorContext(req.user),
+    });
+
     return res.status(200).json({ data: result, status: 200 });
   } catch (err) {
     console.error("Payment Error:", err);
@@ -1012,6 +1039,26 @@ exports.payPaymentById = async (req, res) => {
     } catch (e) {
       console.warn("Failed to update loanPendingAfter:", e?.message);
     }
+
+    await logAction({
+      action: "CREATED_PAYMENT",
+      table: "Loan",
+      targetId: txResult.loanId,
+      message: `Created payment of ${r2(payToFine + payToInterest + payToPrincipal)} via ${paymentMode || "mode"}`,
+      metadata: {
+        paymentId: txResult.paymentId,
+        loanId: txResult.loanId,
+        emiId,
+        amount: r2(payToFine + payToInterest + payToPrincipal),
+        paymentMode: paymentMode || null,
+        breakdown: {
+          principal: r2(payToPrincipal),
+          interest: r2(payToInterest),
+          penal: r2(payToFine),
+        },
+      },
+      ...getActorContext(req.user),
+    });
 
     return res.status(200).json({
       data: {
@@ -2299,6 +2346,43 @@ exports.editLastPayment = async (req, res) => {
         }
       });
 
+      await logAction({
+        action: "UPDATED_PAYMENT",
+        table: "Loan",
+        targetId: payment.loanId,
+        message: "Updated payment details",
+        metadata: {
+          paymentId,
+          loanId: payment.loanId,
+          changes: [
+            ...(paymentMode !== undefined && paymentMode !== payment.paymentMode
+              ? [
+                  {
+                    field: "paymentMode",
+                    label: "Payment mode",
+                    from: payment.paymentMode || "-",
+                    to: paymentMode || "-",
+                    message: `Updated payment mode from ${payment.paymentMode || "-"} to ${paymentMode || "-"}`,
+                  },
+                ]
+              : []),
+            ...(transactionId !== undefined && transactionId !== payment.transactionId
+              ? [
+                  {
+                    field: "transactionId",
+                    label: "Transaction ID",
+                    from: payment.transactionId || "-",
+                    to: transactionId || "-",
+                    message: `Updated transaction ID from ${payment.transactionId || "-"} to ${transactionId || "-"}`,
+                  },
+                ]
+              : []),
+          ],
+          summary: "Updated payment details",
+        },
+        ...getActorContext(req.user),
+      });
+
       return res.status(200).json({
         status: 200,
         message: "Payment method updated successfully",
@@ -2485,6 +2569,58 @@ exports.editLastPayment = async (req, res) => {
     } catch (e) {
       console.warn("Failed to update loanPendingAfter after edit:", e?.message);
     }
+
+    await logAction({
+      action: "UPDATED_PAYMENT",
+      table: "Loan",
+      targetId: payment.loanId,
+      message: "Updated payment details",
+      metadata: {
+        paymentId,
+        loanId: payment.loanId,
+        amountBefore: oldAmount,
+        amountAfter: newAmount,
+        paymentModeBefore: payment.paymentMode || "-",
+        paymentModeAfter: paymentMode || payment.paymentMode || "-",
+        changes: [
+          ...(amountDiff !== 0
+            ? [
+                {
+                  field: "amount",
+                  label: "Amount",
+                  from: oldAmount,
+                  to: newAmount,
+                  message: `Updated payment amount from ${oldAmount} to ${newAmount}`,
+                },
+              ]
+            : []),
+          ...(paymentMode !== undefined && paymentMode !== payment.paymentMode
+            ? [
+                {
+                  field: "paymentMode",
+                  label: "Payment mode",
+                  from: payment.paymentMode || "-",
+                  to: paymentMode || "-",
+                  message: `Updated payment mode from ${payment.paymentMode || "-"} to ${paymentMode || "-"}`,
+                },
+              ]
+            : []),
+          ...(transactionId !== undefined && transactionId !== payment.transactionId
+            ? [
+                {
+                  field: "transactionId",
+                  label: "Transaction ID",
+                  from: payment.transactionId || "-",
+                  to: transactionId || "-",
+                  message: `Updated transaction ID from ${payment.transactionId || "-"} to ${transactionId || "-"}`,
+                },
+              ]
+            : []),
+        ],
+        summary: "Updated payment details",
+      },
+      ...getActorContext(req.user),
+    });
 
     return res.status(200).json({
       status: 200,
@@ -2706,6 +2842,22 @@ exports.deleteLastEmiPayment = async (req, res) => {
           fine: revFine,
         },
       };
+    });
+
+    await logAction({
+      action: "DELETED_PAYMENT",
+      table: "Loan",
+      targetId: payment.loanId,
+      message: "Deleted latest payment",
+      metadata: {
+        paymentId,
+        loanId: payment.loanId,
+        amount: r2(payment.amount || 0),
+        paymentMode: payment.paymentMode || null,
+        reason: reason || "Deleted by operator",
+        rollback: deletedSnapshot?.rolledBack || null,
+      },
+      ...getActorContext(req.user),
     });
 
     return res.status(200).json({

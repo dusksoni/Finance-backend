@@ -7,6 +7,54 @@ const client = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
+const toComparable = (value) => {
+  if (value === undefined || value === null) return "";
+  if (value instanceof Date) return value.toISOString();
+  return String(value).trim();
+};
+
+const toReadable = (value) => {
+  if (value === undefined || value === null || value === "") return "-";
+  if (value instanceof Date) return value.toISOString().split("T")[0];
+  return String(value);
+};
+
+const USER_FIELD_LABELS = {
+  firstName: "First name",
+  middleName: "Middle name",
+  lastName: "Last name",
+  phone: "Mobile phone number",
+  officeNumber: "Office phone number",
+  email: "Email",
+  profession: "Occupation",
+  qualification: "Qualification",
+  maritalStatus: "Marital status",
+  relationFirstName: "Relation first name",
+  relationMiddleName: "Relation middle name",
+  relationLastName: "Relation last name",
+  dateOfBirth: "Date of birth",
+  creditScore: "Credit score",
+  proofOfIncome: "Employer",
+  isDefaulter: "Defaulter flag",
+};
+
+const buildUserChanges = (before, after) => {
+  const changes = [];
+  Object.entries(USER_FIELD_LABELS).forEach(([key, label]) => {
+    const fromRaw = before?.[key];
+    const toRaw = after?.[key];
+    if (toComparable(fromRaw) === toComparable(toRaw)) return;
+    changes.push({
+      field: key,
+      label,
+      from: toReadable(fromRaw),
+      to: toReadable(toRaw),
+      message: `Updated ${label} from ${toReadable(fromRaw)} to ${toReadable(toRaw)}`,
+    });
+  });
+  return changes;
+};
+
 exports.createUser = async (req, res) => {
   const {
     firstName,
@@ -224,7 +272,15 @@ exports.createUser = async (req, res) => {
       action: "CREATED USER",
       table: "User",
       targetId: user.id,
-      metadata: user,
+      message: `Created user ${[user.firstName, user.middleName, user.lastName].filter(Boolean).join(" ") || user.id}`,
+      metadata: {
+        userId: user.id,
+        userName: [user.firstName, user.middleName, user.lastName]
+          .filter(Boolean)
+          .join(" "),
+        mobile: user.phone || null,
+        email: user.email || null,
+      },
       loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
@@ -364,7 +420,8 @@ exports.getAllUsers = async (req, res) => {
 exports.getUserActivityLogs = async (req, res) => {
   try {
     const { id: userId } = req.params;
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, category = "ALL", q = "", action = "" } =
+      req.query;
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
@@ -386,14 +443,70 @@ exports.getUserActivityLogs = async (req, res) => {
 
     const skip = (Number(page) - 1) * Number(limit);
 
+    const userLoans = await prisma.loan.findMany({
+      where: { userId },
+      select: { id: true, fileNo: true },
+    });
+    const loanIds = userLoans.map((loan) => loan.id);
+
+    const categoryMap = {
+      PAYMENTS: [
+        { action: { contains: "PAYMENT", mode: "insensitive" } },
+        { action: { contains: "EMI", mode: "insensitive" } },
+        { action: { contains: "FORECLOSURE", mode: "insensitive" } },
+      ],
+      KYC: [
+        { action: { contains: "KYC", mode: "insensitive" } },
+        { action: { contains: "PHOTO", mode: "insensitive" } },
+        { action: { contains: "DOCUMENT", mode: "insensitive" } },
+        { action: { contains: "AADHAAR", mode: "insensitive" } },
+        { action: { contains: "PAN", mode: "insensitive" } },
+        { action: { contains: "PASSPORT", mode: "insensitive" } },
+        { action: { contains: "DRIVING", mode: "insensitive" } },
+      ],
+      PROFILE: [
+        { action: { contains: "USER", mode: "insensitive" } },
+        { action: { contains: "PROFILE", mode: "insensitive" } },
+        { action: { contains: "ADDRESS", mode: "insensitive" } },
+        { action: { contains: "CONTACT", mode: "insensitive" } },
+        { action: { contains: "PATCHED", mode: "insensitive" } },
+      ],
+    };
+
+    const scopeWhere = {
+      OR: [
+        { table: "User", targetId: userId },
+        ...(loanIds.length ? [{ table: "Loan", targetId: { in: loanIds } }] : []),
+      ],
+    };
+
+    const filters = [];
+    if (action) {
+      filters.push({ action: { contains: String(action), mode: "insensitive" } });
+    }
+    const normalizedCategory = String(category || "ALL").toUpperCase();
+    if (normalizedCategory !== "ALL" && categoryMap[normalizedCategory]) {
+      filters.push({ OR: categoryMap[normalizedCategory] });
+    }
+
+    if (q) {
+      filters.push({ action: { contains: String(q), mode: "insensitive" } });
+    }
+
+    const activityWhere = filters.length
+      ? { AND: [scopeWhere, ...filters] }
+      : scopeWhere;
+
     const [logs, total] = await Promise.all([
       prisma.actionLog.findMany({
-        where: { targetId: userId, table: "User" },
+        where: activityWhere,
         orderBy: { createdAt: "desc" },
         skip,
         take: Number(limit),
         select: {
           id: true,
+          table: true,
+          targetId: true,
           action: true,
           metadata: true,
           createdAt: true,
@@ -411,8 +524,15 @@ exports.getUserActivityLogs = async (req, res) => {
           },
         },
       }),
-      prisma.actionLog.count({ where: { targetId: userId, table: "User" } }),
+      prisma.actionLog.count({ where: activityWhere }),
     ]);
+
+    const availableActions = await prisma.actionLog.findMany({
+      where: scopeWhere,
+      select: { action: true },
+      distinct: ["action"],
+      orderBy: { action: "asc" },
+    });
 
     res.json({
       status: 200,
@@ -420,6 +540,11 @@ exports.getUserActivityLogs = async (req, res) => {
       total,
       page: Number(page),
       limit: Number(limit),
+      filters: {
+        categories: ["ALL", "PAYMENTS", "KYC", "PROFILE"],
+        actions: availableActions.map((item) => item.action),
+        loanIds,
+      },
     });
   } catch (error) {
     console.error("Get user activity logs error:", error);
@@ -697,7 +822,23 @@ exports.updateUser = async (req, res) => {
         action: "UPDATED USER",
         table: "User",
         targetId: updatedUser.id,
-        metadata: req.body,
+        metadata: (() => {
+          const changes = buildUserChanges(user, updatedUser);
+          return {
+            userId: updatedUser.id,
+            userName: [updatedUser.firstName, updatedUser.middleName, updatedUser.lastName]
+              .filter(Boolean)
+              .join(" "),
+            changes,
+            summary:
+              changes.length === 1
+                ? changes[0].message
+              : changes.length > 1
+              ? `Updated ${changes.length} profile fields`
+              : "Updated profile details",
+          };
+        })(),
+        message: "Updated user profile",
         loginActivityId: req.user.loginActivityId,
         adminId: req.user?.adminId,
         employeeId: req.user?.employeeId,
@@ -750,7 +891,11 @@ exports.approveUserUpdate = async (req, res) => {
       action: "APPROVED USER UPDATE",
       table: "User",
       targetId: request.userId,
-      metadata: request.changes,
+      message: "Approved user update request",
+      metadata: {
+        requestId,
+        summary: "Approved user update request",
+      },
       loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
@@ -792,7 +937,11 @@ exports.rejectUserUpdate = async (req, res) => {
       action: "REJECTED USER UPDATE REQUEST",
       table: "User",
       targetId: request.userId,
-      metadata: request.changes,
+      message: "Rejected user update request",
+      metadata: {
+        requestId,
+        summary: "Rejected user update request",
+      },
       loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
@@ -1018,7 +1167,23 @@ exports.patchUser = async (req, res) => {
       action: "PATCHED USER",
       table: "User",
       targetId: updated.id,
-      metadata: body,
+      metadata: (() => {
+        const changes = buildUserChanges(user, updated);
+        return {
+          userId: updated.id,
+          userName: [updated.firstName, updated.middleName, updated.lastName]
+            .filter(Boolean)
+            .join(" "),
+          changes,
+          summary:
+            changes.length === 1
+              ? changes[0].message
+              : changes.length > 1
+              ? `Updated ${changes.length} profile fields`
+              : "Patched user details",
+        };
+      })(),
+      message: "Patched user details",
       loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
@@ -1037,6 +1202,23 @@ exports.deleteUser = async (req, res) => {
 
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) return res.status(404).json({ error: "User not found" });
+
+    await logAction({
+      action: "DELETED USER",
+      table: "User",
+      targetId: user.id,
+      message: `Deleted user ${[user.firstName, user.middleName, user.lastName].filter(Boolean).join(" ") || user.id}`,
+      metadata: {
+        userId: user.id,
+        userName: [user.firstName, user.middleName, user.lastName]
+          .filter(Boolean)
+          .join(" "),
+        mobile: user.phone || null,
+      },
+      loginActivityId: req.user?.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
 
     await prisma.photoID.deleteMany({ where: { userId: id } });
 

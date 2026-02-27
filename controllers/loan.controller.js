@@ -24,6 +24,43 @@ const parseDate = (dateInput) => {
   return new Date(dateInput);
 };
 
+const toLogValue = (value) => {
+  if (value === undefined || value === null || value === "") return "-";
+  if (value instanceof Date) return value.toISOString().split("T")[0];
+  return String(value);
+};
+
+const LOAN_FIELD_LABELS = {
+  principalLoanAmount: "Principal amount",
+  interestRate: "Interest rate (%)",
+  tenureMonths: "Tenure (months)",
+  paymentFrequency: "Payment frequency",
+  startDate: "Start date",
+  dueDay: "Due day",
+  branchId: "Branch",
+  showroomId: "Showroom",
+  loanTypeId: "Loan type",
+  fileStatus: "File status",
+};
+
+const buildLoanChanges = (before, payload = {}) => {
+  const changes = [];
+  Object.entries(LOAN_FIELD_LABELS).forEach(([field, label]) => {
+    if (!(field in payload)) return;
+    const fromRaw = before?.[field];
+    const toRaw = payload?.[field];
+    if (String(fromRaw ?? "") === String(toRaw ?? "")) return;
+    changes.push({
+      field,
+      label,
+      from: toLogValue(fromRaw),
+      to: toLogValue(toRaw),
+      message: `Updated ${label} from ${toLogValue(fromRaw)} to ${toLogValue(toRaw)}`,
+    });
+  });
+  return changes;
+};
+
 const FREQUENCY_OFFSETS = {
   MONTHLY: { fn: addMonths, step: 1, months: 1 },
   QUARTERLY: { fn: addMonths, step: 3, months: 3 },
@@ -430,7 +467,14 @@ exports.createLoan = async (req, res) => {
           action: "CREATED_LOAN",
           table: "Loan",
           targetId: loan.id,
-          metadata: loan,
+          message: `Created loan ${loan.fileNo || loan.id}`,
+          metadata: {
+            loanId: loan.id,
+            fileNo: loan.fileNo || null,
+            userId: loan.userId,
+            amount: loan.totalAmount,
+            paymentFrequency: loan.paymentFrequency,
+          },
           loginActivityId: req.user.loginActivityId,
           adminId: req.user.adminId,
           employeeId: req.user.employeeId,
@@ -717,7 +761,21 @@ exports.updateLoan = async (req, res) => {
           action: "UPDATED_LOAN",
           table: "Loan",
           targetId: loan.id,
-          metadata: loan,
+          metadata: (() => {
+            const changes = buildLoanChanges(existing, payload);
+            return {
+              loanId: loan.id,
+              fileNo: loan.fileNo || existing.fileNo || null,
+              changes,
+              summary:
+                changes.length === 1
+                  ? changes[0].message
+                  : changes.length > 1
+                  ? `Updated ${changes.length} loan fields`
+                  : "Updated loan details",
+            };
+          })(),
+          message: "Updated loan details",
           loginActivityId: req.user.loginActivityId,
           adminId: req.user.adminId,
           employeeId: req.user.employeeId,
