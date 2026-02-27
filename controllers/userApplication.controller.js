@@ -49,29 +49,33 @@ exports.getDrafts = async (req, res) => {
 
 exports.createDraft = async (req, res) => {
   try {
-    const { data, step } = req.body || {};
+    // forceNew=true means always create a brand new draft (used when clicking "Add User")
+    const { data, step, forceNew } = req.body || {};
     const creator = resolveCreator(req);
-    const creatorFilter = buildCreatorFilter(creator);
-
-    let draft = await prisma.userApplicationDraft.findFirst({
-      where: { status: "DRAFT", ...creatorFilter },
-      orderBy: { createdAt: "desc" },
-    });
 
     const nextStep = clampStep(step);
     const nextData = normalizeDraftData(data);
 
-    if (draft) {
-      if (nextData || step) {
-        draft = await prisma.userApplicationDraft.update({
-          where: { id: draft.id },
-          data: {
-            step: step ? Math.max(draft.step, nextStep) : draft.step,
-            data: nextData || draft.data,
-          },
-        });
+    // Only reuse existing draft if explicitly NOT forcing a new one
+    if (!forceNew) {
+      const creatorFilter = buildCreatorFilter(creator);
+      let draft = await prisma.userApplicationDraft.findFirst({
+        where: { status: "DRAFT", ...creatorFilter },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (draft) {
+        if (nextData || step) {
+          draft = await prisma.userApplicationDraft.update({
+            where: { id: draft.id },
+            data: {
+              step: step ? Math.max(draft.step, nextStep) : draft.step,
+              data: nextData || draft.data,
+            },
+          });
+        }
+        return res.status(200).json({ status: 200, data: draft });
       }
-      return res.status(200).json({ status: 200, data: draft });
     }
 
     const created = await prisma.userApplicationDraft.create({
@@ -349,6 +353,41 @@ exports.submitDraft = async (req, res) => {
     return res.status(500).json({
       status: 500,
       error: "Failed to submit user application draft",
+      message: error.message,
+    });
+  }
+};
+
+exports.deleteDraft = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ status: 400, error: "Draft id required" });
+    }
+
+    const creator = resolveCreator(req);
+    const draft = await prisma.userApplicationDraft.findUnique({ where: { id } });
+
+    if (!draft) {
+      return res.status(404).json({ status: 404, error: "Draft not found" });
+    }
+
+    const isCreatorMatch = creator.isAdmin
+      ? draft.createdByAdminId === creator.adminId
+      : draft.createdByEmployeeId === creator.employeeId;
+
+    if (!isCreatorMatch) {
+      return res.status(403).json({ status: 403, error: "Not authorized to delete this draft" });
+    }
+
+    await prisma.userApplicationDraft.delete({ where: { id } });
+
+    return res.status(200).json({ status: 200, message: "Draft deleted" });
+  } catch (error) {
+    console.error("User application draft delete error:", error);
+    return res.status(500).json({
+      status: 500,
+      error: "Failed to delete user application draft",
       message: error.message,
     });
   }

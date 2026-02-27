@@ -542,6 +542,10 @@ exports.updateLoan = async (req, res) => {
     const totalInterest = round2(tempSchedule.reduce((sum, row) => sum + row.interestAmt, 0));
     const totalPayable = round2(newPrincipal + totalInterest);
     const representativeEMI = tempSchedule[0]?.emiPayAmount ?? round2(totalPayable / newTenure);
+    const EMI = representativeEMI;
+    const paidEmiComponent = round2(
+      Number(existing.totalPaidPrincipal || 0) + Number(existing.totalPaidInterest || 0)
+    );
 
     // 5) permissions
     const canSelfApprove =
@@ -580,7 +584,8 @@ exports.updateLoan = async (req, res) => {
             interestAmount: Math.round(totalPayable - newPrincipal),
             totalAmount: Math.round(totalPayable),
             monthlyPayableAmount: Math.round(EMI),
-            pendingAmount: Math.round(totalPayable - existing.totalPaidAmount),
+            // Pending tracks only principal + interest (fine/penalty is separate).
+            pendingAmount: Math.max(Math.round(totalPayable - paidEmiComponent), 0),
             interestRate: newPct,
             tenureMonths: newTenure,
             paymentFrequency: newFreq,
@@ -1666,16 +1671,33 @@ exports.getLoanById = async (req, res) => {
         emi: {
           orderBy: { paymentFor: "asc" },
           include: {
-            payments: true,
+            payments: {
+              where: {
+                status: { not: "DELETED" },
+              },
+            },
           },
         },
-        seizedHistories: true,
+        seizedHistories: {
+          orderBy: { createdAt: "desc" },
+          include: {
+            assignedTo: { select: { id: true, name: true } },
+            seizedBy: { select: { id: true, name: true } },
+            assignedByAdmin: { select: { id: true, name: true } },
+            assignedByEmployee: { select: { id: true, name: true } },
+            releasedByAdmin: { select: { id: true, name: true } },
+            releasedByEmployee: { select: { id: true, name: true } },
+          },
+        },
         admin: true,
         employee: true,
         approvedByAdmin: true,
         approvedByEmployee: true,
         guarantors: true,
         payments: {
+          where: {
+            status: { not: "DELETED" },
+          },
           include: {
             emi: true,
           },

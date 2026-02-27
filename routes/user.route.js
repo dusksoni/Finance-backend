@@ -7,6 +7,7 @@ const {
   getUserById,
   deleteUser,
   updateUser,
+  patchUser,
   approveUserUpdate,
   getUserUpdateRequestById,
   getPendingUserUpdateRequests,
@@ -19,6 +20,7 @@ router.get("/", authMiddleware, onlyAdminOrEmployee,  getAllUsers);
 router.get("/:id/activity", authMiddleware, onlyAdminOrEmployee, requirePermission("USER_ACTIVITY_VIEW"), getUserActivityLogs);
 router.get("/:id", authMiddleware, onlyAdminOrEmployee,  getUserById);
 router.put("/:id", authMiddleware, onlyAdminOrEmployee, updateUser)
+router.patch("/:id", authMiddleware, onlyAdminOrEmployee, patchUser)
 router.delete("/:id", authMiddleware, onlyAdminOrEmployee, deleteUser);
 
 

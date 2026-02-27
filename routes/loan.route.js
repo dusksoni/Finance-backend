@@ -136,6 +136,14 @@ router.put(
   paymentController.editLastPayment
 );
 
+// 8.1) Soft delete last EMI payment (non-gateway only)
+router.delete(
+  "/payment/:paymentId/delete",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  paymentController.deleteLastEmiPayment
+);
+
 // 9) Get loan account statement (for Excel export)
 router.get(
   "/statement/:loanId",

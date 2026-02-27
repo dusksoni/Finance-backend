@@ -524,7 +524,7 @@ exports.updateUser = async (req, res) => {
         })
       ).then(arr => arr.filter(Boolean));
 
-    // Build region filter safely from first address
+    // Build region filter safely from first address, fall back to default
     let region = null;
     if (addresses && addresses.length > 0) {
       const firstAddress = addresses[0];
@@ -532,8 +532,11 @@ exports.updateUser = async (req, res) => {
       if (firstAddress.cityId) regionWhere.cityId = firstAddress.cityId;
 
       region = await prisma.region.findFirst({ where: regionWhere });
+      if (!region && firstAddress.stateId) {
+        region = await prisma.region.findFirst({ where: { stateId: firstAddress.stateId } });
+      }
       if (!region) {
-        return res.status(400).json({ error: "Region not found for state/city" });
+        region = await prisma.region.findFirst();
       }
     }
 
@@ -840,6 +843,191 @@ exports.getUserUpdateRequestById = async (req, res) => {
   } catch (err) {
     console.error("Get request detail error:", err);
     res.status(500).json({ error: err.message });
+  }
+};
+
+exports.patchUser = async (req, res) => {
+  const { id } = req.params;
+  const body = req.body;
+
+  try {
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const createFiles = async (files = []) =>
+      Promise.all(
+        (files || []).map(async (file) => {
+          if (!file) return null;
+          if (file.id) return { id: file.id };
+          const newFile = await prisma.file.create({
+            data: {
+              url: file.secure_url,
+              publicId: file.public_id,
+              resourceType: file.resource_type,
+              format: file.format,
+            },
+          });
+          return { id: newFile.id };
+        })
+      ).then((arr) => arr.filter(Boolean));
+
+    // Build only the fields that were sent
+    const data = {};
+
+    const scalarFields = [
+      "firstName", "middleName", "lastName",
+      "relationFirstName", "relationMiddleName", "relationLastName",
+      "dateOfBirth", "maritalStatus", "qualification",
+      "phone", "officeNumber", "email",
+      "proofOfIncome", "profession",
+    ];
+    for (const field of scalarFields) {
+      if (field in body) {
+        if (field === "dateOfBirth") {
+          const d = new Date(body.dateOfBirth);
+          data.dateOfBirth = isNaN(d.getTime()) ? null : d;
+        } else {
+          data[field] = body[field] ?? null;
+        }
+      }
+    }
+
+    if ("isDefaulter" in body) {
+      data.isDefaulter =
+        typeof body.isDefaulter === "boolean"
+          ? body.isDefaulter
+          : String(body.isDefaulter).toLowerCase() === "true";
+    }
+
+    if ("creditScore" in body) {
+      data.creditScore =
+        body.creditScore === undefined || body.creditScore === null || body.creditScore === ""
+          ? null
+          : Number(body.creditScore);
+    }
+
+    if ("genderId" in body && body.genderId) {
+      data.gender = { connect: { id: body.genderId } };
+    }
+    if ("relationTypeId" in body && body.relationTypeId) {
+      data.relationType = { connect: { id: body.relationTypeId } };
+    }
+
+    if ("photo" in body && body.photo) {
+      const [photoFile] = await createFiles([body.photo]);
+      if (photoFile) data.photo = { connect: { id: photoFile.id } };
+    }
+
+    if ("proofOfIncomeImages" in body) {
+      const links = await createFiles(body.proofOfIncomeImages || []);
+      if (links.length) data.proofOfIncomeImages = { set: [], connect: links };
+    }
+
+    if ("photoIds" in body && Array.isArray(body.photoIds)) {
+      const formatted = await Promise.all(
+        body.photoIds.map(async (pid) => {
+          const imgs = await createFiles(pid.images || []);
+          if (pid.id) {
+            return prisma.photoID.update({
+              where: { id: pid.id },
+              data: {
+                photoIdNumber: pid.photoIdNumber ?? undefined,
+                ...(pid.photoIdTypeId ? { photoIdType: { connect: { id: pid.photoIdTypeId } } } : {}),
+                ...(imgs.length ? { images: { set: [], connect: imgs } } : {}),
+              },
+              select: { id: true },
+            });
+          }
+          return prisma.photoID.create({
+            data: {
+              photoIdNumber: pid.photoIdNumber,
+              ...(pid.photoIdTypeId ? { photoIdType: { connect: { id: pid.photoIdTypeId } } } : {}),
+              ...(imgs.length ? { images: { connect: imgs } } : {}),
+            },
+            select: { id: true },
+          });
+        })
+      );
+      data.photoIds = { connect: formatted };
+    }
+
+    if ("addresses" in body && Array.isArray(body.addresses) && body.addresses.length > 0) {
+      // Resolve region from first address
+      let region = null;
+      const first = body.addresses[0];
+      if (first.stateId) {
+        region = await prisma.region.findFirst({
+          where: { stateId: first.stateId, ...(first.cityId ? { cityId: first.cityId } : {}) },
+        });
+        if (!region) region = await prisma.region.findFirst({ where: { stateId: first.stateId } });
+        if (!region) region = await prisma.region.findFirst();
+      }
+      if (region) data.region = { connect: { id: region.id } };
+
+      data.addresses = {
+        deleteMany: {},
+        create: body.addresses.map((addr) => ({
+          addressCategoryId: addr.addressCategoryId,
+          address: addr.address,
+          country: addr.country,
+          stateId: addr.stateId,
+          cityId: addr.cityId,
+          pincode: parseInt(addr.pincode),
+        })),
+      };
+    }
+
+    if ("guarantors" in body && Array.isArray(body.guarantors) && body.guarantors.length > 0) {
+      data.guarantors = {
+        deleteMany: {},
+        create: body.guarantors.map((g) => ({
+          name: g.name,
+          fatherName: g.fatherName,
+          mobileNo: g.mobileNo,
+          address: g.address,
+          photoIdType1: g.photoIdType1 || null,
+          photoIdNumber1: g.photoIdNumber1 || null,
+          photoIdImages1: g.photoIdImages1 || null,
+          photoIdType2: g.photoIdType2 || null,
+          photoIdNumber2: g.photoIdNumber2 || null,
+          photoIdImages2: g.photoIdImages2 || null,
+        })),
+      };
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(200).json({ status: 200, message: "No changes detected", data: user });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data,
+      include: {
+        photoIds: { include: { images: true, photoIdType: true } },
+        photo: true,
+        proofOfIncomeImages: true,
+        addresses: { include: { addressCategory: true, state: true, city: true } },
+        guarantors: true,
+        gender: true,
+        relationType: true,
+        region: true,
+      },
+    });
+
+    await logAction({
+      action: "PATCHED USER",
+      table: "User",
+      targetId: updated.id,
+      metadata: body,
+      loginActivityId: req.user.loginActivityId,
+      adminId: req.user?.adminId,
+      employeeId: req.user?.employeeId,
+    });
+
+    return res.status(200).json({ status: 200, message: "User updated successfully", data: updated });
+  } catch (err) {
+    console.error("Patch user error:", err);
+    res.status(500).json({ error: "Internal server error", details: err.message });
   }
 };
 

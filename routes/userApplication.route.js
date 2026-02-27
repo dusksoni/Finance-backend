@@ -48,4 +48,12 @@ router.post(
   userApplicationController.submitDraft
 );
 
+router.delete(
+  "/:id",
+  authMiddleware,
+  onlyAdminOrEmployee,
+  requirePermission("USER_CREATE"),
+  userApplicationController.deleteDraft
+);
+
 module.exports = router;

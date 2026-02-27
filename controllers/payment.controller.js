@@ -1200,7 +1200,7 @@ exports.getUnverifiedPayments = async (req, res) => {
       // verified: false,
       ...(loanId ? { loanId } : {}),
       ...(userId ? { loan: { is: { userId } } } : {}),
-      ...(status ? { status: status } : {}),
+      ...(status ? { status: status } : { status: { notIn: ["REVERSED", "DELETED"] } }),
     };
 
     console.log(where);
@@ -2224,6 +2224,9 @@ exports.editLastPayment = async (req, res) => {
     if (!payment) {
       return res.status(404).json({ error: "Payment not found", status: 404 });
     }
+    if (payment.status === "DELETED" || payment.status === "REVERSED") {
+      return res.status(400).json({ error: "Cannot edit a deleted/reversed payment", status: 400 });
+    }
 
     // Check if this is a gateway payment (QR payments should not be editable)
     if (payment.transactionId && (payment.paymentMode === "UPI" || payment.paymentMode === "ONLINE")) {
@@ -2241,11 +2244,14 @@ exports.editLastPayment = async (req, res) => {
 
     // Check if this is the last payment for the loan
     const lastPayment = await prisma.payment.findFirst({
-      where: { loanId: payment.loanId },
+      where: {
+        loanId: payment.loanId,
+        status: { notIn: ["REVERSED", "DELETED"] },
+      },
       orderBy: { createdAt: "desc" }
     });
 
-    const isLastPayment = lastPayment.id === paymentId;
+    const isLastPayment = lastPayment?.id === paymentId;
 
     // For non-last payments, only allow payment method changes
     if (!isLastPayment) {
@@ -2394,7 +2400,32 @@ exports.editLastPayment = async (req, res) => {
           const newAmountPaidSoFar = r2(Number(emi.amountPaidSoFar || 0) + amountDiff);
           const newTotalPaid = r2(Number(emi.totalPaid || 0) + amountDiff);
           const newFinePaid = r2(Number(emi.finePaid || 0) + fineDiff);
-          const newPrincipalPaid = r2(Number(emi.principalPaid || 0) + emiDiff);
+          const oldInterestPaid = r2(Number(emi.interestPaid || 0));
+          const oldPrincipalPaid = r2(Number(emi.principalPaid || 0));
+          const maxInterest = r2(Number(emi.interestAmt || 0));
+          const maxPrincipal = r2(Number(emi.principalAmt || 0));
+
+          // Keep EMI split consistent while editing:
+          // add -> interest first then principal, reduce -> principal first then interest.
+          let newInterestPaid = oldInterestPaid;
+          let newPrincipalPaid = oldPrincipalPaid;
+          if (emiDiff >= 0) {
+            const interestOutstanding = Math.max(maxInterest - oldInterestPaid, 0);
+            const addToInterest = Math.min(emiDiff, interestOutstanding);
+            const addToPrincipal = r2(emiDiff - addToInterest);
+            newInterestPaid = r2(oldInterestPaid + addToInterest);
+            newPrincipalPaid = r2(oldPrincipalPaid + addToPrincipal);
+          } else {
+            let toRollback = Math.abs(emiDiff);
+            const rollbackPrincipal = Math.min(toRollback, oldPrincipalPaid);
+            toRollback = r2(toRollback - rollbackPrincipal);
+            const rollbackInterest = Math.min(toRollback, oldInterestPaid);
+            newPrincipalPaid = r2(oldPrincipalPaid - rollbackPrincipal);
+            newInterestPaid = r2(oldInterestPaid - rollbackInterest);
+          }
+
+          newInterestPaid = Math.min(Math.max(newInterestPaid, 0), maxInterest);
+          newPrincipalPaid = Math.min(Math.max(newPrincipalPaid, 0), maxPrincipal);
 
           // Determine new status
           const emiPaidComponent = Math.max(newAmountPaidSoFar - newFinePaid, 0);
@@ -2408,37 +2439,36 @@ exports.editLastPayment = async (req, res) => {
               amountPaidSoFar: Math.max(newAmountPaidSoFar, 0),
               totalPaid: Math.max(newTotalPaid, 0),
               finePaid: Math.max(newFinePaid, 0),
+              interestPaid: Math.max(newInterestPaid, 0),
               principalPaid: Math.max(newPrincipalPaid, 0),
               status: newStatus,
             }
           });
-
-          // Update loan totals
-          const loan = await tx.loan.findUnique({ where: { id: payment.loanId } });
-          if (loan) {
-            await tx.loan.update({
-              where: { id: payment.loanId },
-              data: {
-                totalPaidAmount: r2(Number(loan.totalPaidAmount || 0) + amountDiff),
-                totalPaidPrincipal: r2(Number(loan.totalPaidPrincipal || 0) + emiDiff),
-                totalFinePaid: r2(Number(loan.totalFinePaid || 0) + fineDiff),
-                totalFineDiscount: r2(Number(loan.totalFineDiscount || 0) + discountDiff),
-                pendingAmount: r2(Number(loan.pendingAmount || 0) - amountDiff),
-              }
-            });
-          }
         }
       }
 
       return updatedPayment;
     });
 
-    // Run post-payment processing to sync all totals
-    if (payment.emiId && amountDiff !== 0) {
+    // Re-sync loan totals from EMI/payment aggregates so pending balance stays correct.
+    if (payment.emiId && (amountDiff !== 0 || emiDiff !== 0 || fineDiff !== 0 || discountDiff !== 0)) {
       try {
-        await processPostPayment(payment.loanId, payment.emiId, Math.abs(amountDiff), true);
+        await processPostPayment({
+          tx: prisma,
+          emiId: payment.emiId,
+          loanId: payment.loanId,
+          paymentAmount: 0,
+          addToEmi: false,
+          updateEmiStatus: false,
+          userContext: {
+            adminId: req.user?.adminId,
+            employeeId: req.user?.employeeId,
+            type: req.user?.type,
+            loginActivityId: req.user?.loginActivityId,
+          },
+        });
       } catch (postErr) {
-        console.error("Post-payment processing error:", postErr);
+        console.error("Post-payment reconciliation error:", postErr);
       }
     }
 
@@ -2470,6 +2500,221 @@ exports.editLastPayment = async (req, res) => {
     });
   } catch (err) {
     console.error("editLastPayment error:", err);
+    return res.status(500).json({ error: err.message, status: 500 });
+  }
+};
+
+// --------------------------------
+// 🗑️ SOFT DELETE LAST EMI PAYMENT
+// - Only last non-reversed/non-deleted payment of the loan can be deleted
+// - Gateway/QR payments cannot be deleted
+// - Does not hard delete record (status => DELETED)
+// --------------------------------
+exports.deleteLastEmiPayment = async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    const { reason } = req.body || {};
+    const r2 = (n) => Math.round(Number(n) || 0);
+
+    // Permission check
+    const isAdmin = req.user?.type === "ADMIN";
+    const canDelete = isAdmin || (await checkVerifyPermission(req.user, "PAYMENT_EDIT"));
+    if (!canDelete) {
+      return res.status(403).json({ error: "Not authorized to delete payments", status: 403 });
+    }
+
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { loan: true, emi: true },
+    });
+
+    if (!payment) {
+      return res.status(404).json({ error: "Payment not found", status: 404 });
+    }
+    if (payment.status === "DELETED" || payment.status === "REVERSED") {
+      return res.status(400).json({ error: "Payment is already deleted/reversed", status: 400 });
+    }
+    if (payment.isForeclosure) {
+      return res.status(400).json({ error: "Foreclosure payment cannot be deleted", status: 400 });
+    }
+    if (!payment.emiId) {
+      return res.status(400).json({ error: "Only EMI-linked payments can be deleted", status: 400 });
+    }
+
+    // Gateway/QR protection (same behavior as edit)
+    if (payment.transactionId && (payment.paymentMode === "UPI" || payment.paymentMode === "ONLINE")) {
+      const pendingTxn = await prisma.pendingUPITransaction.findFirst({
+        where: { merchantTranId: payment.transactionId },
+      });
+      if (pendingTxn) {
+        return res.status(403).json({
+          error: "Cannot delete payments made via QR code/gateway",
+          status: 403,
+        });
+      }
+    }
+
+    // Only the latest active payment can be deleted
+    const lastPayment = await prisma.payment.findFirst({
+      where: {
+        loanId: payment.loanId,
+        status: { notIn: ["REVERSED", "DELETED"] },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!lastPayment || lastPayment.id !== paymentId) {
+      return res.status(400).json({
+        error: "Only the latest payment can be deleted",
+        status: 400,
+      });
+    }
+
+    let deletedSnapshot = null;
+    await prisma.$transaction(async (tx) => {
+      const emi = await tx.eMI.findUnique({ where: { id: payment.emiId } });
+      if (!emi) {
+        throw new Error("Linked EMI not found");
+      }
+
+      // Prefer rollback hints from metadata; fallback to deterministic bucket rollback.
+      const summary = payment.metadata?.summary || {};
+      let revFine = r2(summary.fineCollected ?? summary.paidToFine ?? 0);
+      let revInterest = r2(summary.interestCollected ?? 0);
+      let revPrincipal = r2(summary.principalCollected ?? 0);
+
+      const maxFineRollback = r2(emi.finePaid || 0);
+      const maxInterestRollback = r2(emi.interestPaid || 0);
+      const maxPrincipalRollback = r2(emi.principalPaid || 0);
+      const paymentAmount = r2(payment.amount || 0);
+
+      let hintedTotal = r2(revFine + revInterest + revPrincipal);
+      if (hintedTotal <= 0 || hintedTotal > paymentAmount) {
+        let remaining = paymentAmount;
+        revFine = Math.min(remaining, maxFineRollback);
+        remaining = r2(remaining - revFine);
+        revInterest = Math.min(remaining, maxInterestRollback);
+        remaining = r2(remaining - revInterest);
+        revPrincipal = Math.min(remaining, maxPrincipalRollback);
+        hintedTotal = r2(revFine + revInterest + revPrincipal);
+      } else {
+        // Clamp hinted rollback to current buckets and total amount.
+        revFine = Math.min(revFine, maxFineRollback, paymentAmount);
+        revInterest = Math.min(revInterest, maxInterestRollback, Math.max(paymentAmount - revFine, 0));
+        revPrincipal = Math.min(
+          revPrincipal,
+          maxPrincipalRollback,
+          Math.max(paymentAmount - revFine - revInterest, 0)
+        );
+        hintedTotal = r2(revFine + revInterest + revPrincipal);
+      }
+
+      if (hintedTotal <= 0) {
+        throw new Error("No payable amount found to rollback");
+      }
+
+      const updatedEmi = await tx.eMI.update({
+        where: { id: emi.id },
+        data: {
+          amountPaidSoFar: { decrement: hintedTotal },
+          totalPaid: { decrement: hintedTotal },
+          finePaid: { decrement: revFine },
+          interestPaid: { decrement: revInterest },
+          principalPaid: { decrement: revPrincipal },
+        },
+      });
+
+      const emiPaidComponent = Math.max(
+        Number(updatedEmi.amountPaidSoFar || 0) - Number(updatedEmi.finePaid || 0),
+        0
+      );
+      const emiDueAfter = Math.max(Number(updatedEmi.emiPayAmount || 0) - emiPaidComponent, 0);
+
+      let fineAssessed = r2(updatedEmi.fineAmount || 0);
+      let daysLate = Number(updatedEmi.delayDays || 0);
+      if (emiDueAfter > 0) {
+        const fineCalc = calculateFine(updatedEmi.paymentFor, emiDueAfter);
+        fineAssessed = r2(fineCalc.fineAmt);
+        daysLate = Number(fineCalc.daysLate || 0);
+      }
+      const fineDueAfter = Math.max(fineAssessed - Number(updatedEmi.finePaid || 0), 0);
+      const newStatus =
+        emiDueAfter <= 0 && fineDueAfter <= 0
+          ? "PAID"
+          : Number(updatedEmi.amountPaidSoFar || 0) > 0
+          ? "PARTIAL"
+          : "UNPAID";
+
+      await tx.eMI.update({
+        where: { id: updatedEmi.id },
+        data: {
+          status: newStatus,
+          fineAmount: fineAssessed,
+          delayDays: daysLate,
+          isDelayed: daysLate > 0,
+        },
+      });
+
+      const previousMetadata = payment.metadata || {};
+      await tx.payment.update({
+        where: { id: paymentId },
+        data: {
+          status: "DELETED",
+          verified: false,
+          verifiedAt: null,
+          verifiedByAdminId: null,
+          verifiedByEmployeeId: null,
+          metadata: {
+            ...previousMetadata,
+            deletedMeta: {
+              deletedAt: new Date().toISOString(),
+              deletedBy: req.user?.id || null,
+              deletedByType: req.user?.type || null,
+              reason: reason || "Deleted by operator",
+              rollback: {
+                total: hintedTotal,
+                fine: revFine,
+                interest: revInterest,
+                principal: revPrincipal,
+              },
+            },
+          },
+        },
+      });
+
+      await processPostPayment({
+        tx,
+        emiId: payment.emiId,
+        loanId: payment.loanId,
+        paymentAmount: 0,
+        addToEmi: false,
+        updateEmiStatus: false,
+        userContext: {
+          adminId: req.user?.adminId,
+          employeeId: req.user?.employeeId,
+          type: req.user?.type,
+          loginActivityId: req.user?.loginActivityId,
+        },
+      });
+
+      deletedSnapshot = {
+        paymentId,
+        rolledBack: {
+          total: hintedTotal,
+          principal: revPrincipal,
+          interest: revInterest,
+          fine: revFine,
+        },
+      };
+    });
+
+    return res.status(200).json({
+      status: 200,
+      message: "Payment deleted successfully",
+      data: deletedSnapshot,
+    });
+  } catch (err) {
+    console.error("deleteLastEmiPayment error:", err);
     return res.status(500).json({ error: err.message, status: 500 });
   }
 };
