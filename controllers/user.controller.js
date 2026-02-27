@@ -38,9 +38,9 @@ exports.createUser = async (req, res) => {
     return res.status(400).json({ error: "First name and phone are required" });
   }
 
-  // Validate guarantors - minimum 2 required
-  if (!guarantors || guarantors.length < 2) {
-    return res.status(400).json({ error: "Minimum 2 guarantors are required" });
+  // Validate guarantors - minimum 1 required
+  if (!guarantors || guarantors.length < 1) {
+    return res.status(400).json({ error: "Minimum 1 guarantor is required" });
   }
 
   // Validate each guarantor has required fields
