@@ -2532,7 +2532,7 @@ exports.editLastPayment = async (req, res) => {
       }
 
       return updatedPayment;
-    });
+    }, { timeout: 30000 });
 
     // Re-sync loan totals from EMI/payment aggregates so pending balance stays correct.
     if (payment.emiId && (amountDiff !== 0 || emiDiff !== 0 || fineDiff !== 0 || discountDiff !== 0)) {
@@ -2842,7 +2842,7 @@ exports.deleteLastEmiPayment = async (req, res) => {
           fine: revFine,
         },
       };
-    });
+    }, { timeout: 30000 });
 
     await logAction({
       action: "DELETED_PAYMENT",
