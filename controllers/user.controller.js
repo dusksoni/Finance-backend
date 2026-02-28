@@ -1035,6 +1035,10 @@ exports.patchUser = async (req, res) => {
         if (field === "dateOfBirth") {
           const d = new Date(body.dateOfBirth);
           data.dateOfBirth = isNaN(d.getTime()) ? null : d;
+        } else if (field === "email") {
+          // email is unique but optional — treat empty string as null
+          const val = body.email;
+          data.email = (val === "" || val === undefined) ? null : val;
         } else {
           data[field] = body[field] ?? null;
         }
@@ -1192,7 +1196,15 @@ exports.patchUser = async (req, res) => {
     return res.status(200).json({ status: 200, message: "User updated successfully", data: updated });
   } catch (err) {
     console.error("Patch user error:", err);
-    res.status(500).json({ error: "Internal server error", details: err.message });
+    // Prisma unique constraint violation
+    if (err.code === "P2002") {
+      const field = err.meta?.target?.[0] || "";
+      let message = "Duplicate value found. Please check phone/email/documents.";
+      if (field === "phone") message = "This phone number is already in use.";
+      if (field === "email") message = "This email is already in use.";
+      return res.status(409).json({ status: 409, error: message, message });
+    }
+    return res.status(500).json({ status: 500, error: "Internal server error", message: err.message });
   }
 };
 

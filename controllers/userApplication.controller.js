@@ -49,34 +49,12 @@ exports.getDrafts = async (req, res) => {
 
 exports.createDraft = async (req, res) => {
   try {
-    // forceNew=true means always create a brand new draft (used when clicking "Add User")
-    const { data, step, forceNew } = req.body || {};
+    const { data, step } = req.body || {};
     const creator = resolveCreator(req);
 
     const nextStep = clampStep(step);
     const nextData = normalizeDraftData(data);
-
-    // Only reuse existing draft if explicitly NOT forcing a new one
-    if (!forceNew) {
-      const creatorFilter = buildCreatorFilter(creator);
-      let draft = await prisma.userApplicationDraft.findFirst({
-        where: { status: "DRAFT", ...creatorFilter },
-        orderBy: { createdAt: "desc" },
-      });
-
-      if (draft) {
-        if (nextData || step) {
-          draft = await prisma.userApplicationDraft.update({
-            where: { id: draft.id },
-            data: {
-              step: step ? Math.max(draft.step, nextStep) : draft.step,
-              data: nextData || draft.data,
-            },
-          });
-        }
-        return res.status(200).json({ status: 200, data: draft });
-      }
-    }
+    console.log("data", data)
 
     const created = await prisma.userApplicationDraft.create({
       data: {
@@ -112,7 +90,9 @@ exports.getDraft = async (req, res) => {
 
     const creator = resolveCreator(req);
 
-    const draft = await prisma.userApplicationDraft.findUnique({ where: { id } });
+    const draft = await prisma.userApplicationDraft.findUnique({
+      where: { id },
+    });
 
     if (draft) {
       const isCreatorMatch = creator.isAdmin
@@ -138,6 +118,34 @@ exports.getDraft = async (req, res) => {
   }
 };
 
+// Validate unique fields coming in at each step against the existing User table.
+// Returns an error message string if a conflict is found, null otherwise.
+const validateUnique = async (stepNum, incoming, draftId) => {
+  if (stepNum === 2 && incoming.phone) {
+    const conflict = await prisma.user.findUnique({
+      where: { phone: incoming.phone },
+      select: { id: true },
+    });
+    if (conflict)
+      return "This phone number is already registered to another user.";
+  }
+
+  if (stepNum === 3 && Array.isArray(incoming.photoIds)) {
+    for (const pid of incoming.photoIds) {
+      if (!pid.photoIdNumber) continue;
+      const conflict = await prisma.photoID.findUnique({
+        where: { photoIdNumber: pid.photoIdNumber },
+        select: { id: true },
+      });
+      if (conflict) {
+        return `ID number "${pid.photoIdNumber}" is already registered to another user.`;
+      }
+    }
+  }
+
+  return null;
+};
+
 exports.updateStep = async (req, res) => {
   try {
     const { id, step } = req.params;
@@ -145,17 +153,45 @@ exports.updateStep = async (req, res) => {
       return res.status(400).json({ status: 400, error: "Draft id required" });
     }
 
-    const existing = await prisma.userApplicationDraft.findUnique({ where: { id } });
-
-    if (!existing) {
-      return res.status(404).json({ status: 404, error: "Draft not found" });
-    }
+    const existing = await prisma.userApplicationDraft.findUnique({
+      where: { id },
+    });
 
     const nextStep = clampStep(step);
     const incoming = normalizeDraftData(req.body?.data);
+
+    if (!existing) {
+      // Draft was deleted or never existed — create a fresh one and continue
+      const creator = resolveCreator(req);
+      const currentData = incoming || {};
+      const created = await prisma.userApplicationDraft.create({
+        data: {
+          status: "DRAFT",
+          step: nextStep,
+          data: currentData,
+          createdByAdmin: creator.adminId
+            ? { connect: { id: creator.adminId } }
+            : undefined,
+          createdByEmployee: creator.employeeId
+            ? { connect: { id: creator.employeeId } }
+            : undefined,
+        },
+      });
+      return res.status(200).json({ status: 200, data: created });
+    }
     const currentData =
       existing.data && typeof existing.data === "object" ? existing.data : {};
     const merged = incoming ? { ...currentData, ...incoming } : currentData;
+
+    // Run uniqueness validation for steps that carry unique fields
+    if (incoming) {
+      const uniqueError = await validateUnique(nextStep, incoming, id);
+      if (uniqueError) {
+        return res
+          .status(409)
+          .json({ status: 409, error: uniqueError, message: uniqueError });
+      }
+    }
 
     const updated = await prisma.userApplicationDraft.update({
       where: { id },
@@ -183,24 +219,18 @@ exports.submitDraft = async (req, res) => {
       return res.status(400).json({ status: 400, error: "Draft id required" });
     }
 
-    const existing = await prisma.userApplicationDraft.findUnique({ where: { id } });
+    const existing = await prisma.userApplicationDraft.findUnique({
+      where: { id },
+    });
 
     if (!existing) {
       return res.status(404).json({ status: 404, error: "Draft not found" });
     }
 
-    const incoming = normalizeDraftData(req.body?.data);
-    const currentData =
+    // All data is already in the draft from per-step saves — no extra data needed
+    const merged =
       existing.data && typeof existing.data === "object" ? existing.data : {};
-    const merged = incoming ? { ...currentData, ...incoming } : currentData;
 
-    // Mark draft as submitted
-    const draft = await prisma.userApplicationDraft.update({
-      where: { id },
-      data: { status: "SUBMITTED", step: 5, data: merged },
-    });
-
-    // Create the actual user from merged draft data
     const {
       firstName,
       middleName,
@@ -227,7 +257,7 @@ exports.submitDraft = async (req, res) => {
       guarantors = [],
     } = merged;
 
-    // Get region from first address
+    // Get region from first address (outside transaction — read-only)
     let regionId = null;
     if (addresses.length > 0) {
       const region = await prisma.region.findFirst({
@@ -241,119 +271,125 @@ exports.submitDraft = async (req, res) => {
       regionId = defaultRegion?.id || null;
     }
 
-    const createFiles = async (files = []) =>
-      Promise.all(
-        files.map((file) =>
-          prisma.file.create({
-            data: {
-              url: file.secure_url || file.url,
-              publicId: file.public_id || file.publicId,
-              resourceType: file.resource_type || file.resourceType,
-              format: file.format,
-            },
-          })
-        )
-      ).then((created) => created.map((f) => ({ id: f.id })));
-
-    const proofIncomeImages = await createFiles(proofOfIncomeImages);
-    const profilePhoto =
-      photo && typeof photo === "object" && Object.keys(photo).length > 0
-        ? await createFiles([photo])
-        : [];
-
-    const user = await prisma.user.create({
-      data: {
-        firstName,
-        middleName,
-        lastName,
-        relationTypeId,
-        relationFirstName,
-        relationMiddleName,
-        relationLastName,
-        dateOfBirth,
-        phone,
-        officeNumber,
-        genderId,
-        maritalStatus,
-        email: email || null,
-        isDefaulter: isDefaulter === "true" || isDefaulter === true,
-        proofOfIncome,
-        creditScore: creditScore ? parseInt(creditScore) : null,
-        profession,
-        qualification,
-        regionId,
-        createdBy: req.user?.type || "unknown",
-        adminId: req.user?.adminId || null,
-        employeeId: req.user?.employeeId || null,
-        proofOfIncomeImages: { connect: proofIncomeImages },
-        photoId: profilePhoto.length ? profilePhoto[0].id : null,
-        photoIds: {
-          create: await Promise.all(
-            photoIds.map(async (pid) => ({
-              photoIdNumber: pid.photoIdNumber,
-              photoIdTypeId: pid.photoIdTypeId,
-              images: { connect: await createFiles(pid.images || []) },
-            }))
+    const user = await prisma.$transaction(async (tx) => {
+      const createFiles = async (files = []) =>
+        Promise.all(
+          files.map((file) =>
+            tx.file.create({
+              data: {
+                url: file.secure_url || file.url,
+                publicId: file.public_id || file.publicId,
+                resourceType: file.resource_type || file.resourceType,
+                format: file.format,
+              },
+            }),
           ),
+        ).then((created) => created.map((f) => ({ id: f.id })));
+
+      const proofIncomeImages = await createFiles(proofOfIncomeImages);
+      const profilePhoto =
+        photo && typeof photo === "object" && Object.keys(photo).length > 0
+          ? await createFiles([photo])
+          : [];
+      const photoIdImageConnects = await Promise.all(
+        photoIds.map(async (pid) => ({
+          photoIdNumber: pid.photoIdNumber,
+          photoIdTypeId: pid.photoIdTypeId,
+          images: { connect: await createFiles(pid.images || []) },
+        })),
+      );
+
+      const createdUser = await tx.user.create({
+        data: {
+          firstName,
+          middleName,
+          lastName,
+          relationTypeId,
+          relationFirstName,
+          relationMiddleName,
+          relationLastName,
+          dateOfBirth,
+          phone,
+          officeNumber,
+          genderId,
+          maritalStatus,
+          email: email || null,
+          isDefaulter: isDefaulter === "true" || isDefaulter === true,
+          proofOfIncome,
+          creditScore: creditScore ? parseInt(creditScore) : null,
+          profession,
+          qualification,
+          regionId,
+          createdBy: req.user?.type || "unknown",
+          adminId: req.user?.adminId || null,
+          employeeId: req.user?.employeeId || null,
+          proofOfIncomeImages: { connect: proofIncomeImages },
+          photoId: profilePhoto.length ? profilePhoto[0].id : null,
+          photoIds: { create: photoIdImageConnects },
+          ...(addresses.length > 0 && {
+            addresses: {
+              create: addresses.map((addr) => ({
+                addressCategoryId: addr.addressCategoryId,
+                address: addr.address,
+                country: addr.country,
+                stateId: addr.stateId,
+                cityId: addr.cityId,
+                pincode: parseInt(addr.pincode),
+              })),
+            },
+          }),
+          ...(guarantors.length > 0 && {
+            guarantors: {
+              create: guarantors.map((g) => ({
+                name: g.name,
+                fatherName: g.fatherName,
+                mobileNo: g.mobileNo,
+                address: g.address,
+                photoIdType1: g.photoIdType1 || null,
+                photoIdNumber1: g.photoIdNumber1 || null,
+                photoIdImages1: g.photoIdImages1 || null,
+                photoIdType2: g.photoIdType2 || null,
+                photoIdNumber2: g.photoIdNumber2 || null,
+                photoIdImages2: g.photoIdImages2 || null,
+              })),
+            },
+          }),
         },
-        ...(addresses.length > 0 && {
+        include: {
+          photoIds: { include: { images: true } },
+          proofOfIncomeImages: true,
+          photo: true,
+          region: true,
+          gender: true,
+          relationType: true,
           addresses: {
-            create: addresses.map((addr) => ({
-              addressCategoryId: addr.addressCategoryId,
-              address: addr.address,
-              country: addr.country,
-              stateId: addr.stateId,
-              cityId: addr.cityId,
-              pincode: parseInt(addr.pincode),
-            })),
+            include: { addressCategory: true, state: true, city: true },
           },
-        }),
-        ...(guarantors.length > 0 && {
-          guarantors: {
-            create: guarantors.map((g) => ({
-              name: g.name,
-              fatherName: g.fatherName,
-              mobileNo: g.mobileNo,
-              address: g.address,
-              photoIdType1: g.photoIdType1 || null,
-              photoIdNumber1: g.photoIdNumber1 || null,
-              photoIdImages1: g.photoIdImages1 || null,
-              photoIdType2: g.photoIdType2 || null,
-              photoIdNumber2: g.photoIdNumber2 || null,
-              photoIdImages2: g.photoIdImages2 || null,
-            })),
-          },
-        }),
-      },
-      include: {
-        photoIds: { include: { images: true } },
-        proofOfIncomeImages: true,
-        photo: true,
-        region: true,
-        gender: true,
-        relationType: true,
-        addresses: { include: { addressCategory: true, state: true, city: true } },
-        guarantors: true,
-      },
-    });
+          guarantors: true,
+        },
+      });
+
+      await tx.userApplicationDraft.delete({ where: { id } });
+      return createdUser;
+    }, { timeout: 60000 });
 
     await logAction({
-      action: "CREATED USER VIA APPLICATION DRAFT",
+      action: "CREATED USER",
+      message: `User ${user.firstName} ${user.lastName} (ID: ${user.id}) created.`,
       table: "User",
       targetId: user.id,
-      metadata: { draftId: draft.id, userId: user.id },
+      metadata: { draftId: id, userId: user.id },
       loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
     });
 
-    return res.status(201).json({ status: 201, data: { draft, user } });
+    return res.status(201).json({ status: 201, data: { user } });
   } catch (error) {
     console.error("User application draft submit error:", error);
     return res.status(500).json({
       status: 500,
-      error: "Failed to submit user application draft",
-      message: error.message,
+      error: error.message,
     });
   }
 };
@@ -366,7 +402,9 @@ exports.deleteDraft = async (req, res) => {
     }
 
     const creator = resolveCreator(req);
-    const draft = await prisma.userApplicationDraft.findUnique({ where: { id } });
+    const draft = await prisma.userApplicationDraft.findUnique({
+      where: { id },
+    });
 
     if (!draft) {
       return res.status(404).json({ status: 404, error: "Draft not found" });
@@ -377,7 +415,9 @@ exports.deleteDraft = async (req, res) => {
       : draft.createdByEmployeeId === creator.employeeId;
 
     if (!isCreatorMatch) {
-      return res.status(403).json({ status: 403, error: "Not authorized to delete this draft" });
+      return res
+        .status(403)
+        .json({ status: 403, error: "Not authorized to delete this draft" });
     }
 
     await prisma.userApplicationDraft.delete({ where: { id } });
