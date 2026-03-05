@@ -1,5 +1,13 @@
 const prisma = require("../lib/prisma");
 
+const parseExpand = (value) =>
+  new Set(
+    String(value || "")
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+  );
+
 
 // 🚹 Get all genders
 exports.getAllGenders = async (req, res) => {
@@ -49,10 +57,48 @@ exports.createBrand = async (req, res) => {
 
 exports.getBrands = async (req, res) => {
   try {
+    const expand = parseExpand(req.query.expand);
+    const includeModels = expand.has("models") || expand.has("variants");
+    const includeVariants = expand.has("variants");
+
     const brands = await prisma.vehicleBrand.findMany({
-      include: { models: { include: { variants: true } } },
+      select: {
+        id: true,
+        name: true,
+        _count: { select: { models: true } },
+        ...(includeModels
+          ? {
+              models: {
+                select: {
+                  id: true,
+                  name: true,
+                  brandId: true,
+                  ...(includeVariants
+                    ? {
+                        variants: {
+                          select: {
+                            id: true,
+                            name: true,
+                            modelId: true,
+                          },
+                        },
+                      }
+                    : {}),
+                },
+              },
+            }
+          : {}),
+      },
     });
-    res.status(200).json({ data: brands, status: 200 });
+
+    const data = brands.map((brand) => ({
+      id: brand.id,
+      name: brand.name,
+      modelCount: brand._count.models,
+      ...(includeModels ? { models: brand.models } : {}),
+    }));
+
+    res.status(200).json({ data, status: 200 });
   } catch (err) {
     res.status(500).json({ error: err.message, status: 500 });
   }
@@ -100,11 +146,46 @@ exports.createModel = async (req, res) => {
 exports.getModels = async (req, res) => {
   try {
     const { brandId } = req.query;
+    const expand = parseExpand(req.query.expand);
+    const includeVariants = expand.has("variants");
+
     const models = await prisma.vehicleModel.findMany({
       where: brandId ? { brandId } : {},
-      include: { variants: true, brand: true },
+      select: {
+        id: true,
+        name: true,
+        brandId: true,
+        brand: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        _count: { select: { variants: true } },
+        ...(includeVariants
+          ? {
+              variants: {
+                select: {
+                  id: true,
+                  name: true,
+                  modelId: true,
+                },
+              },
+            }
+          : {}),
+      },
     });
-    res.status(200).json({ data: models, status: 200 });
+
+    const data = models.map((model) => ({
+      id: model.id,
+      name: model.name,
+      brandId: model.brandId,
+      brand: model.brand,
+      variantCount: model._count.variants,
+      ...(includeVariants ? { variants: model.variants } : {}),
+    }));
+
+    res.status(200).json({ data, status: 200 });
   } catch (err) {
     res.status(500).json({ error: err.message, status: 500 });
   }
@@ -151,9 +232,50 @@ exports.createVariant = async (req, res) => {
 
 exports.getVariants = async (req, res) => {
   try {
-    const { modelId } = req.query;
+    const { modelId, brandId } = req.query;
+    const expand = parseExpand(req.query.expand);
+    const includeModel = expand.has("model") || expand.has("brand");
+    const includeBrand = expand.has("brand");
+
+    const where = {
+      ...(modelId ? { modelId } : {}),
+      ...(brandId
+        ? {
+            model: {
+              brandId,
+            },
+          }
+        : {}),
+    };
+
     const variants = await prisma.vehicleVariant.findMany({
-      where: modelId ? { modelId } : {},
+      where,
+      select: {
+        id: true,
+        name: true,
+        modelId: true,
+        ...(includeModel
+          ? {
+              model: {
+                select: {
+                  id: true,
+                  name: true,
+                  brandId: true,
+                  ...(includeBrand
+                    ? {
+                        brand: {
+                          select: {
+                            id: true,
+                            name: true,
+                          },
+                        },
+                      }
+                    : {}),
+                },
+              },
+            }
+          : {}),
+      },
     });
     res.status(200).json({ data: variants, status: 200 });
   } catch (err) {

@@ -18,6 +18,7 @@ router.put("/:id",        authMiddleware, onlyAdminOrEmployee, loanController.up
 router.get("/user/:userId", authMiddleware, adminOnly,         loanController.listLoansByUser);
 router.put("/close/:id", authMiddleware, adminOnly,         loanController.closeLoan);
 router.get("/pending", authMiddleware, adminOnly, loanController.getPendingLoanDetails);
+router.get("/pending/:loanId", authMiddleware, adminOnly, loanController.getPendingLoanDetails);
 router.get(
   "/approvals",
   authMiddleware,

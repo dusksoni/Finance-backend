@@ -927,66 +927,123 @@ exports.closeLoan = async (req, res) => {
 
 exports.getPendingLoanDetails = async (req, res) => {
   try {
-    const now = new Date();
-    const users = await prisma.user.findMany({
-      include: {
-        loans: {
-          where: { isClosed: false },
-          include: { payments: true },
+    const { loanId } = req.params;
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
+    const emiWhere = {
+      status: { in: ["UNPAID", "PARTIAL"] },
+      paymentFor: { lte: today },
+      ...(loanId ? { loanId } : {}),
+      loan: {
+        isClosed: false,
+      },
+    };
+
+    const pendingEmis = await prisma.eMI.findMany({
+      where: emiWhere,
+      orderBy: [{ paymentFor: "asc" }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        loanId: true,
+        paymentFor: true,
+        emiPayAmount: true,
+        amountPaidSoFar: true,
+        fineAmount: true,
+        finePaid: true,
+        loan: {
+          select: {
+            id: true,
+            fileNo: true,
+            loanType: { select: { id: true, name: true, label: true } },
+            branch: { select: { id: true, name: true } },
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                middleName: true,
+                lastName: true,
+                phone: true,
+              },
+            },
+          },
         },
       },
     });
 
-    const result = [];
+    const loanMap = new Map();
+    const r2 = (n) => Math.round(Number(n) || 0);
 
-    for (const user of users) {
-      for (const loan of user.loans) {
-        const start = new Date(loan.startDate);
-        const tenure = loan.tenureMonths;
-        const paymentMap = new Map();
-
-        // Map all paid months
-        for (const p of loan.payments) {
-          const key = `${getYear(p.paymentFor)}-${getMonth(p.paymentFor)}`;
-          paymentMap.set(key, true);
-        }
-
-        // Calculate all due months
-        let pendingMonths = [];
-        for (let i = 0; i < tenure; i++) {
-          const due = addMonths(start, i);
-          if (isBefore(due, now)) {
-            const key = `${getYear(due)}-${getMonth(due)}`;
-            if (!paymentMap.has(key)) {
-              pendingMonths.push({
-                month: `${due.getFullYear()}-${String(
-                  due.getMonth() + 1
-                ).padStart(2, "0")}`,
-                amount: loan.amount,
-              });
-            }
-          }
-        }
-
-        if (pendingMonths.length > 0) {
-          result.push({
-            userId: user.id,
-            userName: user.name,
-            loanId: loan.id,
-            type: loan.type,
-            amountPerMonth: loan.amount,
-            pendingCount: pendingMonths.length,
-            totalPendingAmount: pendingMonths.reduce(
-              (acc, m) => acc + m.amount,
-              0
-            ),
-            pendingMonths,
-          });
-        }
+    for (const emi of pendingEmis) {
+      const key = emi.loanId;
+      if (!loanMap.has(key)) {
+        const user = emi.loan?.user || {};
+        loanMap.set(key, {
+          loanId: emi.loanId,
+          fileNo: emi.loan?.fileNo || null,
+          userId: user.id || null,
+          userName: [user.firstName, user.middleName, user.lastName]
+            .filter(Boolean)
+            .join(" "),
+          phone: user.phone || null,
+          loanType: emi.loan?.loanType || null,
+          branch: emi.loan?.branch || null,
+          pendingCount: 0,
+          totalPendingAmount: 0,
+          totalPendingPenalty: 0,
+          totalPendingDue: 0,
+          oldestDueDate: emi.paymentFor,
+          pendingEmis: [],
+        });
       }
+
+      const bucket = loanMap.get(key);
+      const emiPaidComponent = Math.max(
+        Number(emi.amountPaidSoFar || 0) - Number(emi.finePaid || 0),
+        0
+      );
+      const emiDue = Math.max(Number(emi.emiPayAmount || 0) - emiPaidComponent, 0);
+      const fineDue = Math.max(
+        Number(emi.fineAmount || 0) - Number(emi.finePaid || 0),
+        0
+      );
+
+      bucket.pendingCount += 1;
+      bucket.totalPendingAmount = r2(bucket.totalPendingAmount + emiDue);
+      bucket.totalPendingPenalty = r2(bucket.totalPendingPenalty + fineDue);
+      bucket.totalPendingDue = r2(
+        bucket.totalPendingAmount + bucket.totalPendingPenalty
+      );
+      if (emi.paymentFor < bucket.oldestDueDate) {
+        bucket.oldestDueDate = emi.paymentFor;
+      }
+      bucket.pendingEmis.push({
+        emiId: emi.id,
+        dueDate: emi.paymentFor,
+        dueAmount: r2(emiDue),
+        duePenalty: r2(fineDue),
+        totalDue: r2(emiDue + fineDue),
+      });
     }
 
-    res.status(200).json({ data: result });
+    const data = Array.from(loanMap.values()).sort(
+      (a, b) => b.totalPendingDue - a.totalPendingDue
+    );
+
+    res.set("Deprecation", "true");
+    res.set("Warning", '299 - "Deprecated endpoint. Prefer /api/report/pending-emis"');
+
+    res.status(200).json({
+      status: 200,
+      deprecated: true,
+      data,
+      summary: {
+        totalLoans: data.length,
+        totalPendingAmount: r2(data.reduce((sum, row) => sum + row.totalPendingAmount, 0)),
+        totalPendingPenalty: r2(data.reduce((sum, row) => sum + row.totalPendingPenalty, 0)),
+        totalPendingDue: r2(data.reduce((sum, row) => sum + row.totalPendingDue, 0)),
+      },
+    });
   } catch (err) {
     console.error("Pending loan error:", err);
     res.status(500).json({ error: "Failed to fetch pending loans" });
@@ -1130,13 +1187,54 @@ exports.listLoans = async (req, res) => {
         skip: parseInt(skip),
         take: parseInt(limit),
         orderBy,
-        include: {
-          user: true,
-          payments: true,
-          loanType: true,
-          twoWheelerLoan: true,
-          agriLoan: true,
-          msmeLoan: true,
+        select: {
+          id: true,
+          fileNo: true,
+          userId: true,
+          branchId: true,
+          showroomId: true,
+          totalAmount: true,
+          pendingAmount: true,
+          isClosed: true,
+          isDefaulted: true,
+          fileStatus: true,
+          createdAt: true,
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              middleName: true,
+              lastName: true,
+              phone: true,
+            },
+          },
+          loanType: {
+            select: {
+              id: true,
+              name: true,
+              label: true,
+            },
+          },
+          twoWheelerLoan: {
+            select: {
+              registrationNumber: true,
+            },
+          },
+          agriLoan: {
+            select: {
+              registrationNumber: true,
+            },
+          },
+          msmeLoan: {
+            select: {
+              registrationNumber: true,
+            },
+          },
+          _count: {
+            select: {
+              payments: true,
+            },
+          },
         },
       }),
       prisma.loan.count({ where: loanWhere }),
