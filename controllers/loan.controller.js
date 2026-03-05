@@ -1114,7 +1114,7 @@ exports.listLoans = async (req, res) => {
 
     const validSortFields = {
       fileNo: { fileNo: sortOrder },
-      userName: { user: { name: sortOrder } },
+      userName: { user: { firstName: sortOrder } },
       totalAmount: { totalAmount: sortOrder },
       pendingAmount: { pendingAmount: sortOrder },
       createdAt: { createdAt: sortOrder },
@@ -1144,7 +1144,7 @@ exports.listLoans = async (req, res) => {
         ? prisma.loan.aggregate({
             where: loanWhere,
             _sum: {
-              amount: true,
+              totalAmount: true,
             },
           })
         : Promise.resolve(null),
@@ -1155,7 +1155,7 @@ exports.listLoans = async (req, res) => {
       page: parseInt(page),
       limit: parseInt(limit),
       ...(includeTotal === "true" && {
-        totalAmount: totalAmount?._sum?.amount || 0,
+        totalAmount: totalAmount?._sum?.totalAmount || 0,
       }),
       data: loans,
     });

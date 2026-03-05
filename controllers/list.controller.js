@@ -13,17 +13,6 @@ exports.getAllGenders = async (req, res) => {
   }
 };
 
-exports.getAllGenders = async (req, res) => {
-  try {
-    const data = await prisma.gender.findMany({
-      orderBy: { value: "asc" },
-    });
-    res.status(200).json({ data });
-  } catch (err) {
-    res.status(500).json({ error: err.message, status: 500 });
-  }
-};
-
 // 👨‍👩 Get all relation types
 exports.getAllRelationTypes = async (req, res) => {
   try {

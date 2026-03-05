@@ -1,5 +1,25 @@
 const prisma = require("../lib/prisma");
 
+const PERMISSION_CACHE_TTL_MS = 60 * 1000;
+const permissionCache = new Map();
+
+const getCachedPermissions = (employeeId) => {
+  const cached = permissionCache.get(employeeId);
+  if (!cached) return null;
+  if (cached.expiresAt < Date.now()) {
+    permissionCache.delete(employeeId);
+    return null;
+  }
+  return cached.permissions;
+};
+
+const setCachedPermissions = (employeeId, permissions) => {
+  permissionCache.set(employeeId, {
+    permissions,
+    expiresAt: Date.now() + PERMISSION_CACHE_TTL_MS,
+  });
+};
+
 /**
   Enhanced permission checking middleware that supports both ADMIN and EMPLOYEE users
   with caching to improve performance.
@@ -22,14 +42,21 @@ async function checkVerifyPermission(user, permission, options = {}) {
     return true;
   } else if (user.type === "EMPLOYEE") {
     // For employees, check their role permissions
-    const employee = await prisma.employee.findUnique({
-      where: { id: user.employeeId },
-      include: {
-        role: true
-      },
-    });
+    if (!user.employeeId) return false;
+
+    let permissions = getCachedPermissions(user.employeeId);
+    if (!permissions) {
+      const employee = await prisma.employee.findUnique({
+        where: { id: user.employeeId },
+        include: {
+          role: true
+        },
+      });
+      permissions = employee?.role?.permissions || [];
+      setCachedPermissions(user.employeeId, permissions);
+    }
     // Check if the employee has the required permission
-    const hasPermission = employee?.role?.permissions?.includes(permission);
+    const hasPermission = permissions.includes(permission);
     
     // If throwError option is true and permission is denied, throw an error
     if (options.throwError && !hasPermission) {

@@ -373,6 +373,7 @@ exports.makePayment = async (req, res) => {
         let totalInterestCollected = 0;
         let totalPrincipalCollected = 0;
         let totalFineDiscountApplied = 0;
+        let totalEmiCollected = 0;
 
         // Now distribute the payment across EMIs
         for (const emi of installments) {
@@ -548,28 +549,10 @@ exports.makePayment = async (req, res) => {
             },
           });
 
-          // Reduce pendingAmount only by EMI (interest + principal)
-          // Note: processPostPayment will re-sync all loan totals from EMI aggregates
-          if (verified && payToEmi > 0) {
-            await processPostPayment({
-              tx,
-              emiId: emi.id,
-              loanId,
-              paymentAmount: r2(payToEmi), // EMI only
-              addToEmi: false,
-              updateEmiStatus: false,
-              userContext: {
-                adminId: req.user?.adminId,
-                employeeId: req.user?.employeeId,
-                type: req.user?.type,
-                loginActivityId: req.user?.loginActivityId,
-              },
-            });
-          }
-
           // Track totals for payment metadata
           remaining = r2(remaining - (payToFine + payToEmi));
           totalUsed = r2(totalUsed + (payToFine + payToEmi));
+          totalEmiCollected = r2(totalEmiCollected + payToEmi);
           totalFineCollected = r2(totalFineCollected + payToFine);
           totalInterestCollected = r2(totalInterestCollected + payInterest);
           totalPrincipalCollected = r2(totalPrincipalCollected + payPrincipal);
@@ -587,6 +570,23 @@ exports.makePayment = async (req, res) => {
             fineAssessed: fineAssessed,
             fineRemaining: r2(fineDueAfter),
             emiRemaining: r2(emiDueAfter),
+          });
+        }
+
+        // Re-sync loan totals once per transaction after EMI updates are complete.
+        if (verified) {
+          await processPostPayment({
+            tx,
+            loanId,
+            paymentAmount: totalEmiCollected,
+            addToEmi: false,
+            updateEmiStatus: false,
+            userContext: {
+              adminId: req.user?.adminId,
+              employeeId: req.user?.employeeId,
+              type: req.user?.type,
+              loginActivityId: req.user?.loginActivityId,
+            },
           });
         }
 

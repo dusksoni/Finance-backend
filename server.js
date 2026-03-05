@@ -4,8 +4,6 @@ const app = express();
 const cors = require("cors");
 const { initializeCronJobs, updateAllOverdueFines } = require("./utils/fineUpdateService");
 
-app.use(cors());
-
 const adminRoutes = require("./routes/admin.route");
 const employeeRoutes = require("./routes/employee.route");
 const userRoutes = require("./routes/user.route");

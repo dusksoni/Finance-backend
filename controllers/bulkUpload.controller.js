@@ -73,6 +73,15 @@ const isRowEmpty = (row) => {
   return isEmpty;
 };
 
+const getDataRows = (sheet) => {
+  const rows = [];
+  sheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
+    if (rowNum === 1 || isRowEmpty(row)) return;
+    rows.push({ row, rowNum });
+  });
+  return rows;
+};
+
 exports.bulkUpload = async (req, res) => {
   try {
     const { adminId, employeeId, role } = req.user;
@@ -90,17 +99,26 @@ exports.bulkUpload = async (req, res) => {
       payments: { success: 0, failed: 0, errors: [] },
     };
 
+    const [
+      defaultRegion,
+      defaultGender,
+      defaultRelationType,
+      defaultAddressCategory,
+      defaultBranch,
+    ] = await Promise.all([
+      prisma.region.findFirst(),
+      prisma.gender.findFirst({ where: { name: "Male" } }),
+      prisma.relationType.findFirst(),
+      prisma.addressCategory.findFirst(),
+      prisma.branch.findFirst(),
+    ]);
+
     // Process Users Sheet
     const usersSheet = workbook.getWorksheet("Users");
     if (usersSheet) {
-      let rowNumber = 2; // Start from row 2 (skip header)
-
-      usersSheet.eachRow({ includeEmpty: false }, async (row, rowNum) => {
-        if (rowNum === 1) return; // Skip header
-
+      const userRows = getDataRows(usersSheet);
+      for (const { row, rowNum } of userRows) {
         try {
-          if (isRowEmpty(row)) return;
-
           const phone = getCellValue(row, 4); // Column D
           if (!phone) {
             results.users.errors.push({
@@ -108,7 +126,7 @@ exports.bulkUpload = async (req, res) => {
               error: "Phone number is required",
             });
             results.users.failed++;
-            return;
+            continue;
           }
 
           // Check if user already exists
@@ -123,7 +141,7 @@ exports.bulkUpload = async (req, res) => {
               error: "User already exists with this phone number",
             });
             results.users.failed++;
-            return;
+            continue;
           }
 
           const firstName = getCellValue(row, 1) || "";
@@ -180,24 +198,12 @@ exports.bulkUpload = async (req, res) => {
 
           // If no region found, use first available region
           if (!regionId) {
-            const defaultRegion = await prisma.region.findFirst();
             if (defaultRegion) {
               regionId = defaultRegion.id;
               stateId = defaultRegion.stateId;
               cityId = defaultRegion.cityId;
             }
           }
-
-          // Get default gender (Male)
-          const gender = await prisma.gender.findFirst({
-            where: { name: "Male" },
-          });
-
-          // Get default relation type
-          const relationType = await prisma.relationType.findFirst();
-
-          // Get default address category
-          const addressCategory = await prisma.addressCategory.findFirst();
 
           const userData = {
             firstName,
@@ -213,8 +219,8 @@ exports.bulkUpload = async (req, res) => {
             qualification,
             profession,
             regionId,
-            genderId: gender?.id,
-            relationTypeId: relationType?.id,
+            genderId: defaultGender?.id,
+            relationTypeId: defaultRelationType?.id,
             adminId: role === "ADMIN" ? adminId : null,
             employeeId: role === "EMPLOYEE" ? employeeId : null,
             createdBy: role,
@@ -225,7 +231,7 @@ exports.bulkUpload = async (req, res) => {
           });
 
           // Create address if details provided
-          if (address && stateId && cityId && addressCategory) {
+          if (address && stateId && cityId && defaultAddressCategory) {
             await prisma.userAddress.create({
               data: {
                 userId: user.id,
@@ -233,8 +239,8 @@ exports.bulkUpload = async (req, res) => {
                 country,
                 stateId,
                 cityId,
-                pincode: pincode ? parseInt(pincode) : 0,
-                addressCategoryId: addressCategory.id,
+                pincode: pincode ? parseInt(pincode, 10) : 0,
+                addressCategoryId: defaultAddressCategory.id,
               },
             });
           }
@@ -258,20 +264,15 @@ exports.bulkUpload = async (req, res) => {
             error: error.message,
           });
         }
-      });
+      }
     }
 
     // Process Loans Sheet
     const loansSheet = workbook.getWorksheet("Loans");
     if (loansSheet) {
-      let rowNumber = 2;
-
-      loansSheet.eachRow({ includeEmpty: false }, async (row, rowNum) => {
-        if (rowNum === 1) return; // Skip header
-
+      const loanRows = getDataRows(loansSheet);
+      for (const { row, rowNum } of loanRows) {
         try {
-          if (isRowEmpty(row)) return;
-
           const fileNo = getCellValue(row, 1);
           const userPhone = getCellValue(row, 2);
           const loanTypeName = getCellValue(row, 3);
@@ -282,7 +283,7 @@ exports.bulkUpload = async (req, res) => {
               error: "File No, User Phone, and Loan Type are required",
             });
             results.loans.failed++;
-            return;
+            continue;
           }
 
           // Check if loan already exists
@@ -297,7 +298,7 @@ exports.bulkUpload = async (req, res) => {
               error: "Loan already exists with this file number",
             });
             results.loans.failed++;
-            return;
+            continue;
           }
 
           // Find user
@@ -311,7 +312,7 @@ exports.bulkUpload = async (req, res) => {
               error: `User with phone ${userPhone} not found`,
             });
             results.loans.failed++;
-            return;
+            continue;
           }
 
           // Find loan type
@@ -325,7 +326,7 @@ exports.bulkUpload = async (req, res) => {
               error: `Loan type ${loanTypeName} not found`,
             });
             results.loans.failed++;
-            return;
+            continue;
           }
 
           const principalLoanAmount = parseFloat(getCellValue(row, 4)) || 0;
@@ -338,14 +339,11 @@ exports.bulkUpload = async (req, res) => {
           const paymentFrequency = getCellValue(row, 9) || "MONTHLY";
 
           // Calculate loan amounts
-          const monthlyInterestRate = interestRate / 100 / 12;
-          const interestAmount = principalLoanAmount * (interestRate / 100) * (tenureMonths / 12);
+          const interestAmount =
+            principalLoanAmount * (interestRate / 100) * (tenureMonths / 12);
           const totalAmount = principalLoanAmount + interestAmount;
           const monthlyPayableAmount = totalAmount / tenureMonths;
           const endDate = addMonths(startDate, tenureMonths);
-
-          // Get first branch for default
-          const branch = await prisma.branch.findFirst();
 
           const loanData = {
             fileNo: String(fileNo),
@@ -363,7 +361,7 @@ exports.bulkUpload = async (req, res) => {
             dueDay,
             paymentFrequency,
             penaltyPercentage: 0,
-            branchId: branch?.id,
+            branchId: defaultBranch?.id,
             adminId: role === "ADMIN" ? adminId : null,
             employeeId: role === "EMPLOYEE" ? employeeId : null,
             createdBy: role,
@@ -393,20 +391,15 @@ exports.bulkUpload = async (req, res) => {
             error: error.message,
           });
         }
-      });
+      }
     }
 
     // Process Payments Sheet
     const paymentsSheet = workbook.getWorksheet("Payments");
     if (paymentsSheet) {
-      let rowNumber = 2;
-
-      paymentsSheet.eachRow({ includeEmpty: false }, async (row, rowNum) => {
-        if (rowNum === 1) return; // Skip header
-
+      const paymentRows = getDataRows(paymentsSheet);
+      for (const { row, rowNum } of paymentRows) {
         try {
-          if (isRowEmpty(row)) return;
-
           const fileNo = getCellValue(row, 1);
           const amount = parseFloat(getCellValue(row, 2));
           const paymentDateValue = getCellValue(row, 3);
@@ -419,7 +412,7 @@ exports.bulkUpload = async (req, res) => {
               error: "File No and Amount are required",
             });
             results.payments.failed++;
-            return;
+            continue;
           }
 
           // Find loan
@@ -433,7 +426,7 @@ exports.bulkUpload = async (req, res) => {
               error: `Loan with file number ${fileNo} not found`,
             });
             results.payments.failed++;
-            return;
+            continue;
           }
 
           const paymentDate = parseExcelDate(paymentDateValue) || new Date();
@@ -472,11 +465,8 @@ exports.bulkUpload = async (req, res) => {
             error: error.message,
           });
         }
-      });
+      }
     }
-
-    // Wait a bit for all async operations to complete
-    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     return res.status(200).json({
       message: "Bulk upload completed",
