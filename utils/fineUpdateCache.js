@@ -1,77 +1,59 @@
 // utils/fineUpdateCache.js
-// Simple in-memory cache to track last fine update time per loan
-// Helps avoid unnecessary database updates within the 1-hour window
+// DB-based staleness check for fine refresh — works correctly under PM2 multi-process.
+// Instead of an in-memory Map (which is per-process), we check the EMI table directly:
+// if no UNPAID/PARTIAL EMI for this loan has been updated within the last hour we skip.
+//
+// The caller passes the Prisma client (or tx client) so this works inside transactions too.
 
-/**
- * Cache structure: Map<loanId, lastUpdateTimestamp>
- * Stores when fines were last updated for each loan
- */
-const fineUpdateCache = new Map();
-
-/**
- * Cache duration: 1 hour in milliseconds
- * Fines will only be updated if more than 1 hour has passed since last update
- */
 const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
 /**
- * Check if a loan's fines should be updated based on cache
- * @param {string} loanId - The loan ID to check
- * @returns {boolean} - True if fines should be updated (cache expired or not cached)
+ * Check if a loan's fines should be refreshed.
+ * Returns true when at least one UNPAID/PARTIAL EMI for the loan was last updated
+ * more than 1 hour ago (i.e. fines may be stale).
+ *
+ * @param {object} prismaClient - Prisma client or transaction client
+ * @param {string} loanId
+ * @returns {Promise<boolean>}
  */
-function shouldUpdateLoanFines(loanId) {
+async function shouldUpdateLoanFines(prismaClient, loanId) {
   if (!loanId) return true;
 
-  const lastUpdate = fineUpdateCache.get(loanId);
+  const threshold = new Date(Date.now() - CACHE_DURATION_MS);
 
-  // If no cache entry, should update
-  if (!lastUpdate) return true;
+  // Count EMIs that are overdue AND haven't been touched in the last hour
+  const staleCount = await prismaClient.eMI.count({
+    where: {
+      loanId,
+      status: { in: ["UNPAID", "PARTIAL"] },
+      updatedAt: { lt: threshold },
+    },
+  });
 
-  // Check if cache has expired (more than 1 hour since last update)
-  const now = Date.now();
-  const timeSinceUpdate = now - lastUpdate;
-
-  return timeSinceUpdate >= CACHE_DURATION_MS;
+  return staleCount > 0;
 }
 
 /**
- * Mark that a loan's fines were just updated
- * @param {string} loanId - The loan ID to mark as updated
+ * Mark fines as refreshed by touching updatedAt on all UNPAID/PARTIAL EMIs.
+ * Uses updateMany for a single round-trip.
+ *
+ * @param {object} prismaClient - Prisma client or transaction client
+ * @param {string} loanId
  */
-function markLoanFinesUpdated(loanId) {
+async function markLoanFinesUpdated(prismaClient, loanId) {
   if (!loanId) return;
 
-  fineUpdateCache.set(loanId, Date.now());
-}
-
-/**
- * Clear all cache entries
- * Useful for testing or forced refresh scenarios
- */
-function clearCache() {
-  fineUpdateCache.clear();
-  console.log('🧹 Fine update cache cleared');
-}
-
-/**
- * Get cache statistics for monitoring
- * @returns {object} - Cache stats (size, entries)
- */
-function getCacheStats() {
-  return {
-    size: fineUpdateCache.size,
-    entries: Array.from(fineUpdateCache.entries()).map(([loanId, timestamp]) => ({
+  await prismaClient.eMI.updateMany({
+    where: {
       loanId,
-      lastUpdate: new Date(timestamp),
-      age: Date.now() - timestamp,
-    })),
-  };
+      status: { in: ["UNPAID", "PARTIAL"] },
+    },
+    data: { updatedAt: new Date() },
+  });
 }
 
 module.exports = {
   shouldUpdateLoanFines,
   markLoanFinesUpdated,
-  clearCache,
-  getCacheStats,
   CACHE_DURATION_MS,
 };

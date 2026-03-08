@@ -43,7 +43,7 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
     // 0) Check cache: only refresh fines if > 1 hour since last update
     // Only update database if using today's date (not for hypothetical future/past dates)
     const isToday = date === undefined || date === null;
-    if (isToday && shouldUpdateLoanFines(loanId)) {
+    if (isToday && await shouldUpdateLoanFines(prisma, loanId)) {
       const toRefresh = await prisma.eMI.findMany({
         where: {
           loanId,
@@ -111,8 +111,8 @@ exports.getPendingPaymentsByLoanId = async (req, res) => {
       // Execute all updates in parallel
       await Promise.all(updates);
 
-      // Mark this loan as updated in cache
-      markLoanFinesUpdated(loanId);
+      // Mark fines as refreshed (touches updatedAt on all UNPAID/PARTIAL EMIs)
+      await markLoanFinesUpdated(prisma, loanId);
     }
 
     // 1) fetch pending list (<= referenceDate)
@@ -250,7 +250,7 @@ exports.makePayment = async (req, res) => {
         const referenceDate = paymentDate;
 
         // Use cache check (1-hour smart caching)
-        if (shouldUpdateLoanFines(loanId)) {
+        if (await shouldUpdateLoanFines(tx, loanId)) {
           const toRefresh = await tx.eMI.findMany({
             where: {
               loanId,
@@ -314,10 +314,12 @@ exports.makePayment = async (req, res) => {
           });
 
           await Promise.all(updates);
-          markLoanFinesUpdated(loanId);
+          await markLoanFinesUpdated(tx, loanId);
         }
 
         // (B) fetch unpaid/partial EMIs in order
+        // fineCache: emiId -> { fineAmt, daysLate } computed during fine-refresh above
+        // so the distribution loop below does NOT call calculateFine() again
         const installments = await tx.eMI.findMany({
           where: { loanId, status: { in: ["UNPAID", "PARTIAL"] } },
           orderBy: { paymentFor: "asc" },
@@ -395,22 +397,10 @@ exports.makePayment = async (req, res) => {
             0
           );
 
-          // fine assessment (using paymentDate for calculation)
-          const storedFine = r2(emi.fineAmount || 0);
-          const storedDelay = Number(emi.delayDays || 0);
-
-          let fineAssessed = storedFine;
-          let daysLate = storedDelay;
-
-          if (emiDue > 0) {
-            const fineCalc = calculateFine(
-              emi.paymentFor,
-              emiDue,
-              paymentDate
-            );
-            fineAssessed = r2(fineCalc.fineAmt);
-            daysLate = Number(fineCalc.daysLate || 0);
-          }
+          // Fine assessment: use stored values (already refreshed in block A above).
+          // Avoids a redundant calculateFine() call per EMI in the distribution loop.
+          const fineAssessed = r2(emi.fineAmount || 0);
+          const daysLate = Number(emi.delayDays || 0);
           const fineAlreadyPaid = r2(emi.finePaid || 0);
           const fineDueBeforeDiscount = Math.max(fineAssessed - fineAlreadyPaid, 0);
 
@@ -514,18 +504,6 @@ exports.makePayment = async (req, res) => {
             0
           ));
           const fineDueAfter = r2(Math.max(fineAssessed - newFinePaid, 0));
-
-          // Log for debugging
-          console.log(`📊 EMI ${emi.id} Status Check:`, {
-            emiPayAmount: Number(emi.emiPayAmount),
-            emiPaidComponentAfter,
-            emiDueAfter,
-            fineDueAfter,
-            payToFine,
-            payToEmi,
-            newAmountPaidSoFar,
-            newFinePaid
-          });
 
           // Consider amounts <= 0.01 as fully paid (to handle rounding)
           const newStatus =
@@ -803,88 +781,12 @@ exports.payPaymentById = async (req, res) => {
 
     paymentDate = paymentDate ? new Date(paymentDate) : new Date();
 
-    const emi = await prisma.eMI.findUnique({ where: { id: emiId } });
-    if (!emi) return res.status(404).json({ error: "EMI not found" });
-
-    // EMI due should ignore previously paid fine portion:
-    const emiPaidComponent = Math.max(
-      Number(emi.amountPaidSoFar || 0) - Number(emi.finePaid || 0),
-      0
-    );
-    const emiDue = Math.max(
-      Number(emi.emiPayAmount || 0) - emiPaidComponent,
-      0
-    );
-
-    // Fine assessment on EMI due (using paymentDate for calculation)
-    let fineAssessed = r2(emi.fineAmount || 0);
-    let daysLate = Number(emi.delayDays || 0);
-
-    if (emiDue > 0) {
-      const fineCalc = calculateFine(emi.paymentFor, emiDue, paymentDate);
-      // Round fine to nearest 10
-      fineAssessed = roundToTen(r2(fineCalc.fineAmt));
-      daysLate = Number(fineCalc.daysLate || 0);
-    }
-    const fineAlreadyPaid = r2(emi.finePaid || 0);
-    // Apply discount to fine (fine due after discount)
-    const fineDueBeforeDiscount = Math.max(fineAssessed - fineAlreadyPaid, 0);
-    const fineDue = Math.max(fineDueBeforeDiscount - discountAmount, 0);
-
-    let payToFine, payToInterest, payToPrincipal;
-
-    if (hasManualSplit) {
-      // Manual mode: Use provided amounts directly
-      // Validate amounts don't exceed what's due
-      if (fineAmount > fineDue) {
-        return res.status(400).json({
-          error: `Fine amount ${fineAmount} exceeds fine due ${fineDue}`,
-          status: 400
-        });
-      }
-      if (emiAmount > emiDue) {
-        return res.status(400).json({
-          error: `EMI amount ${emiAmount} exceeds EMI due ${emiDue}`,
-          status: 400
-        });
-      }
-
-      payToFine = r2(fineAmount);
-
-      // Split emiAmount between interest and principal
-      const interestOutstanding = Math.max(
-        Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
-        0
-      );
-      const principalOutstanding = Math.max(
-        Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
-        0
-      );
-
-      let remainingEmi = r2(emiAmount);
-      payToInterest = Math.min(remainingEmi, interestOutstanding);
-      remainingEmi = r2(remainingEmi - payToInterest);
-      payToPrincipal = Math.min(remainingEmi, principalOutstanding);
-    } else {
-      // Auto mode (backward compatibility): allocate fine → interest → principal
-      let remaining = Math.min(amount, r2(emiDue + fineDue));
-      payToFine = Math.min(remaining, fineDue);
-      remaining = r2(remaining - payToFine);
-
-      const interestOutstanding = Math.max(
-        Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
-        0
-      );
-      const principalOutstanding = Math.max(
-        Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
-        0
-      );
-      payToInterest = Math.min(remaining, interestOutstanding);
-      payToPrincipal = Math.min(
-        r2(remaining - payToInterest),
-        principalOutstanding
-      );
-    }
+    // Existence check outside transaction (cheap, no lock needed)
+    const emiExists = await prisma.eMI.findUnique({
+      where: { id: emiId },
+      select: { id: true },
+    });
+    if (!emiExists) return res.status(404).json({ error: "EMI not found" });
 
     // Gateway payments are auto-approved, manual CASH payments require permission
     // CHEQUE and manual ONLINE payments should NOT be auto-verified
@@ -892,21 +794,106 @@ exports.payPaymentById = async (req, res) => {
       ? true
       : (paymentMode === "CASH" && (await checkVerifyPermission(req.user, "PAYMENT_VERIFY")));
 
-    // Capture loan's pending amount BEFORE payment for audit trail
-    const loanBefore = await prisma.loan.findUnique({
-      where: { id: emi.loanId },
-      select: { pendingAmount: true },
-    });
-    const loanPendingBefore = r2(loanBefore?.pendingAmount || 0);
-
-    // --- Keep the transaction TINY; post-processing happens AFTER commit ---
+    // --- All reads that feed payment math happen INSIDE the transaction ---
+    // This prevents a race where two concurrent requests read the same EMI state
+    // and both succeed against the same (already-paid) EMI.
     const txResult = await prisma.$transaction(
       async (tx) => {
-        // 1) Create payment
+        // 1) Re-read EMI with a row-level lock via Prisma's findUnique inside tx
+        //    Postgres serialises concurrent writers on the same row.
+        const emi = await tx.eMI.findUnique({ where: { id: emiId } });
+
+        // Guard: reject if EMI is already fully paid or being processed
+        if (emi.status === "PAID") {
+          throw Object.assign(new Error("EMI is already fully paid"), { statusCode: 400 });
+        }
+
+        // EMI due should ignore previously paid fine portion:
+        const emiPaidComponent = Math.max(
+          Number(emi.amountPaidSoFar || 0) - Number(emi.finePaid || 0),
+          0
+        );
+        const emiDue = Math.max(
+          Number(emi.emiPayAmount || 0) - emiPaidComponent,
+          0
+        );
+
+        // Fine assessment on EMI due (using paymentDate for calculation)
+        let fineAssessed = r2(emi.fineAmount || 0);
+        let daysLate = Number(emi.delayDays || 0);
+
+        if (emiDue > 0) {
+          const fineCalc = calculateFine(emi.paymentFor, emiDue, paymentDate);
+          fineAssessed = roundToTen(r2(fineCalc.fineAmt));
+          daysLate = Number(fineCalc.daysLate || 0);
+        }
+        const fineAlreadyPaid = r2(emi.finePaid || 0);
+        const fineDueBeforeDiscount = Math.max(fineAssessed - fineAlreadyPaid, 0);
+        const fineDue = Math.max(fineDueBeforeDiscount - discountAmount, 0);
+
+        let payToFine, payToInterest, payToPrincipal;
+
+        if (hasManualSplit) {
+          if (fineAmount > fineDue) {
+            throw Object.assign(
+              new Error(`Fine amount ${fineAmount} exceeds fine due ${fineDue}`),
+              { statusCode: 400 }
+            );
+          }
+          if (emiAmount > emiDue) {
+            throw Object.assign(
+              new Error(`EMI amount ${emiAmount} exceeds EMI due ${emiDue}`),
+              { statusCode: 400 }
+            );
+          }
+
+          payToFine = r2(fineAmount);
+
+          const interestOutstanding = Math.max(
+            Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+            0
+          );
+          const principalOutstanding = Math.max(
+            Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+            0
+          );
+
+          let remainingEmi = r2(emiAmount);
+          payToInterest = Math.min(remainingEmi, interestOutstanding);
+          remainingEmi = r2(remainingEmi - payToInterest);
+          payToPrincipal = Math.min(remainingEmi, principalOutstanding);
+        } else {
+          let remaining = Math.min(amount, r2(emiDue + fineDue));
+          payToFine = Math.min(remaining, fineDue);
+          remaining = r2(remaining - payToFine);
+
+          const interestOutstanding = Math.max(
+            Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+            0
+          );
+          const principalOutstanding = Math.max(
+            Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+            0
+          );
+          payToInterest = Math.min(remaining, interestOutstanding);
+          payToPrincipal = Math.min(
+            r2(remaining - payToInterest),
+            principalOutstanding
+          );
+        }
+
+        // Capture loan's pending amount BEFORE payment for audit trail
+        const loanBefore = await tx.loan.findUnique({
+          where: { id: emi.loanId },
+          select: { pendingAmount: true },
+        });
+        const loanPendingBefore = r2(loanBefore?.pendingAmount || 0);
+
+        // 2) Create payment
         const payment = await tx.payment.create({
           data: {
             loanId: emi.loanId,
-            loanPendingBefore, // Loan pending amount before this payment
+            loanPendingBefore,
             emiId,
             amount: r2(payToFine + payToInterest + payToPrincipal),
             paymentMode,
@@ -996,6 +983,10 @@ exports.payPaymentById = async (req, res) => {
           doPostHook: canSelfVerify && payToInterest + payToPrincipal > 0,
           emiPortion: r2(payToInterest + payToPrincipal),
           loanId: emi.loanId,
+          // carry breakdown out so post-commit code can use it
+          payToFine: r2(payToFine),
+          payToInterest: r2(payToInterest),
+          payToPrincipal: r2(payToPrincipal),
         };
       },
       { timeout: 20000 } // ⬅️ Increase interactive tx timeout (default ~5s)
@@ -1040,21 +1031,23 @@ exports.payPaymentById = async (req, res) => {
       console.warn("Failed to update loanPendingAfter:", e?.message);
     }
 
+    const totalPaid = txResult.payToFine + txResult.payToInterest + txResult.payToPrincipal;
+
     await logAction({
       action: "CREATED_PAYMENT",
       table: "Loan",
       targetId: txResult.loanId,
-      message: `Created payment of ${r2(payToFine + payToInterest + payToPrincipal)} via ${paymentMode || "mode"}`,
+      message: `Created payment of ${totalPaid} via ${paymentMode || "mode"}`,
       metadata: {
         paymentId: txResult.paymentId,
         loanId: txResult.loanId,
         emiId,
-        amount: r2(payToFine + payToInterest + payToPrincipal),
+        amount: totalPaid,
         paymentMode: paymentMode || null,
         breakdown: {
-          principal: r2(payToPrincipal),
-          interest: r2(payToInterest),
-          penal: r2(payToFine),
+          principal: txResult.payToPrincipal,
+          interest: txResult.payToInterest,
+          penal: txResult.payToFine,
         },
       },
       ...getActorContext(req.user),
@@ -1064,16 +1057,18 @@ exports.payPaymentById = async (req, res) => {
       data: {
         message: canSelfVerify ? "Payment Success" : "Payment Success waiting for approval",
         paymentId: txResult.paymentId,
-        paid: r2(payToFine + payToInterest + payToPrincipal),
-        paidToFine: r2(payToFine),
-        paidToInterest: r2(payToInterest),
-        paidToPrincipal: r2(payToPrincipal),
+        paid: totalPaid,
+        paidToFine: txResult.payToFine,
+        paidToInterest: txResult.payToInterest,
+        paidToPrincipal: txResult.payToPrincipal,
         emiId,
         emiStatus: txResult.newStatus,
       },
       status: 200,
     });
   } catch (err) {
+    const status = err.statusCode || 500;
+    if (status !== 500) return res.status(status).json({ error: err.message, status });
     console.error(err);
     return res.status(500).json({ error: err.message });
   }

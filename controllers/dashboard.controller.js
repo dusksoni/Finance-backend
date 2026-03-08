@@ -362,30 +362,42 @@ exports.getSummary = async (req, res) => {
         _count: { _all: true },
         _sum: { totalAmount: true },
       }),
-      prisma.loan.findMany({
-        where: combineWhere(baseLoanWhere, {
-          disbursedDate: {
-            not: null,
-            gte: trendStart,
-          },
-        }),
-        select: {
-          disbursedDate: true,
-          totalAmount: true,
-        },
-      }),
-      prisma.payment.findMany({
-        where: combineWhere(paymentScope, {
-          paymentDate: {
-            gte: trendStart,
-          },
-          status: { in: ["PAID"] },
-        }),
-        select: {
-          paymentDate: true,
-          amount: true,
-        },
-      }),
+      // Disbursement trend: group by month in DB — avoids fetching all rows
+      prisma.$queryRawUnsafe(
+        `SELECT date_trunc('month', "disbursedDate") AS month,
+                COUNT(*)::int AS count,
+                COALESCE(SUM("totalAmount"), 0)::float AS amount
+         FROM "Loan"
+         WHERE "disbursedDate" IS NOT NULL
+           AND "disbursedDate" >= $1
+         GROUP BY 1
+         ORDER BY 1`,
+        trendStart
+      ).then((rows) =>
+        rows.map((r) => ({
+          month: r.month,
+          count: Number(r.count),
+          amount: round2(Number(r.amount)),
+        }))
+      ),
+      // Collection trend: group by month in DB
+      prisma.$queryRawUnsafe(
+        `SELECT date_trunc('month', "paymentDate") AS month,
+                COUNT(*)::int AS count,
+                COALESCE(SUM("amount"), 0)::float AS amount
+         FROM "Payment"
+         WHERE "paymentDate" >= $1
+           AND "status" = 'PAID'
+         GROUP BY 1
+         ORDER BY 1`,
+        trendStart
+      ).then((rows) =>
+        rows.map((r) => ({
+          month: r.month,
+          count: Number(r.count),
+          amount: round2(Number(r.amount)),
+        }))
+      ),
       scope.level === "SELF"
         ? Promise.resolve([])
         : prisma.loan.groupBy({
@@ -572,15 +584,12 @@ exports.getSummary = async (req, res) => {
       })
       .sort((a, b) => b.amount - a.amount);
 
-    const disbursementBuckets = mapMonthlyBuckets(
-      disbursementRecords,
-      "disbursedDate",
-      "totalAmount"
+    // disbursementRecords and collectionRecords are now pre-aggregated by DB groupBy
+    const disbursementBuckets = new Map(
+      disbursementRecords.map((r) => [format(startOfMonth(new Date(r.month)), "yyyy-MM-01"), r])
     );
-    const collectionBuckets = mapMonthlyBuckets(
-      collectionRecords,
-      "paymentDate",
-      "amount"
+    const collectionBuckets = new Map(
+      collectionRecords.map((r) => [format(startOfMonth(new Date(r.month)), "yyyy-MM-01"), r])
     );
 
     const monthlyTrend = [];

@@ -232,8 +232,8 @@ exports.getPublicPendingPayments = async (req, res) => {
       });
     }
 
-    // Update fines if cache expired
-    if (shouldUpdateLoanFines(loanId)) {
+    // Update fines if stale (DB-based check, works across PM2 processes)
+    if (await shouldUpdateLoanFines(prisma, loanId)) {
       const toRefresh = await prisma.eMI.findMany({
         where: {
           loanId,
@@ -295,7 +295,7 @@ exports.getPublicPendingPayments = async (req, res) => {
       });
 
       await Promise.all(updates);
-      markLoanFinesUpdated(loanId);
+      await markLoanFinesUpdated(prisma, loanId);
     }
 
     // Fetch pending EMIs
@@ -476,8 +476,8 @@ exports.makePublicPayment = async (req, res) => {
       async (tx) => {
         const today = new Date();
 
-        // Update fines if needed
-        if (shouldUpdateLoanFines(loanId)) {
+        // Update fines if stale (DB-based check, works across PM2 processes)
+        if (await shouldUpdateLoanFines(tx, loanId)) {
           const toRefresh = await tx.eMI.findMany({
             where: {
               loanId,
@@ -538,7 +538,7 @@ exports.makePublicPayment = async (req, res) => {
           });
 
           await Promise.all(updates);
-          markLoanFinesUpdated(loanId);
+          await markLoanFinesUpdated(tx, loanId);
         }
 
         // Fetch unpaid/partial EMIs

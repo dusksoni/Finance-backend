@@ -806,13 +806,29 @@ exports.listLoansByUser = async (req, res) => {
     const { userId } = req.params;
     const loans = await prisma.loan.findMany({
       where: { userId },
-      include: {
-        emi: true,
-        payments: true,
-        loanType: true,
+      select: {
+        id: true,
+        fileNo: true,
+        fileStatus: true,
+        isClosed: true,
+        isForeclosed: true,
+        isDefaulted: true,
+        principalLoanAmount: true,
+        totalAmount: true,
+        pendingAmount: true,
+        totalPaidAmount: true,
+        monthlyPayableAmount: true,
+        interestRate: true,
+        tenureMonths: true,
+        startDate: true,
+        endDate: true,
+        disbursedDate: true,
+        createdAt: true,
+        loanType: { select: { id: true, name: true, label: true } },
         twoWheelerLoan: true,
         agriLoan: true,
         msmeLoan: true,
+        _count: { select: { emi: true, payments: true } },
       },
     });
     res.json(loans);

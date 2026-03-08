@@ -516,6 +516,12 @@ model Loan {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])                      // hot: list loans per user
+  @@index([fileStatus])                  // hot: filter by status (pending approval, overdue, etc.)
+  @@index([branchId, fileStatus])        // hot: branch-scoped dashboard queries
+  @@index([employeeId, fileStatus])      // hot: employee-scoped dashboard queries
+  @@index([disbursedDate])               // hot: disbursement trend queries
 }
 
 model EMI {
@@ -549,6 +555,10 @@ model EMI {
   updatedAt DateTime @default(now()) @updatedAt
 
   payments Payment[] // one-to-many: all payments linked to this EMI
+
+  @@index([loanId, status])        // hot: all UNPAID/PARTIAL EMIs per loan
+  @@index([loanId, paymentFor])    // hot: fine-refresh ORDER BY paymentFor queries
+  @@index([status, paymentFor])    // hot: due-this-week / upcoming EMI dashboard queries
 }
 
 model Payment {
@@ -579,6 +589,10 @@ model Payment {
   admin                Admin?       @relation(fields: [adminId], references: [id])
   employee             Employee?    @relation(fields: [employeeId], references: [id])
   loan                 Loan         @relation(fields: [loanId], references: [id])
+
+  @@index([loanId, status])        // hot: unverified/pending payments per loan
+  @@index([paymentDate, status])   // hot: dashboard monthly collection aggregate
+  @@index([emiId])                 // hot: payments linked to a specific EMI
 }
 
 model ForecloseRequest {
