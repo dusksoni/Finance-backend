@@ -43,9 +43,10 @@ const validateStep = (stepNum, data) => {
   }
 
   if (stepNum === 3) {
-    if (!Array.isArray(data.photoIds) || data.photoIds.length < 2)
-      errors.push("At least two Photo IDs are required.");
+    if (!Array.isArray(data.photoIds) || data.photoIds.length < 1)
+      errors.push("At least one Photo ID (Aadhaar) is required.");
     else {
+      // Aadhaar is the only mandatory ID — validate each provided entry
       data.photoIds.forEach((pid, i) => {
         if (!pid.photoIdTypeId?.trim())
           errors.push(`Photo ID ${i + 1}: type is required.`);
@@ -81,8 +82,8 @@ const validateStep = (stepNum, data) => {
   }
 
   if (stepNum === 5) {
-    if (!Array.isArray(data.guarantors) || data.guarantors.length < 2)
-      errors.push("At least two guarantors are required.");
+    if (!Array.isArray(data.guarantors) || data.guarantors.length < 1)
+      errors.push("At least one guarantor is required.");
     else {
       data.guarantors.forEach((g, i) => {
         if (!g.name?.trim()) errors.push(`Guarantor ${i + 1}: name is required.`);
