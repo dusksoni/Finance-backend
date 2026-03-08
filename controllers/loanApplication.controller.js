@@ -1,5 +1,93 @@
 const prisma = require("../lib/prisma");
 
+// ─── Per-step backend validation ─────────────────────────────────────────────
+const validateStep = (stepNum, data) => {
+  const errors = [];
+  if (!data || typeof data !== "object") return errors;
+
+  if (stepNum === 1) {
+    if (!data.loanTypeId?.trim()) errors.push("Loan type is required.");
+    if (!data.branchId?.trim()) errors.push("Branch is required.");
+  }
+
+  if (stepNum === 2) {
+    const principal = Number(data.principalLoanAmount);
+    if (!data.principalLoanAmount && data.principalLoanAmount !== 0)
+      errors.push("Principal loan amount is required.");
+    else if (isNaN(principal) || principal <= 0)
+      errors.push("Principal loan amount must be greater than 0.");
+
+    const rate = Number(data.interestRate);
+    if (data.interestRate === undefined || data.interestRate === null || data.interestRate === "")
+      errors.push("Interest rate is required.");
+    else if (isNaN(rate) || rate < 0 || rate > 100)
+      errors.push("Interest rate must be between 0 and 100.");
+
+    const tenure = Number(data.tenureMonths);
+    if (!data.tenureMonths)
+      errors.push("Tenure is required.");
+    else if (!Number.isInteger(tenure) || tenure < 1)
+      errors.push("Tenure must be a whole number of at least 1 month.");
+
+    if (!data.paymentFrequency?.trim())
+      errors.push("Payment frequency is required.");
+
+    const emi = Number(data.monthlyPayableAmount);
+    if (!data.monthlyPayableAmount && data.monthlyPayableAmount !== 0)
+      errors.push("Installment amount is required.");
+    else if (isNaN(emi) || emi <= 0)
+      errors.push("Installment amount must be greater than 0.");
+
+    // Validate EMI is a whole number (match frontend + createLoan logic)
+    if (!isNaN(principal) && !isNaN(rate) && !isNaN(tenure) && data.paymentFrequency) {
+      const FREQ_MONTHS = { MONTHLY: 1, QUARTERLY: 3, HALF_YEARLY: 6, YEARLY: 12 };
+      const freqMonths = FREQ_MONTHS[(data.paymentFrequency || "MONTHLY").toUpperCase()] || 1;
+      const numInstallments = Math.ceil(tenure / freqMonths);
+      const totalInterest = Math.round((principal * rate * (tenure / 12)) / 100);
+      const totalPayable = Math.round(principal + totalInterest);
+      const rawEMI = totalPayable / numInstallments;
+      if (!Number.isInteger(rawEMI) && Math.abs(rawEMI - Math.round(rawEMI)) > 0.001) {
+        errors.push(
+          `EMI amount (${rawEMI.toFixed(2)}) is not a whole number. Adjust the interest rate or installment so total payable (${totalPayable}) divides evenly into ${numInstallments} installments.`
+        );
+      }
+    }
+  }
+
+  if (stepNum === 3) {
+    // Loan type details — only validate if a loanTypeId is present in data
+    // (type name is not available here; frontend sends twoWheeler/agriculture/msme objects)
+    const tw = data.twoWheeler;
+    const ag = data.agriculture;
+    const ms = data.msme;
+
+    if (tw && typeof tw === "object" && Object.keys(tw).some((k) => tw[k])) {
+      if (!tw.brandId?.toString().trim()) errors.push("Two-wheeler: brand is required.");
+      if (!tw.modelId?.toString().trim()) errors.push("Two-wheeler: model is required.");
+      if (!tw.chassisNumber?.trim()) errors.push("Two-wheeler: chassis number is required.");
+      if (!tw.engineNumber?.trim()) errors.push("Two-wheeler: engine number is required.");
+    }
+    if (ag && typeof ag === "object" && Object.keys(ag).some((k) => ag[k])) {
+      if (!ag.equipmentId?.trim()) errors.push("Agriculture: equipment is required.");
+    }
+    if (ms && typeof ms === "object" && Object.keys(ms).some((k) => ms[k])) {
+      if (!ms.businessName?.trim()) errors.push("MSME: business name is required.");
+      if (!ms.businessType?.trim()) errors.push("MSME: business type is required.");
+      if (!ms.registrationNumber?.trim()) errors.push("MSME: registration number is required.");
+    }
+  }
+
+  if (stepNum === 4) {
+    const doc = data.loanInvoiceDoc;
+    if (!doc || (!doc.url && !doc.secure_url))
+      errors.push("Loan invoice document is required.");
+  }
+
+  // Step 5 (insurance & charges) — all optional fields, no required validation
+
+  return errors;
+};
+
 const clampStep = (step) => {
   const parsed = Number(step);
   if (!Number.isFinite(parsed)) return 1;
@@ -173,6 +261,14 @@ exports.updateStep = async (req, res) => {
       existing.data && typeof existing.data === "object" ? existing.data : {};
     const merged = incoming ? { ...currentData, ...incoming } : currentData;
 
+    // Run per-step validation
+    if (incoming) {
+      const stepErrors = validateStep(nextStep, incoming);
+      if (stepErrors.length > 0) {
+        return res.status(422).json({ status: 422, error: stepErrors[0], errors: stepErrors });
+      }
+    }
+
     const updated = await prisma.loanApplicationDraft.update({
       where: { id },
       data: {
@@ -211,6 +307,16 @@ exports.submitDraft = async (req, res) => {
     const currentData =
       existing.data && typeof existing.data === "object" ? existing.data : {};
     const merged = incoming ? { ...currentData, ...incoming } : currentData;
+
+    // Validate all steps before submitting
+    const allErrors = [];
+    for (let s = 1; s <= 4; s++) {
+      const errs = validateStep(s, merged);
+      allErrors.push(...errs);
+    }
+    if (allErrors.length > 0) {
+      return res.status(422).json({ status: 422, error: allErrors[0], errors: allErrors });
+    }
 
     const updated = await prisma.loanApplicationDraft.update({
       where: { id },

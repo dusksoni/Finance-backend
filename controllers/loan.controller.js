@@ -491,7 +491,20 @@ exports.createLoan = async (req, res) => {
       .json({ message: "Loan created", data: created, status: 201 });
   } catch (err) {
     console.error("Create Loan Error:", err);
-    return res.status(500).json({ error: err.message, status: 500 });
+    if (err.code === 'P2002') {
+      const target = err.meta?.target || [];
+      const field = target.includes('fileNo') ? 'File number' :
+                    target.includes('chassisNumber') ? 'Chassis number' :
+                    target.includes('engineNumber') ? 'Engine number' : 'A unique field';
+      return res.status(409).json({ status: 409, message: `${field} already exists. Please check and try again.` });
+    }
+    if (err.code === 'P2003') {
+      return res.status(400).json({ status: 400, message: 'Invalid reference: user, branch, or loan type not found.' });
+    }
+    if (err.code === 'P2025') {
+      return res.status(400).json({ status: 400, message: 'Referenced record not found. Please verify user and branch selection.' });
+    }
+    return res.status(500).json({ status: 500, message: 'Failed to create loan. Please try again.' });
   }
 };
 
