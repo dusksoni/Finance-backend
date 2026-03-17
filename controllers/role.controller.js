@@ -1,6 +1,7 @@
 const prisma = require("../lib/prisma");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const logAction = require("../utils/adminLogger");
+const { buildFieldChanges } = require("../utils/activityDiff");
 
 // List all roles
 exports.listRoles = async (req, res) => {
@@ -90,10 +91,24 @@ exports.updateRole = async (req, res) => {
     if (!hasPermission) {
       return res.status(403).json({ error: "Permission denied", status: 403 });
     }
+    const existingRole = await prisma.role.findUnique({
+      where: { id: roleId },
+      select: { id: true, name: true, description: true, permissions: true },
+    });
+    if (!existingRole) {
+      return res.status(404).json({ error: "Role not found" });
+    }
+
     const updatedRole = await prisma.role.update({
       where: { id: roleId },
       data: { name, description, permissions },
     });
+    const changes = buildFieldChanges(existingRole, updatedRole, {
+      name: "Role name",
+      description: "Description",
+      permissions: "Permissions",
+    });
+
     await logAction({
       adminId: req.user.adminId,
       employeeId: req.user.employeeId,
@@ -101,7 +116,17 @@ exports.updateRole = async (req, res) => {
       action: "UPDATED ROLE",
       table: "Role",
       targetId: updatedRole.id,
-      metadata: updatedRole,
+      metadata: {
+        roleId: updatedRole.id,
+        roleName: updatedRole.name,
+        changes,
+        summary:
+          changes.length === 1
+            ? changes[0].message
+            : changes.length > 1
+            ? `Updated ${changes.length} role fields`
+            : "Updated role details",
+      },
     });
     res.status(200).json({ message: "Role Updated", data: updatedRole });
   } catch (err) {

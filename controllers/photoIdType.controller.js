@@ -1,6 +1,7 @@
 const prisma = require("../lib/prisma");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const logAction = require("../utils/adminLogger");
+const { buildFieldChanges } = require("../utils/activityDiff");
 
 // CREATE
 exports.createPhotoIdType = async (req, res) => {
@@ -89,6 +90,19 @@ exports.updatePhotoIdType = async (req, res) => {
     if (!permissions) {
       return res.status(403).json({ error: "Access denied", status: 403 });
     }
+    const existing = await prisma.photoIdType.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        minLength: true,
+        maxLength: true,
+        numberTypeEg: true,
+        validation: true,
+      },
+    });
+    if (!existing) return res.status(404).json({ error: "Not found" });
 
     const updated = await prisma.photoIdType.update({
       where: { id },
@@ -101,11 +115,29 @@ exports.updatePhotoIdType = async (req, res) => {
         validation,
       },
     });
+    const changes = buildFieldChanges(existing, updated, {
+      name: "Name",
+      description: "Description",
+      minLength: "Minimum length",
+      maxLength: "Maximum length",
+      numberTypeEg: "Example number",
+      validation: "Validation regex",
+    });
     await logAction({
       action: "UPDATED PHOTO ID TYPE",
       table: "PhotoIdType",
       targetId: id,
-      metadata: updated,
+      metadata: {
+        photoIdTypeId: id,
+        name: updated.name,
+        changes,
+        summary:
+          changes.length === 1
+            ? changes[0].message
+            : changes.length > 1
+            ? `Updated ${changes.length} photo ID type fields`
+            : "Updated photo ID type details",
+      },
       loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,

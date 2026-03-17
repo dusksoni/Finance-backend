@@ -1,5 +1,6 @@
 const prisma = require("../lib/prisma");
 const logAction = require("../utils/adminLogger");
+const { buildFieldChanges } = require("../utils/activityDiff");
 
 // CREATE
 exports.createRegion = async (req, res) => {
@@ -98,17 +99,39 @@ exports.updateRegion = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, stateId, cityId } = req.body;
+    const existing = await prisma.region.findUnique({
+      where: { id },
+      select: { id: true, name: true, stateId: true, cityId: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Region not found" });
 
     const updated = await prisma.region.update({
       where: { id },
       data: { name, stateId, cityId },
+    });
+    const changes = buildFieldChanges(existing, updated, {
+      name: "Region name",
+      stateId: "State",
+      cityId: "City",
     });
 
     await logAction({
       action: "UPDATED REGION",
       table: "Region",
       targetId: id,
-      metadata: updated,
+      metadata: {
+        regionId: id,
+        name: updated.name,
+        stateId: updated.stateId,
+        cityId: updated.cityId,
+        changes,
+        summary:
+          changes.length === 1
+            ? changes[0].message
+            : changes.length > 1
+            ? `Updated ${changes.length} region fields`
+            : "Updated region details",
+      },
       loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,

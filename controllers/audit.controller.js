@@ -1,5 +1,6 @@
 const prisma = require("../lib/prisma");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
+const { decorateLoginActivity } = require("../utils/loginSecurity");
 
 const mapUserForPermission = (user) => {
   if (!user) return null;
@@ -210,7 +211,7 @@ exports.getLoginHistoryDetail = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: loginHistory,
+      data: decorateLoginActivity(loginHistory),
     });
   } catch (error) {
     console.error("Get login history detail error:", error);

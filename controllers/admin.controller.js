@@ -1,6 +1,10 @@
 const prisma = require("../lib/prisma");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const {
+  buildLoginSecurityContext,
+  decorateLoginActivity,
+} = require("../utils/loginSecurity");
 const SECRET = process.env.SECRET_KEY;
 
 const resolveAdminId = (req) => {
@@ -13,7 +17,15 @@ const resolveAdminId = (req) => {
 };
 
 exports.adminLogin = async (req, res) => {
-  const { email, password, deviceName, deviceType, latitude, longitude } =
+  const {
+    email,
+    password,
+    deviceName,
+    deviceType,
+    latitude,
+    longitude,
+    locationAccuracy,
+  } =
     req.body;
   try {
     const admin = await prisma.admin.findUnique({ where: { email } });
@@ -24,18 +36,26 @@ exports.adminLogin = async (req, res) => {
         .json({ status: 401, error: "Invalid credentials" });
     }
 
-    
-    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-    
-   const loginActivity = await prisma.loginActivity.create({
+    const security = await buildLoginSecurityContext({
+      req,
+      deviceName,
+      deviceType,
+      latitude,
+      longitude,
+      locationAccuracy,
+      alertsEnabled: String(process.env.SECURITY_ALERTS_ENABLED || "false").toLowerCase() === "true",
+    });
+
+    const loginActivity = await prisma.loginActivity.create({
       data: {
         adminId: admin.id,
         role: "ADMIN",
         deviceName,
         deviceType,
-        latitude: latitude === "" ? null : parseFloat(latitude),
-        longitude: longitude === "" ? null : parseFloat(longitude),
-        ipAddress: ip,
+        latitude: security.latitude,
+        longitude: security.longitude,
+        ipAddress: security.normalizedIp,
+        context: security.context,
         loggedInAt: new Date().toISOString(),
       },
     });
@@ -366,6 +386,7 @@ exports.getLoginHistory = async (req, res) => {
 
     // Get login history
     const loginHistory = await prisma.loginActivity.findMany(queryOptions);
+    const data = loginHistory.map((item) => decorateLoginActivity(item));
 
     // Get total count
     const total = await prisma.loginActivity.count({
@@ -376,11 +397,11 @@ exports.getLoginHistory = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      count: loginHistory.length,
+      count: data.length,
       total,
       totalPages,
       currentPage: pageNumber,
-      data: loginHistory,
+      data,
     });
   } catch (error) {
     console.error('Get login history error:', error);

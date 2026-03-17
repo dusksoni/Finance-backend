@@ -3,6 +3,11 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const logAction = require("../utils/adminLogger");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
+const { buildFieldChanges } = require("../utils/activityDiff");
+const {
+  buildLoginSecurityContext,
+  decorateLoginActivity,
+} = require("../utils/loginSecurity");
 const SECRET = process.env.SECRET_KEY;
 
 const selectEmployeeProfile = {
@@ -365,6 +370,17 @@ exports.putEmployee = async (req, res) => {
       data: updateData,
       include: { role: true, region: true, branch: true },
     });
+    const changes = buildFieldChanges(employee, updated, {
+      name: "Display name",
+      firstName: "First name",
+      lastName: "Last name",
+      email: "Email",
+      phone: "Phone",
+      roleId: "Role",
+      regionId: "Region",
+      branchId: "Branch",
+      photoUrl: "Profile photo",
+    });
 
     await logAction({
       adminId: req.user.adminId,
@@ -373,7 +389,17 @@ exports.putEmployee = async (req, res) => {
       action: "UPDATED EMPLOYEE",
       table: "Employee",
       targetId: id,
-      metadata: updated,
+      metadata: {
+        employeeId: id,
+        name: updated.name,
+        changes,
+        summary:
+          changes.length === 1
+            ? changes[0].message
+            : changes.length > 1
+            ? `Updated ${changes.length} employee fields`
+            : "Updated employee details",
+      },
     });
 
     res.status(200).json({ message: "Employee updated", data: updated });
@@ -527,8 +553,15 @@ exports.blockedEmployee = async (req, res) => {
 
 // LOGIN
 exports.employeeLogin = async (req, res) => {
-  const { email, password, deviceName, deviceType, latitude, longitude } =
-    req.body;
+  const {
+    email,
+    password,
+    deviceName,
+    deviceType,
+    latitude,
+    longitude,
+    locationAccuracy,
+  } = req.body;
   try {
     const employee = await prisma.employee.findUnique({
       where: { email },
@@ -566,7 +599,15 @@ exports.employeeLogin = async (req, res) => {
     if (employee.isBlocked)
       return res.status(400).json({ error: "Account is blocked", status: 400 });
 
-    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    const security = await buildLoginSecurityContext({
+      req,
+      deviceName,
+      deviceType,
+      latitude,
+      longitude,
+      locationAccuracy,
+      alertsEnabled: String(process.env.SECURITY_ALERTS_ENABLED || "false").toLowerCase() === "true",
+    });
 
     const loginActivity = await prisma.loginActivity.create({
       data: {
@@ -574,9 +615,10 @@ exports.employeeLogin = async (req, res) => {
         role: "EMPLOYEE",
         deviceName,
         deviceType,
-        latitude: latitude === "" ? null : parseFloat(latitude),
-        longitude: longitude === "" ? null : parseFloat(longitude),
-        ipAddress: ip,
+        latitude: security.latitude,
+        longitude: security.longitude,
+        ipAddress: security.normalizedIp,
+        context: security.context,
       },
     });
 
@@ -765,6 +807,7 @@ exports.getLoginHistory = async (req, res) => {
 
     // Get login history
     const loginHistory = await prisma.loginActivity.findMany(queryOptions);
+    const data = loginHistory.map((item) => decorateLoginActivity(item));
 
     // Get total count
     const total = await prisma.loginActivity.count({
@@ -775,11 +818,11 @@ exports.getLoginHistory = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      count: loginHistory.length,
+      count: data.length,
       total,
       totalPages,
       currentPage: pageNumber,
-      data: loginHistory,
+      data,
     });
   } catch (error) {
     console.error("Get login history error:", error);

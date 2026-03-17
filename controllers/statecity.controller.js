@@ -1,5 +1,6 @@
 const prisma = require("../lib/prisma");
 const logAction = require("../utils/adminLogger");
+const { buildFieldChanges } = require("../utils/activityDiff");
 
 // ---------------- State ----------------
 
@@ -28,13 +29,32 @@ exports.updateState = async (req, res) => {
   try {
     const { id } = req.params;
     const { name } = req.body;
+    const existing = await prisma.state.findUnique({
+      where: { id },
+      select: { id: true, name: true },
+    });
+    if (!existing) return res.status(404).json({ error: "State not found" });
+
     const state = await prisma.state.update({ where: { id }, data: { name } });
+    const changes = buildFieldChanges(existing, state, {
+      name: "State name",
+    });
 
     await logAction({
       action: "UPDATED STATE",
       table: "State",
       targetId: id,
-      metadata: state,
+      metadata: {
+        stateId: id,
+        name: state.name,
+        changes,
+        summary:
+          changes.length === 1
+            ? changes[0].message
+            : changes.length > 1
+            ? `Updated ${changes.length} state fields`
+            : "Updated state details",
+      },
       loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
@@ -114,16 +134,37 @@ exports.updateCity = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, stateId } = req.body;
+    const existing = await prisma.city.findUnique({
+      where: { id },
+      select: { id: true, name: true, stateId: true },
+    });
+    if (!existing) return res.status(404).json({ error: "City not found" });
+
     const city = await prisma.city.update({
       where: { id },
       data: { name, stateId },
+    });
+    const changes = buildFieldChanges(existing, city, {
+      name: "City name",
+      stateId: "State",
     });
 
     await logAction({
       action: "UPDATED CITY",
       table: "City",
       targetId: id,
-      metadata: city,
+      metadata: {
+        cityId: id,
+        name: city.name,
+        stateId: city.stateId,
+        changes,
+        summary:
+          changes.length === 1
+            ? changes[0].message
+            : changes.length > 1
+            ? `Updated ${changes.length} city fields`
+            : "Updated city details",
+      },
       loginActivityId: req.user.loginActivityId,
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,

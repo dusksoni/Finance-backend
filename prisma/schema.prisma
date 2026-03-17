@@ -155,6 +155,7 @@ model LoginActivity {
   latitude           Float?
   longitude          Float?
   ipAddress          String?
+  context            Json?
   loggedInAt         DateTime            @default(now())
   userUpdateRequests UserUpdateRequest[]
   admin              Admin?              @relation(fields: [adminId], references: [id])
