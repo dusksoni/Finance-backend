@@ -56,7 +56,6 @@ exports.adminLogin = async (req, res) => {
         longitude: security.longitude,
         ipAddress: security.normalizedIp,
         context: security.context,
-        loggedInAt: new Date().toISOString(),
       },
     });
     
