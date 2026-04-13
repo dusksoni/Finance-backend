@@ -7,6 +7,7 @@ const roleController = require("../controllers/role.controller");
 router.use(authMiddleware, onlyAdminOrEmployee);
 
 router.get("/", roleController.listRoles);
+router.get("/permissions/all", roleController.listAllPermissions);
 router.get("/:id", roleController.getRoleById);
 router.post("/", roleController.createRole);
 router.put("/:id", roleController.updateRole);

@@ -14,6 +14,28 @@ const {
   generatePaymentLink,
   ICICI_CONFIG,
 } = require("../utils/iciciPaymentGateway");
+const {
+  buildPublicLoanLookupWhere,
+  createRawPublicAccessToken,
+  getTokenTtlMinutes,
+  hashPublicAccessToken,
+  matchesBorrowerVerification,
+  normalizeIdentifier,
+  normalizePhone,
+} = require("../utils/publicAccess");
+const { buildEffectiveConfigMap } = require("../utils/appConfig");
+const { getRepaymentPolicy } = require("../utils/loanTypeRules");
+const {
+  buildGrievanceTicketNumber,
+  calculateDueAtForPriority,
+  getGrievanceSettings,
+  resolveGrievanceCategory,
+  resolveGrievancePriority,
+} = require("../utils/grievanceConfig");
+const {
+  distributeAcrossComponents,
+  getSortedInstallments,
+} = require("../utils/paymentAllocation");
 const fs = require('fs');
 const path = require('path');
 
@@ -29,6 +51,691 @@ Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
 // Helper for precise rounding
 const r2 = (n) => new Decimal(n || 0).toDecimalPlaces(2).toNumber();
 
+const ALLOWED_PUBLIC_FILE_STATUSES = [
+  "ACTIVE",
+  "OVERDUE",
+  "DEFAULTED",
+  "DISBURSED",
+  "CLOSED",
+  "SEIZED",
+  "SEIZED_INITIATED",
+];
+
+const maskPhone = (value) => {
+  const normalized = normalizePhone(value);
+  if (!normalized) return null;
+  return `${"*".repeat(Math.max(normalized.length - 4, 0))}${normalized.slice(-4)}`;
+};
+
+const maskEmail = (value) => {
+  const email = String(value || "").trim();
+  if (!email || !email.includes("@")) return null;
+  const [localPart, domain] = email.split("@");
+  if (!localPart || !domain) return null;
+  if (localPart.length <= 2) {
+    return `${localPart[0] || "*"}*@${domain}`;
+  }
+  return `${localPart[0]}${"*".repeat(localPart.length - 2)}${localPart.slice(-1)}@${domain}`;
+};
+
+const buildBorrowerName = (user) =>
+  [user?.firstName, user?.middleName, user?.lastName].filter(Boolean).join(" ");
+
+const getPublicPortalConfig = async () => {
+  const records = await prisma.appConfig.findMany({
+    where: {
+      key: {
+        in: [
+          "public_portal.payment",
+          "security.public_access",
+          "branding.company_profile",
+          "branding.receipt_preferences",
+        ],
+      },
+    },
+  });
+
+  const configs = buildEffectiveConfigMap(records);
+  return {
+    publicPortal: {
+      enabled: true,
+      allowManualPaymentRequest: true,
+      allowReceiptDownload: true,
+      allowPaymentHistory: true,
+      allowLoanSummary: true,
+      allowStatementDownload: true,
+      allowDueCalendar: true,
+      requirePhoneVerification: true,
+      sessionTtlMinutes: 30,
+      ...(configs["public_portal.payment"] || {}),
+    },
+    publicAccessSecurity: {
+      requireAccessToken: false,
+      maxConcurrentSessionsPerLoan: 3,
+      verificationMethods: ["PHONE", "DOB"],
+      tokenTtlMinutes: 30,
+      ...(configs["security.public_access"] || {}),
+    },
+    companyProfile: configs["branding.company_profile"] || {},
+    receiptPreferences: configs["branding.receipt_preferences"] || {},
+  };
+};
+
+const resolvePublicLoanByIdentifier = async (identifier, extraInclude = {}) =>
+  prisma.loan.findFirst({
+    where: buildPublicLoanLookupWhere(normalizeIdentifier(identifier)),
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          middleName: true,
+          lastName: true,
+          phone: true,
+          email: true,
+          dateOfBirth: true,
+        },
+      },
+      ...extraInclude,
+    },
+  });
+
+const resolveAccessiblePublicLoan = async (identifier, extraInclude = {}) => {
+  const loan = await resolvePublicLoanByIdentifier(identifier, extraInclude);
+  if (!loan) {
+    const error = new Error("Loan not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (!ALLOWED_PUBLIC_FILE_STATUSES.includes(loan.fileStatus)) {
+    const error = new Error("Loan information not available");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return loan;
+};
+
+const getResolvedPublicLoanId = (req) =>
+  req.publicLoanId || req.publicAccessSession?.loanId || normalizeIdentifier(req.params.loanId);
+
+const buildPublicAssetSummary = (loan) => {
+  if (loan.twoWheelerLoan) {
+    return {
+      category: "TWO_WHEELER",
+      registrationNumber: loan.twoWheelerLoan.registrationNumber || null,
+      brand: loan.twoWheelerLoan.brand?.name || null,
+      model: loan.twoWheelerLoan.model?.name || null,
+      variant: loan.twoWheelerLoan.variant?.name || null,
+    };
+  }
+
+  if (loan.agriLoan) {
+    return {
+      category: "AGRI",
+      registrationNumber: loan.agriLoan.registrationNumber || null,
+      equipment: loan.agriLoan.equipment?.name || null,
+      usageArea: loan.agriLoan.usageArea || null,
+    };
+  }
+
+  if (loan.msmeLoan) {
+    return {
+      category: "MSME",
+      registrationNumber: loan.msmeLoan.registrationNumber || null,
+      businessName: loan.msmeLoan.businessName || null,
+      businessType: loan.msmeLoan.businessType || null,
+    };
+  }
+
+  return null;
+};
+
+const buildPublicLoanSummary = (loan) => {
+  const unpaidEmis = Array.isArray(loan.emi)
+    ? loan.emi.filter((emi) => ["UNPAID", "PARTIAL", "VERIFICATION_PENDING"].includes(emi.status))
+    : [];
+
+  const nextDue = unpaidEmis
+    .slice()
+    .sort((left, right) => new Date(left.paymentFor) - new Date(right.paymentFor))[0];
+
+  return {
+    loanId: loan.id,
+    fileNo: loan.fileNo,
+    fileStatus: loan.fileStatus,
+    status: loan.fileStatus,
+    loanType: loan.loanType?.label || loan.loanType?.name || null,
+    branch: loan.branch
+      ? {
+          id: loan.branch.id,
+          name: loan.branch.name,
+          address: loan.branch.address || null,
+          phone: loan.branch.phone || null,
+        }
+      : null,
+    borrower: {
+      name: buildBorrowerName(loan.user),
+      maskedPhone: maskPhone(loan.user?.phone),
+      maskedEmail: maskEmail(loan.user?.email),
+    },
+    principalLoanAmount: Number(loan.principalLoanAmount),
+    principalAmount: Number(loan.principalLoanAmount),
+    interestRate: Number(loan.interestRate),
+    totalAmount: Number(loan.totalAmount),
+    totalPaidAmount: Number(loan.totalPaidAmount),
+    pendingAmount: Number(loan.pendingAmount),
+    totalPaidPrincipal: Number(loan.totalPaidPrincipal || 0),
+    totalPaidInterest: Number(loan.totalPaidInterest || 0),
+    totalPaidFine: Number(loan.totalPaidFine || 0),
+    tenureMonths: loan.tenureMonths,
+    dueDay: loan.dueDay,
+    paymentFrequency: loan.paymentFrequency,
+    startDate: loan.startDate,
+    endDate: loan.endDate,
+    isClosed: loan.isClosed,
+    isDefaulted: loan.isDefaulted,
+    nextDue: nextDue
+      ? {
+          emiId: nextDue.id,
+          dueDate: nextDue.paymentFor,
+          status: nextDue.status,
+          emiAmount: Number(nextDue.emiPayAmount || 0),
+          amountPaid: Number(nextDue.amountPaidSoFar || 0),
+          fineDue: Math.max(Number(nextDue.fineAmount || 0) - Number(nextDue.finePaid || 0), 0),
+        }
+      : null,
+    emiCount: Array.isArray(loan.emi) ? loan.emi.length : 0,
+    pendingEmiCount: unpaidEmis.length,
+    paymentsCount: Array.isArray(loan.payments) ? loan.payments.length : 0,
+    asset: buildPublicAssetSummary(loan),
+    guarantors: Array.isArray(loan.guarantors)
+      ? loan.guarantors.map((lg) => ({
+          name: buildBorrowerName(lg.guarantor),
+          maskedPhone: maskPhone(lg.guarantor?.phone),
+        }))
+      : [],
+  };
+};
+
+const buildPublicLoanStatement = (loan) => ({
+  loanDetails: {
+    fileNo: loan.fileNo,
+    loanType: loan.loanType?.label || loan.loanType?.name || null,
+    borrowerName: buildBorrowerName(loan.user),
+    borrowerPhone: maskPhone(loan.user?.phone),
+    borrowerEmail: maskEmail(loan.user?.email),
+    branch: loan.branch?.name || null,
+    principalAmount: r2(loan.principalLoanAmount),
+    interestRate: Number(loan.interestRate || 0),
+    interestAmount: r2(loan.interestAmount),
+    totalAmount: r2(loan.totalAmount),
+    tenureMonths: loan.tenureMonths,
+    startDate: loan.startDate,
+    endDate: loan.endDate,
+    disbursedDate: loan.disbursedDate,
+    status: loan.fileStatus,
+    isClosed: loan.isClosed,
+    isForeclosed: loan.isForeclosed,
+    asset: buildPublicAssetSummary(loan),
+  },
+  summary: {
+    totalPaidAmount: r2(loan.totalPaidAmount),
+    totalPaidPrincipal: r2(loan.totalPaidPrincipal),
+    totalPaidInterest: r2(loan.totalPaidInterest),
+    totalPaidFine: r2(loan.totalPaidFine),
+    pendingAmount: r2(loan.pendingAmount),
+    totalDelayDays: loan.totalDelayDays,
+  },
+  emiSchedule: (loan.emi || []).map((emi, index) => ({
+    sNo: index + 1,
+    dueDate: emi.paymentFor,
+    emiAmount: r2(emi.emiPayAmount),
+    principalComponent: r2(emi.principalAmt),
+    interestComponent: r2(emi.interestAmt),
+    fineAssessed: r2(emi.fineAmount),
+    amountPaid: r2(emi.amountPaidSoFar),
+    principalPaid: r2(emi.principalPaid),
+    interestPaid: r2(emi.interestPaid),
+    finePaid: r2(emi.finePaid),
+    status: emi.status,
+    delayDays: emi.delayDays || 0,
+  })),
+  payments: (loan.payments || []).map((payment, index) => ({
+    sNo: index + 1,
+    paymentDate: payment.paymentDate,
+    amount: r2(payment.amount),
+    mode: payment.paymentMode,
+    transactionId: payment.transactionId,
+    status: payment.status,
+    verified: payment.verified,
+    isForeclosure: payment.isForeclosure,
+  })),
+});
+
+const buildPublicGrievanceResponse = (ticket) => ({
+  id: ticket.id,
+  ticketNumber: ticket.ticketNumber,
+  category: ticket.category,
+  subject: ticket.subject,
+  description: ticket.description,
+  status: ticket.status,
+  priority: ticket.priority,
+  source: ticket.source,
+  dueAt: ticket.dueAt,
+  firstResponseAt: ticket.firstResponseAt,
+  resolvedAt: ticket.resolvedAt,
+  resolutionSummary: ticket.resolutionSummary,
+  createdAt: ticket.createdAt,
+  updatedAt: ticket.updatedAt,
+  comments: Array.isArray(ticket.comments)
+    ? ticket.comments
+        .filter((comment) => !comment.isInternal)
+        .map((comment) => ({
+          id: comment.id,
+          message: comment.message,
+          createdAt: comment.createdAt,
+        }))
+    : [],
+});
+
+const getPublicPortalSessionTtlMinutes = async () => {
+  try {
+    const { publicPortal, publicAccessSecurity } = await getPublicPortalConfig();
+    return getTokenTtlMinutes(
+      publicAccessSecurity.tokenTtlMinutes || publicPortal.sessionTtlMinutes
+    );
+  } catch {
+    return getTokenTtlMinutes(null);
+  }
+};
+
+exports.requestPublicAccess = async (req, res) => {
+  try {
+    const { identifier, phone, dateOfBirth } = req.body || {};
+    const { publicPortal, publicAccessSecurity } = await getPublicPortalConfig();
+
+    if (!publicPortal.enabled) {
+      return res.status(403).json({
+        status: 403,
+        error: "Borrower self-service portal is currently disabled",
+      });
+    }
+
+    if (!identifier || (!phone && !dateOfBirth)) {
+      return res.status(400).json({
+        status: 400,
+        error: "identifier and either phone or dateOfBirth are required",
+      });
+    }
+
+    if (
+      publicPortal.requirePhoneVerification &&
+      !phone &&
+      publicAccessSecurity.verificationMethods?.includes("PHONE")
+    ) {
+      return res.status(400).json({
+        status: 400,
+        error: "Phone verification is required for borrower access",
+      });
+    }
+
+    const allowedVerificationMethods = Array.isArray(publicAccessSecurity.verificationMethods)
+      ? publicAccessSecurity.verificationMethods.map((method) => `${method}`.toUpperCase())
+      : ["PHONE", "DOB"];
+
+    if (phone && !allowedVerificationMethods.includes("PHONE")) {
+      return res.status(400).json({
+        status: 400,
+        error: "Phone verification is not enabled for borrower access",
+      });
+    }
+
+    if (dateOfBirth && !allowedVerificationMethods.includes("DOB")) {
+      return res.status(400).json({
+        status: 400,
+        error: "Date-of-birth verification is not enabled for borrower access",
+      });
+    }
+
+    const loan = await resolveAccessiblePublicLoan(identifier);
+
+    if (!matchesBorrowerVerification(loan, { phone, dateOfBirth })) {
+      return res.status(401).json({
+        status: 401,
+        error: "Borrower verification failed",
+      });
+    }
+
+    await prisma.publicAccessSession.updateMany({
+      where: {
+        loanId: loan.id,
+        expiresAt: { lt: new Date() },
+        status: "ACTIVE",
+      },
+      data: { status: "EXPIRED" },
+    });
+
+    const activeSessions = await prisma.publicAccessSession.findMany({
+      where: {
+        loanId: loan.id,
+        status: "ACTIVE",
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+
+    const maxConcurrentSessions = Math.max(
+      Number(publicAccessSecurity.maxConcurrentSessionsPerLoan || 3),
+      1
+    );
+
+    const sessionsToExpire = Math.max(activeSessions.length - maxConcurrentSessions + 1, 0);
+    if (sessionsToExpire > 0) {
+      await prisma.publicAccessSession.updateMany({
+        where: {
+          id: {
+            in: activeSessions.slice(0, sessionsToExpire).map((session) => session.id),
+          },
+        },
+        data: { status: "REPLACED" },
+      });
+    }
+
+    const rawToken = createRawPublicAccessToken();
+    const ttlMinutes = await getPublicPortalSessionTtlMinutes();
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+
+    await prisma.publicAccessSession.create({
+      data: {
+        loanId: loan.id,
+        accessTokenHash: hashPublicAccessToken(rawToken),
+        verificationMethod: phone ? "PHONE" : "DOB",
+        context: {
+          identifier: normalizeIdentifier(identifier),
+          maskedPhone: maskPhone(loan.user?.phone),
+          ipAddress: req.ip || null,
+        },
+        expiresAt,
+      },
+    });
+
+    return res.json({
+      status: 200,
+      data: {
+        loanId: loan.id,
+        fileNo: loan.fileNo,
+        accessToken: rawToken,
+        expiresAt,
+        borrower: {
+          name: [loan.user?.firstName, loan.user?.middleName, loan.user?.lastName]
+            .filter(Boolean)
+            .join(" "),
+          maskedPhone: maskPhone(loan.user?.phone),
+        },
+      },
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      status: error.statusCode || 500,
+      error: "Failed to create public access session",
+      message: error.message,
+    });
+  }
+};
+
+exports.getPublicAccessSession = async (req, res) => {
+  try {
+    if (!req.publicAccessSession?.loanId) {
+      return res.status(401).json({
+        status: 401,
+        error: "Public access session not found",
+      });
+    }
+
+    const loan = await resolveAccessiblePublicLoan(req.publicAccessSession.loanId, {
+      loanType: {
+        select: {
+          id: true,
+          name: true,
+          label: true,
+        },
+      },
+      branch: {
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          phone: true,
+        },
+      },
+      emi: {
+        orderBy: { paymentFor: "asc" },
+      },
+      payments: {
+        orderBy: { paymentDate: "desc" },
+        take: 10,
+      },
+    });
+
+    return res.json({
+      status: 200,
+      data: {
+        session: {
+          id: req.publicAccessSession.id,
+          loanId: req.publicAccessSession.loanId,
+          verificationMethod: req.publicAccessSession.verificationMethod,
+          expiresAt: req.publicAccessSession.expiresAt,
+          lastUsedAt: req.publicAccessSession.lastUsedAt,
+        },
+        summary: buildPublicLoanSummary(loan),
+      },
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      status: error.statusCode || 500,
+      error: error.message || "Failed to fetch public session",
+    });
+  }
+};
+
+exports.createPublicGrievance = async (req, res) => {
+  try {
+    const { publicPortal } = await getPublicPortalConfig();
+    if (!publicPortal.allowPublicGrievance) {
+      return res.status(403).json({
+        status: 403,
+        error: "Public grievance creation is disabled",
+      });
+    }
+
+    const loan = await resolveAccessiblePublicLoan(getResolvedPublicLoanId(req), {
+      branch: {
+        select: {
+          id: true,
+        },
+      },
+      user: {
+        select: {
+          id: true,
+        },
+      },
+    });
+    const settings = await getGrievanceSettings(prisma);
+    const { category, subject, description, priority, metadata } = req.body || {};
+
+    if (!category || !subject || !description) {
+      return res.status(400).json({
+        status: 400,
+        error: "category, subject, and description are required",
+      });
+    }
+
+    const normalizedCategory = resolveGrievanceCategory(settings, category, { isPublic: true });
+    const normalizedPriority = resolveGrievancePriority(settings, priority, { isPublic: true });
+    const ticketNumber = await buildGrievanceTicketNumber(prisma, settings.ticketPrefix);
+
+    const ticket = await prisma.grievanceTicket.create({
+      data: {
+        ticketNumber,
+        category: normalizedCategory,
+        subject,
+        description,
+        priority: normalizedPriority,
+        source: "WEB",
+        userId: loan.userId,
+        loanId: loan.id,
+        branchId: loan.branchId || null,
+        metadata: {
+          ...(metadata || {}),
+          publicAccessSessionId: req.publicAccessSession?.id || null,
+          createdFrom: "BORROWER_SELF_SERVICE",
+        },
+        dueAt: calculateDueAtForPriority(settings, normalizedPriority),
+      },
+      include: {
+        comments: {
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+
+    await logAction({
+      action: "PUBLIC_CREATED_GRIEVANCE",
+      table: "GrievanceTicket",
+      targetId: ticket.id,
+      metadata: {
+        loanId: loan.id,
+        ticketNumber: ticket.ticketNumber,
+      },
+    });
+
+    return res.status(201).json({
+      status: 201,
+      message: "Grievance created successfully",
+      data: buildPublicGrievanceResponse(ticket),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      status: error.statusCode || 500,
+      error: error.message || "Failed to create grievance",
+    });
+  }
+};
+
+exports.listPublicGrievances = async (req, res) => {
+  try {
+    const { publicPortal } = await getPublicPortalConfig();
+    if (!publicPortal.allowPublicGrievance) {
+      return res.status(403).json({
+        status: 403,
+        error: "Public grievance view is disabled",
+      });
+    }
+
+    const loanId = getResolvedPublicLoanId(req);
+    const tickets = await prisma.grievanceTicket.findMany({
+      where: {
+        loanId,
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      include: {
+        comments: {
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+
+    return res.json({
+      status: 200,
+      data: tickets.map(buildPublicGrievanceResponse),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      status: error.statusCode || 500,
+      error: error.message || "Failed to fetch grievances",
+    });
+  }
+};
+
+exports.addPublicGrievanceComment = async (req, res) => {
+  try {
+    const { publicPortal } = await getPublicPortalConfig();
+    const settings = await getGrievanceSettings(prisma);
+    if (!publicPortal.allowPublicGrievanceComments || !settings.publicCommentEnabled) {
+      return res.status(403).json({
+        status: 403,
+        error: "Public grievance comments are disabled",
+      });
+    }
+
+    const { message } = req.body || {};
+    if (!message) {
+      return res.status(400).json({
+        status: 400,
+        error: "message is required",
+      });
+    }
+
+    const loanId = getResolvedPublicLoanId(req);
+    const ticket = await prisma.grievanceTicket.findFirst({
+      where: {
+        id: req.params.id,
+        loanId,
+      },
+    });
+
+    if (!ticket) {
+      return res.status(404).json({
+        status: 404,
+        error: "Grievance ticket not found",
+      });
+    }
+
+    const comment = await prisma.grievanceComment.create({
+      data: {
+        ticketId: ticket.id,
+        message,
+        isInternal: false,
+      },
+    });
+
+    await prisma.grievanceTicket.update({
+      where: { id: ticket.id },
+      data: {
+        status: ["RESOLVED", "CLOSED"].includes(ticket.status) ? "IN_PROGRESS" : ticket.status,
+      },
+    });
+
+    await logAction({
+      action: "PUBLIC_ADDED_GRIEVANCE_COMMENT",
+      table: "GrievanceComment",
+      targetId: comment.id,
+      metadata: {
+        ticketId: ticket.id,
+        loanId,
+      },
+    });
+
+    return res.status(201).json({
+      status: 201,
+      message: "Comment added successfully",
+      data: {
+        id: comment.id,
+        message: comment.message,
+        createdAt: comment.createdAt,
+      },
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      status: error.statusCode || 500,
+      error: error.message || "Failed to add grievance comment",
+    });
+  }
+};
+
 /**
  * GET /api/public/loan/:loanId
  * Get basic loan details by loan ID (unauthenticated)
@@ -36,173 +743,118 @@ const r2 = (n) => new Decimal(n || 0).toDecimalPlaces(2).toNumber();
  */
 exports.getPublicLoanDetails = async (req, res) => {
   try {
-    const { loanId } = req.params;
+    const { publicPortal } = await getPublicPortalConfig();
+    if (!publicPortal.allowLoanSummary) {
+      return res.status(403).json({
+        status: 403,
+        error: "Loan summary is not available in borrower self-service",
+      });
+    }
 
-    // Search by loan ID, fileNo, or registration numbers in related tables
-    const loan = await prisma.loan.findFirst({
-      where: {
-        OR: [
-          { id: loanId },
-          { fileNo: loanId },
-          // Search in two-wheeler loan by registration number
-          {
-            twoWheelerLoan: {
-              registrationNumber: {
-                equals: loanId,
-                mode: 'insensitive'
-              }
-            }
-          },
-          // Search in agriculture loan by registration number
-          {
-            agriLoan: {
-              registrationNumber: {
-                equals: loanId,
-                mode: 'insensitive'
-              }
-            }
-          },
-          // Search in MSME loan by registration number
-          {
-            msmeLoan: {
-              registrationNumber: {
-                equals: loanId,
-                mode: 'insensitive'
-              }
-            }
-          }
-        ]
+    const loan = await resolveAccessiblePublicLoan(getResolvedPublicLoanId(req), {
+      emi: {
+        orderBy: { paymentFor: "asc" },
       },
-      include: {
-        emi: true,
-        payments: true,
-        twoWheelerLoan: {
-          include: {
-            brand: true,
-            model: true,
-            variant: true,
-          },
+      payments: {
+        orderBy: { paymentDate: "desc" },
+        take: 10,
+      },
+      twoWheelerLoan: {
+        include: {
+          brand: true,
+          model: true,
+          variant: true,
         },
-        agriLoan: {
-          include: {
-            equipment: true,
-          },
+      },
+      agriLoan: {
+        include: {
+          equipment: true,
         },
-        msmeLoan: true,
-        seizedHistories: true,
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            middleName: true,
-            lastName: true,
-            phone: true,
-            email: true,
-          },
+      },
+      msmeLoan: true,
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          middleName: true,
+          lastName: true,
+          phone: true,
+          email: true,
         },
-        loanType: {
-          select: {
-            id: true,
-            name: true,
-          },
+      },
+      loanType: {
+        select: {
+          id: true,
+          name: true,
+          label: true,
         },
-        branch: {
-          select: {
-            id: true,
-            name: true,
-            address: true,
-            phone: true,
-          },
+      },
+      branch: {
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          phone: true,
         },
-        guarantors: {
-          include: {
-            guarantor: {
-              select: {
-                id: true,
-                firstName: true,
-                middleName: true,
-                lastName: true,
-                phone: true,
-              },
+      },
+      guarantors: {
+        include: {
+          guarantor: {
+            select: {
+              id: true,
+              firstName: true,
+              middleName: true,
+              lastName: true,
+              phone: true,
             },
           },
         },
       },
     });
 
-    if (!loan) {
-      return res.status(404).json({
-        error: "Loan not found",
-        status: 404
-      });
-    }
-
-    // Only show active/disbursed loans to public
-    if (!["ACTIVE", "OVERDUE", "DEFAULTED", "DISBURSED", "CLOSED", "SEIZED", "SEIZED_INITIATED"].includes(loan.fileStatus)) {
-      return res.status(403).json({
-        error: "Loan information not available",
-        status: 403
-      });
-    }
-
-    const response = {
-      loanId: loan.id,
-      fileNo: loan.fileNo,
-      fileStatus: loan.fileStatus,
-      loanType: loan.loanType?.name,
-      branch: loan.branch,
-      principalLoanAmount: Number(loan.principalLoanAmount),
-      interestRate: Number(loan.interestRate),
-      totalAmount: Number(loan.totalAmount),
-      totalPaidAmount: Number(loan.totalPaidAmount),
-      pendingAmount: Number(loan.pendingAmount),
-      totalPaidPrincipal: Number(loan.totalPaidPrincipal || 0),
-      totalPaidInterest: Number(loan.totalPaidInterest || 0),
-      totalPaidFine: Number(loan.totalPaidFine || 0),
-      tenureMonths: loan.tenureMonths,
-      dueDay: loan.dueDay,
-      paymentFrequency: loan.paymentFrequency,
-      startDate: loan.startDate,
-      endDate: loan.endDate,
-      isClosed: loan.isClosed,
-      isDefaulted: loan.isDefaulted,
-      emi: loan.emi,
-      twoWheelerLoan: loan.twoWheelerLoan,
-      agriLoan: loan.agriLoan,
-      msmeLoan: loan.msmeLoan,
-      seizedHistories: loan.seizedHistories,
-      emiCount: loan.emi.length,
-      paymentsCount: loan.payments.length,
-      payments: loan.payments,
-      user: {
-        id: loan.user.id,
-        firstName: loan.user.firstName,
-        middleName: loan.user.middleName,
-        lastName: loan.user.lastName,
-        phone: loan.user.phone,
-        email: loan.user.email,
-      },
-      guarantors: loan.guarantors?.length > 0
-        ? loan.guarantors.map(lg => ({
-            name: [
-              lg.guarantor.firstName,
-              lg.guarantor.middleName,
-              lg.guarantor.lastName,
-            ]
-              .filter(Boolean)
-              .join(" "),
-            phone: lg.guarantor.phone,
-          }))
-        : [],
-    };
-
     return res.json({
       status: 200,
-      data: response,
+      data: buildPublicLoanSummary(loan),
     });
   } catch (err) {
     console.error("getPublicLoanDetails error:", err);
-    return res.status(500).json({ error: err.message, status: 500 });
+    return res.status(err.statusCode || 500).json({ error: err.message, status: err.statusCode || 500 });
+  }
+};
+
+exports.getPublicLoanStatement = async (req, res) => {
+  try {
+    const { publicPortal } = await getPublicPortalConfig();
+    if (!publicPortal.allowStatementDownload) {
+      return res.status(403).json({
+        status: 403,
+        error: "Loan statement is not available in borrower self-service",
+      });
+    }
+
+    const loan = await resolveAccessiblePublicLoan(getResolvedPublicLoanId(req), {
+      loanType: true,
+      branch: true,
+      emi: {
+        orderBy: { paymentFor: "asc" },
+      },
+      payments: {
+        orderBy: { paymentDate: "asc" },
+      },
+      twoWheelerLoan: { include: { brand: true, model: true, variant: true } },
+      agriLoan: { include: { equipment: true } },
+      msmeLoan: true,
+    });
+
+    return res.json({
+      status: 200,
+      data: buildPublicLoanStatement(loan),
+    });
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({
+      status: err.statusCode || 500,
+      error: err.message || "Failed to fetch loan statement",
+    });
   }
 };
 
@@ -212,18 +864,23 @@ exports.getPublicLoanDetails = async (req, res) => {
  */
 exports.getPublicPendingPayments = async (req, res) => {
   try {
-    const { loanId } = req.params;
-    const today = new Date();
-
-    // Verify loan exists and is accessible
-    const loan = await prisma.loan.findUnique({
-      where: { id: loanId },
-      select: { fileStatus: true },
-    });
-
-    if (!loan) {
-      return res.status(404).json({ error: "Loan not found", status: 404 });
+    const { publicPortal } = await getPublicPortalConfig();
+    if (!publicPortal.allowDueCalendar) {
+      return res.status(403).json({
+        status: 403,
+        error: "Due calendar is not available in borrower self-service",
+      });
     }
+
+    const today = new Date();
+    const loan = await resolveAccessiblePublicLoan(getResolvedPublicLoanId(req), {
+      loanType: {
+        select: {
+          rules: true,
+        },
+      },
+    });
+    const loanId = loan.id;
 
     if (!["ACTIVE", "OVERDUE", "DEFAULTED", "DISBURSED"].includes(loan.fileStatus)) {
       return res.status(403).json({
@@ -299,14 +956,19 @@ exports.getPublicPendingPayments = async (req, res) => {
     }
 
     // Fetch pending EMIs
-    const installments = await prisma.eMI.findMany({
+    const rawInstallments = await prisma.eMI.findMany({
       where: {
         loanId,
         status: { in: ["UNPAID", "PARTIAL"] },
-        paymentFor: { lte: today },
       },
-      orderBy: { paymentFor: "asc" },
     });
+    const repaymentPolicy = getRepaymentPolicy(loan.loanType?.rules);
+    const installments = getSortedInstallments(
+      rawInstallments.filter((inst) =>
+        repaymentPolicy.allowAdvancePayment ? true : new Date(inst.paymentFor) <= today
+      ),
+      loan.loanType?.rules
+    );
 
     let grandTotal = new Decimal(0);
     const pending = installments.map((inst) => {
@@ -370,18 +1032,17 @@ exports.getPublicPendingPayments = async (req, res) => {
  */
 exports.getPublicPaymentHistory = async (req, res) => {
   try {
-    const { loanId } = req.params;
-    const { page = 1, limit = 20 } = req.query;
-
-    // Verify loan exists
-    const loan = await prisma.loan.findUnique({
-      where: { id: loanId },
-      select: { fileStatus: true },
-    });
-
-    if (!loan) {
-      return res.status(404).json({ error: "Loan not found", status: 404 });
+    const { publicPortal } = await getPublicPortalConfig();
+    if (!publicPortal.allowPaymentHistory) {
+      return res.status(403).json({
+        status: 403,
+        error: "Payment history is not available in borrower self-service",
+      });
     }
+
+    const { page = 1, limit = 20 } = req.query;
+    const loan = await resolveAccessiblePublicLoan(getResolvedPublicLoanId(req));
+    const loanId = loan.id;
 
     const payments = await prisma.payment.findMany({
       where: {
@@ -418,11 +1079,16 @@ exports.getPublicPaymentHistory = async (req, res) => {
       page: parseInt(page),
       limit: parseInt(limit),
       total,
-      data: payments,
+      data: payments.map((payment) => ({
+        ...payment,
+        metadata: {
+          summary: payment.metadata?.summary || null,
+        },
+      })),
     });
   } catch (err) {
     console.error("getPublicPaymentHistory error:", err);
-    return res.status(500).json({ error: err.message, status: 500 });
+    return res.status(err.statusCode || 500).json({ error: err.message, status: err.statusCode || 500 });
   }
 };
 
@@ -433,7 +1099,14 @@ exports.getPublicPaymentHistory = async (req, res) => {
  */
 exports.makePublicPayment = async (req, res) => {
   try {
-    const { loanId } = req.params;
+    const { publicPortal } = await getPublicPortalConfig();
+    if (!publicPortal.allowManualPaymentRequest) {
+      return res.status(403).json({
+        status: 403,
+        error: "Manual payment request is disabled for borrower self-service",
+      });
+    }
+
     let {
       amountPaid,
       paymentMode,
@@ -453,15 +1126,14 @@ exports.makePublicPayment = async (req, res) => {
       });
     }
 
-    // Verify loan exists and is accessible
-    const loan = await prisma.loan.findUnique({
-      where: { id: loanId },
-      select: { fileStatus: true },
+    const loan = await resolveAccessiblePublicLoan(getResolvedPublicLoanId(req), {
+      loanType: {
+        select: {
+          rules: true,
+        },
+      },
     });
-
-    if (!loan) {
-      return res.status(404).json({ error: "Loan not found", status: 404 });
-    }
+    const loanId = loan.id;
 
     if (!["ACTIVE", "OVERDUE", "DEFAULTED", "DISBURSED"].includes(loan.fileStatus)) {
       return res.status(403).json({
@@ -544,11 +1216,17 @@ exports.makePublicPayment = async (req, res) => {
         // Fetch unpaid/partial EMIs
         const installments = await tx.eMI.findMany({
           where: { loanId, status: { in: ["UNPAID", "PARTIAL"] } },
-          orderBy: { paymentFor: "asc" },
           include: {
             loan: { include: { user: true, loanType: true, branch: true } },
           },
         });
+        const repaymentPolicy = getRepaymentPolicy(loan.loanType?.rules);
+        const eligibleInstallments = getSortedInstallments(
+          installments.filter((emi) =>
+            repaymentPolicy.allowAdvancePayment ? true : new Date(emi.paymentFor) <= today
+          ),
+          loan.loanType?.rules
+        );
 
         // Public payments always need verification (no auto-verify)
         const verified = false;
@@ -588,7 +1266,18 @@ exports.makePublicPayment = async (req, res) => {
         let totalPrincipalCollected = 0;
 
         // Distribute payment across EMIs
-        for (const emi of installments) {
+        if (eligibleInstallments.length === 0) {
+          throw Object.assign(
+            new Error(
+              repaymentPolicy.allowAdvancePayment
+                ? "No pending installments found for this loan"
+                : "Advance payment is disabled for this loan product and no due installment is available"
+            ),
+            { statusCode: 400 }
+          );
+        }
+
+        for (const emi of eligibleInstallments) {
           if (remaining <= 0) break;
 
           const emiPaidComponent = Math.max(
@@ -613,6 +1302,15 @@ exports.makePublicPayment = async (req, res) => {
           }
           const fineAlreadyPaid = r2(emi.finePaid || 0);
           const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
+          const interestOutstanding = Math.max(
+            Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+            0
+          );
+          const principalOutstanding = Math.max(
+            Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+            0
+          );
+          const totalDueForEmi = r2(fineDue + interestOutstanding + principalOutstanding);
 
           if (emiDue <= 0 && fineDue <= 0) {
             if (
@@ -633,25 +1331,31 @@ exports.makePublicPayment = async (req, res) => {
             continue;
           }
 
-          const toPay = Math.min(remaining, r2(emiDue + fineDue));
+          const toPay = Math.min(remaining, totalDueForEmi);
           if (toPay <= 0) break;
 
-          const payToFine = Math.min(toPay, fineDue);
-          const payToEmi = r2(toPay - payToFine);
+          if (!repaymentPolicy.allowPartialPayment && toPay < totalDueForEmi) {
+            throw Object.assign(
+              new Error(
+                "Partial payments are disabled for this loan product. Pay the full due amount for the installment."
+              ),
+              { statusCode: 400 }
+            );
+          }
 
-          const interestOutstanding = Math.max(
-            Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
-            0
-          );
-          const principalOutstanding = Math.max(
-            Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
-            0
-          );
-          const payInterest = r2(Math.min(payToEmi, interestOutstanding));
-          const payPrincipal = r2(Math.min(
-            r2(payToEmi - payInterest),
-            principalOutstanding
-          ));
+          const allocation = distributeAcrossComponents({
+            amount: toPay,
+            balances: {
+              FINE: fineDue,
+              INTEREST: interestOutstanding,
+              PRINCIPAL: principalOutstanding,
+            },
+            componentOrder: repaymentPolicy.componentAllocationOrder,
+          });
+          const payToFine = allocation.paid.FINE;
+          const payInterest = allocation.paid.INTEREST;
+          const payPrincipal = allocation.paid.PRINCIPAL;
+          const payToEmi = r2(payInterest + payPrincipal);
 
           const newFinePaid = r2(fineAlreadyPaid + payToFine);
           const newInterestPaid = r2(
@@ -766,9 +1470,9 @@ exports.makePublicPayment = async (req, res) => {
     return res.status(200).json({ data: result, status: 200 });
   } catch (err) {
     console.error("makePublicPayment Error:", err);
-    return res.status(500).json({
+    return res.status(err.statusCode || 500).json({
       error: err.message || "Payment failed",
-      status: 500
+      status: err.statusCode || 500
     });
   }
 };
@@ -779,7 +1483,15 @@ exports.makePublicPayment = async (req, res) => {
  */
 exports.payPublicEmiById = async (req, res) => {
   try {
-    const { loanId, emiId } = req.params;
+    const { publicPortal } = await getPublicPortalConfig();
+    if (!publicPortal.allowManualPaymentRequest) {
+      return res.status(403).json({
+        status: 403,
+        error: "Manual payment request is disabled for borrower self-service",
+      });
+    }
+
+    const { emiId } = req.params;
     let {
       amount,
       paymentMode,
@@ -799,8 +1511,19 @@ exports.payPublicEmiById = async (req, res) => {
 
     const emi = await prisma.eMI.findUnique({
       where: { id: emiId },
-      include: { loan: true },
+      include: {
+        loan: {
+          include: {
+            loanType: {
+              select: {
+                rules: true,
+              },
+            },
+          },
+        },
+      },
     });
+    const loanId = getResolvedPublicLoanId(req);
 
     if (!emi || emi.loanId !== loanId) {
       return res.status(404).json({ error: "EMI not found", status: 404 });
@@ -833,11 +1556,6 @@ exports.payPublicEmiById = async (req, res) => {
     }
     const fineAlreadyPaid = r2(emi.finePaid || 0);
     const fineDue = Math.max(fineAssessed - fineAlreadyPaid, 0);
-
-    let remaining = Math.min(amount, r2(emiDue + fineDue));
-    const payToFine = Math.min(remaining, fineDue);
-    remaining = r2(remaining - payToFine);
-
     const interestOutstanding = Math.max(
       Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
       0
@@ -846,11 +1564,36 @@ exports.payPublicEmiById = async (req, res) => {
       Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
       0
     );
-    const payToInterest = Math.min(remaining, interestOutstanding);
-    const payToPrincipal = Math.min(
-      r2(remaining - payToInterest),
-      principalOutstanding
-    );
+    const totalDueForEmi = r2(fineDue + interestOutstanding + principalOutstanding);
+    const repaymentPolicy = getRepaymentPolicy(emi.loan?.loanType?.rules);
+
+    if (!repaymentPolicy.allowAdvancePayment && new Date(emi.paymentFor) > paymentDate) {
+      return res.status(400).json({
+        error: "Advance payment is disabled for this loan product",
+        status: 400,
+      });
+    }
+
+    const allocatableAmount = Math.min(amount, totalDueForEmi);
+    if (!repaymentPolicy.allowPartialPayment && allocatableAmount < totalDueForEmi) {
+      return res.status(400).json({
+        error: "Partial payments are disabled for this loan product. Pay the full due amount for the installment.",
+        status: 400,
+      });
+    }
+
+    const allocation = distributeAcrossComponents({
+      amount: allocatableAmount,
+      balances: {
+        FINE: fineDue,
+        INTEREST: interestOutstanding,
+        PRINCIPAL: principalOutstanding,
+      },
+      componentOrder: repaymentPolicy.componentAllocationOrder,
+    });
+    const payToFine = allocation.paid.FINE;
+    const payToInterest = allocation.paid.INTEREST;
+    const payToPrincipal = allocation.paid.PRINCIPAL;
 
     const txResult = await prisma.$transaction(
       async (tx) => {
@@ -948,7 +1691,7 @@ exports.payPublicEmiById = async (req, res) => {
     });
   } catch (err) {
     console.error("payPublicEmiById error:", err);
-    return res.status(500).json({ error: err.message, status: 500 });
+    return res.status(err.statusCode || 500).json({ error: err.message, status: err.statusCode || 500 });
   }
 };
 
@@ -958,7 +1701,16 @@ exports.payPublicEmiById = async (req, res) => {
  */
 exports.getPublicPaymentReceipt = async (req, res) => {
   try {
-    const { loanId, paymentId } = req.params;
+    const { publicPortal, companyProfile, receiptPreferences } = await getPublicPortalConfig();
+    if (!publicPortal.allowReceiptDownload) {
+      return res.status(403).json({
+        status: 403,
+        error: "Receipt download is not available in borrower self-service",
+      });
+    }
+
+    const { paymentId } = req.params;
+    const loanId = getResolvedPublicLoanId(req);
 
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
@@ -992,6 +1744,7 @@ exports.getPublicPaymentReceipt = async (req, res) => {
 
     const receipt = {
       receiptNo: payment.id,
+      receiptTitle: receiptPreferences.receiptTitle || "Loan Payment Receipt",
       paymentDate: payment.paymentDate,
       paymentMode: payment.paymentMode,
       amount: payment.amount,
@@ -1007,12 +1760,9 @@ exports.getPublicPaymentReceipt = async (req, res) => {
       principal: emi?.principalAmt || null,
       interest: emi?.interestAmt || null,
       user: {
-        name: [user.firstName, user.middleName, user.lastName]
-          .filter(Boolean)
-          .join(" "),
-        phone: user.phone,
-        email: user.email,
-        address: user.address,
+        name: buildBorrowerName(user),
+        phone: maskPhone(user.phone),
+        email: maskEmail(user.email),
       },
       loan: {
         fileNo: loan.fileNo,
@@ -1020,6 +1770,17 @@ exports.getPublicPaymentReceipt = async (req, res) => {
         branch: loan.branch?.name || "-",
         branchAddress: loan.branch?.address || "-",
         branchPhone: loan.branch?.phone || "-",
+      },
+      company: {
+        companyName: companyProfile.companyName || "Finance Company",
+        supportEmail: companyProfile.supportEmail || null,
+        supportPhone: companyProfile.supportPhone || null,
+        addressLine1: companyProfile.addressLine1 || null,
+        addressLine2: companyProfile.addressLine2 || null,
+        city: companyProfile.city || null,
+        state: companyProfile.state || null,
+        pincode: companyProfile.pincode || null,
+        footerText: receiptPreferences.footerText || null,
       },
     };
 
@@ -1029,7 +1790,7 @@ exports.getPublicPaymentReceipt = async (req, res) => {
     });
   } catch (err) {
     console.error("getPublicPaymentReceipt error:", err);
-    res.status(500).json({ error: err.message, status: 500 });
+    res.status(err.statusCode || 500).json({ error: err.message, status: err.statusCode || 500 });
   }
 };
 
@@ -1039,7 +1800,14 @@ exports.getPublicPaymentReceipt = async (req, res) => {
  */
 exports.createPaymentGatewayOrder = async (req, res) => {
   try {
-    const { loanId } = req.params;
+    const { publicPortal } = await getPublicPortalConfig();
+    if (!publicPortal.enabled) {
+      return res.status(403).json({
+        status: 403,
+        error: "Borrower self-service portal is currently disabled",
+      });
+    }
+
     const { amount, paymentType, emiId } = req.body;
 
     if (!amount || amount <= 0) {
@@ -1049,54 +1817,17 @@ exports.createPaymentGatewayOrder = async (req, res) => {
       });
     }
 
-    // Verify loan exists - search by ID, fileNo, or registration numbers
-    const loan = await prisma.loan.findFirst({
-      where: {
-        OR: [
-          { id: loanId },
-          { fileNo: loanId },
-          {
-            twoWheelerLoan: {
-              registrationNumber: {
-                equals: loanId,
-                mode: 'insensitive'
-              }
-            }
-          },
-          {
-            agriLoan: {
-              registrationNumber: {
-                equals: loanId,
-                mode: 'insensitive'
-              }
-            }
-          },
-          {
-            msmeLoan: {
-              registrationNumber: {
-                equals: loanId,
-                mode: 'insensitive'
-              }
-            }
-          }
-        ]
-      },
-      include: {
-        user: {
-          select: {
-            firstName: true,
-            middleName: true,
-            lastName: true,
-            phone: true,
-            email: true,
-          },
+    const loan = await resolveAccessiblePublicLoan(getResolvedPublicLoanId(req), {
+      user: {
+        select: {
+          firstName: true,
+          middleName: true,
+          lastName: true,
+          phone: true,
+          email: true,
         },
       },
     });
-
-    if (!loan) {
-      return res.status(404).json({ error: "Loan not found", status: 404 });
-    }
 
     if (!["ACTIVE", "OVERDUE", "DEFAULTED", "DISBURSED", "SEIZED", "SEIZED_INITIATED"].includes(loan.fileStatus)) {
       return res.status(403).json({
@@ -1191,7 +1922,7 @@ exports.createPaymentGatewayOrder = async (req, res) => {
     });
   } catch (err) {
     console.error("createPaymentGatewayOrder error:", err);
-    return res.status(500).json({ error: err.message, status: 500 });
+    return res.status(err.statusCode || 500).json({ error: err.message, status: err.statusCode || 500 });
   }
 };
 
@@ -1387,7 +2118,14 @@ exports.checkPublicPaymentStatus = async (req, res) => {
  */
 exports.generatePublicQR = async (req, res) => {
   try {
-    const { loanId } = req.params;
+    const { publicPortal } = await getPublicPortalConfig();
+    if (!publicPortal.enabled) {
+      return res.status(403).json({
+        status: 403,
+        error: "Borrower self-service portal is currently disabled",
+      });
+    }
+
     const { amount, paymentType } = req.body;
 
     if (!amount || amount <= 0) {
@@ -1397,47 +2135,10 @@ exports.generatePublicQR = async (req, res) => {
       });
     }
 
-    // Verify loan exists - search by ID, fileNo, or registration numbers
-    const loan = await prisma.loan.findFirst({
-      where: {
-        OR: [
-          { id: loanId },
-          { fileNo: loanId },
-          {
-            twoWheelerLoan: {
-              registrationNumber: {
-                equals: loanId,
-                mode: 'insensitive'
-              }
-            }
-          },
-          {
-            agriLoan: {
-              registrationNumber: {
-                equals: loanId,
-                mode: 'insensitive'
-              }
-            }
-          },
-          {
-            msmeLoan: {
-              registrationNumber: {
-                equals: loanId,
-                mode: 'insensitive'
-              }
-            }
-          }
-        ]
-      },
-      include: {
-        user: true,
-        loanType: true
-      }
+    const loan = await resolveAccessiblePublicLoan(getResolvedPublicLoanId(req), {
+      user: true,
+      loanType: true,
     });
-
-    if (!loan) {
-      return res.status(404).json({ error: 'Loan not found', status: 404 });
-    }
 
     if (!["ACTIVE", "OVERDUE", "DEFAULTED", "DISBURSED", "SEIZED", "SEIZED_INITIATED"].includes(loan.fileStatus)) {
       return res.status(403).json({
@@ -1465,9 +2166,9 @@ exports.generatePublicQR = async (req, res) => {
     
   } catch (error) {
     console.error('generatePublicQR error:', error);
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       error: error.message || 'Failed to generate QR code',
-      status: 500
+      status: error.statusCode || 500
     });
   }
 };
@@ -1501,5 +2202,74 @@ exports.checkPublicUPIStatus = async (req, res) => {
       error: error.message || 'Failed to check transaction status',
       status: 500
     });
+  }
+};
+
+// ─── Foreclosure Quote (self-service) ────────────────────────────────────────
+exports.getForeclosureQuote = async (req, res) => {
+  try {
+    const { loanId } = req.params;
+
+    const loan = await prisma.loan.findUnique({
+      where: { id: loanId },
+      include: {
+        emi: {
+          where: { isPaid: false },
+          orderBy: { dueDate: "asc" },
+        },
+        loanType: { select: { rules: true } },
+      },
+    });
+
+    if (!loan) return res.status(404).json({ error: "Loan not found" });
+    if (loan.isClosed) return res.status(400).json({ error: "Loan is already closed" });
+
+    const today = new Date();
+    const unpaidEmis = loan.emi || [];
+
+    // Sum outstanding principal, interest, fine
+    let outstandingPrincipal = 0;
+    let outstandingInterest = 0;
+    let outstandingFine = 0;
+    let totalPaidPrincipal = 0;
+
+    for (const e of unpaidEmis) {
+      outstandingPrincipal += Number(e.principalAmount || 0);
+      outstandingInterest += Number(e.interestAmount || 0);
+      outstandingFine += Number(e.fineAmount || 0);
+    }
+
+    totalPaidPrincipal = Number(loan.totalPaidPrincipal || 0);
+
+    // Foreclosure charge from loanType rules
+    const rules = loan.loanType?.rules || {};
+    const foreclosureFeePercent = rules?.fees?.foreclosureFee?.value || 0;
+    const foreclosureCharge = Math.round(outstandingPrincipal * (foreclosureFeePercent / 100));
+
+    const totalForeclosureAmount = Math.round(
+      outstandingPrincipal + outstandingInterest + outstandingFine + foreclosureCharge
+    );
+
+    const quoteValidTill = new Date(today);
+    quoteValidTill.setDate(quoteValidTill.getDate() + 7); // valid for 7 days
+
+    res.json({
+      data: {
+        loanId,
+        fileNo: loan.fileNo,
+        quoteDate: today.toISOString(),
+        quoteValidTill: quoteValidTill.toISOString(),
+        outstandingPrincipal,
+        outstandingInterest,
+        outstandingFine,
+        foreclosureCharge,
+        foreclosureFeePercent,
+        totalForeclosureAmount,
+        remainingEmis: unpaidEmis.length,
+        note: "This is an indicative quote. Actual amount may vary based on payment date.",
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to generate foreclosure quote", message: err.message });
   }
 };

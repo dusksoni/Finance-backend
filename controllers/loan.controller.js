@@ -13,6 +13,13 @@ const {
 const logAction = require("../utils/adminLogger");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const { calculateFine } = require("../utils/calculateFine");
+const {
+  assertLoanMatchesProductRules,
+  assertLoanGuarantorRequirements,
+  assertLoanDocumentationRequirements,
+  assertLoanApprovalWorkflow,
+  LOAN_DOCUMENT_FIELD_MAP,
+} = require("../utils/loanPolicyValidation");
 
 // Helper function to safely parse dates (handles ISO strings and Date objects)
 // Dates from frontend are already in Indian timezone when sent as ISO strings
@@ -127,89 +134,273 @@ const buildUpdateFileRelation = async (tx, filePayload) => {
   return fileId ? { set: [{ id: fileId }] } : { set: [] };
 };
 
-// Helper function to generate EMI schedule
+const normalizeGuarantorIds = (value) =>
+  [...new Set((Array.isArray(value) ? value : []).filter(Boolean).map((item) => String(item)))];
+
+const buildLoanDocumentPresence = ({
+  loanInvoiceDoc,
+  insuranceDoc,
+  registrationDoc,
+}) => ({
+  [LOAN_DOCUMENT_FIELD_MAP.INVOICE]: Array.isArray(loanInvoiceDoc) ? loanInvoiceDoc.length > 0 : Boolean(loanInvoiceDoc),
+  [LOAN_DOCUMENT_FIELD_MAP.INSURANCE]: Array.isArray(insuranceDoc) ? insuranceDoc.length > 0 : Boolean(insuranceDoc),
+  [LOAN_DOCUMENT_FIELD_MAP.REGISTRATION]: Array.isArray(registrationDoc) ? registrationDoc.length > 0 : Boolean(registrationDoc),
+});
+
+// ─── EMI Schedule Generation ───────────────────────────────────────────────
+// Supports: FLAT (simple interest), REDUCING (monthly reducing balance),
+//           DAILY_REDUCING, BULLET, STEP_UP, STEP_DOWN
+// Plus moratorium (defer first N EMIs interest-only or full deferral).
+
+const round2 = (x) => Math.round(Number(x) || 0);
+
+/**
+ * Reducing-balance (PMT formula) monthly EMI.
+ * EMI = P × r × (1+r)^n / ((1+r)^n − 1)   where r = monthly rate
+ * Returns { emi, totalInterest, totalPayable }
+ */
+const reducingBalanceEMI = (P, annualRate, n) => {
+  if (annualRate === 0) {
+    const emi = round2(P / n);
+    return { emi, totalInterest: 0, totalPayable: round2(P) };
+  }
+  const r = annualRate / 12 / 100;
+  const emi = round2((P * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1));
+  return { emi, totalInterest: round2(emi * n - P), totalPayable: round2(emi * n) };
+};
+
+/**
+ * Daily-reducing: accrue interest daily on outstanding balance.
+ * Build a month-by-month schedule where interest = balance × dailyRate × daysInMonth.
+ */
+const dailyReducingSchedule = (P, annualRate, n, firstDue, offsetFn, step) => {
+  const dailyRate = annualRate / 365 / 100;
+  // Estimate fixed EMI using reducing balance as starting point
+  const { emi: fixedEmi } = reducingBalanceEMI(P, annualRate, n);
+  let balance = P;
+  const schedule = [];
+  let aggPrincipal = 0;
+  let aggInterest = 0;
+
+  for (let i = 0; i < n; i++) {
+    const dueDate = offsetFn(firstDue, step * i);
+    // Approximate days in this period (30 for monthly)
+    const days = 30;
+    const interestAmt = round2(balance * dailyRate * days);
+    const principalAmt = i === n - 1
+      ? round2(balance) // last instalment absorbs rounding
+      : Math.min(round2(fixedEmi - interestAmt), round2(balance));
+    const emiPayAmount = round2(principalAmt + interestAmt);
+
+    aggPrincipal += principalAmt;
+    aggInterest += interestAmt;
+    balance = round2(balance - principalAmt);
+
+    schedule.push({ paymentFor: dueDate, paymentDate: dueDate, emiPayAmount, principalAmt, interestAmt, amountPaidSoFar: 0, fineAmount: 0, status: "UNPAID", isDelayed: false, isForeclosure: false });
+  }
+
+  // Fix last-row drift
+  const lastRow = schedule[schedule.length - 1];
+  const principalDrift = round2(P - aggPrincipal);
+  lastRow.principalAmt = round2(lastRow.principalAmt + principalDrift);
+  lastRow.emiPayAmount = round2(lastRow.principalAmt + lastRow.interestAmt);
+  return schedule;
+};
+
+/**
+ * Flat / simple-interest schedule (original logic, kept unchanged).
+ */
+const flatInterestSchedule = (P, annualRate, n, firstDue, offsetFn, step, monthsPerInstallment) => {
+  const totalInterest = round2((P * annualRate * (n / 12)) / 100);
+  const totalPayable = round2(P + totalInterest);
+  const monthlyPrincipal = P / n;
+  const monthlyInterest = totalInterest / n;
+  const monthlyEMI = totalPayable / n;
+  const numInstallments = Math.ceil(n / monthsPerInstallment);
+  const schedule = [];
+  let aggPrincipal = 0;
+  let aggInterest = 0;
+
+  for (let i = 0; i < numInstallments; i++) {
+    const monthsInBucket = Math.min(monthsPerInstallment, n - i * monthsPerInstallment);
+    const dueDate = offsetFn(firstDue, step * i);
+    let principalAmt = round2(monthlyPrincipal * monthsInBucket);
+    let interestAmt = round2(monthlyInterest * monthsInBucket);
+    let emiPayAmount = round2(monthlyEMI * monthsInBucket);
+    aggPrincipal += principalAmt;
+    aggInterest += interestAmt;
+    schedule.push({ paymentFor: dueDate, paymentDate: dueDate, emiPayAmount, principalAmt, interestAmt, amountPaidSoFar: 0, fineAmount: 0, status: "UNPAID", isDelayed: false, isForeclosure: false });
+  }
+
+  const lastRow = schedule[schedule.length - 1];
+  lastRow.principalAmt = round2(lastRow.principalAmt + round2(P - aggPrincipal));
+  lastRow.interestAmt = round2(lastRow.interestAmt + round2(totalInterest - aggInterest));
+  lastRow.emiPayAmount = round2(lastRow.principalAmt + lastRow.interestAmt);
+  return schedule;
+};
+
+/**
+ * Reducing-balance month-by-month amortisation schedule.
+ */
+const reducingBalanceSchedule = (P, annualRate, n, firstDue, offsetFn, step, monthsPerInstallment) => {
+  const r = annualRate / 12 / 100;
+  const { emi } = reducingBalanceEMI(P, annualRate, n);
+  let balance = P;
+  const numInstallments = Math.ceil(n / monthsPerInstallment);
+  const schedule = [];
+  let aggPrincipal = 0;
+
+  for (let i = 0; i < numInstallments; i++) {
+    const dueDate = offsetFn(firstDue, step * i);
+    const interestAmt = round2(balance * r);
+    const principalAmt = i === numInstallments - 1
+      ? round2(balance)
+      : Math.min(round2(emi - interestAmt), round2(balance));
+    const emiPayAmount = round2(principalAmt + interestAmt);
+    aggPrincipal += principalAmt;
+    balance = round2(balance - principalAmt);
+    schedule.push({ paymentFor: dueDate, paymentDate: dueDate, emiPayAmount, principalAmt, interestAmt, amountPaidSoFar: 0, fineAmount: 0, status: "UNPAID", isDelayed: false, isForeclosure: false });
+  }
+  return schedule;
+};
+
+/**
+ * Bullet loan: interest-only payments each period, full principal + last interest at end.
+ */
+const bulletSchedule = (P, annualRate, n, firstDue, offsetFn, step, monthsPerInstallment) => {
+  const numInstallments = Math.ceil(n / monthsPerInstallment);
+  const schedule = [];
+  const monthlyInterest = round2((P * annualRate) / (12 * 100));
+
+  for (let i = 0; i < numInstallments; i++) {
+    const dueDate = offsetFn(firstDue, step * i);
+    const isLast = i === numInstallments - 1;
+    const principalAmt = isLast ? round2(P) : 0;
+    const interestAmt = monthlyInterest;
+    schedule.push({ paymentFor: dueDate, paymentDate: dueDate, emiPayAmount: round2(principalAmt + interestAmt), principalAmt, interestAmt, amountPaidSoFar: 0, fineAmount: 0, status: "UNPAID", isDelayed: false, isForeclosure: false });
+  }
+  return schedule;
+};
+
+/**
+ * Step-up: EMI increases by stepPercent every stepEveryMonths.
+ * stepSlabs: [{ months: 6, percentOfBase: 100 }, { months: 6, percentOfBase: 120 }]
+ * If not provided, defaults to 10% increase every 12 months.
+ */
+const stepUpSchedule = (P, annualRate, n, firstDue, offsetFn, step, stepSlabs = null) => {
+  const defaultSlabs = [
+    { months: Math.ceil(n / 2), percentOfBase: 100 },
+    { months: n - Math.ceil(n / 2), percentOfBase: 120 },
+  ];
+  const slabs = stepSlabs || defaultSlabs;
+
+  // Compute base EMI from flat interest
+  const totalInterest = round2((P * annualRate * (n / 12)) / 100);
+  const baseEmi = round2((P + totalInterest) / n);
+
+  const schedule = [];
+  let idx = 0;
+  for (const slab of slabs) {
+    const slabEmi = round2((baseEmi * slab.percentOfBase) / 100);
+    for (let j = 0; j < slab.months && idx < n; j++, idx++) {
+      const dueDate = offsetFn(firstDue, step * idx);
+      // Approximate principal/interest split (proportional to flat)
+      const interestAmt = round2((P * annualRate) / (12 * 100));
+      const principalAmt = Math.max(round2(slabEmi - interestAmt), 0);
+      schedule.push({ paymentFor: dueDate, paymentDate: dueDate, emiPayAmount: slabEmi, principalAmt, interestAmt, amountPaidSoFar: 0, fineAmount: 0, status: "UNPAID", isDelayed: false, isForeclosure: false });
+    }
+  }
+  return schedule;
+};
+
+/**
+ * Step-down: EMI decreases by stepPercent every stepEveryMonths.
+ */
+const stepDownSchedule = (P, annualRate, n, firstDue, offsetFn, step, stepSlabs = null) => {
+  const defaultSlabs = [
+    { months: Math.ceil(n / 2), percentOfBase: 120 },
+    { months: n - Math.ceil(n / 2), percentOfBase: 100 },
+  ];
+  return stepUpSchedule(P, annualRate, n, firstDue, offsetFn, step, stepSlabs || defaultSlabs);
+};
+
+/**
+ * Apply moratorium: prepend N interest-only (or zero-payment) EMIs before the main schedule.
+ * moratoriumType: "INTEREST_ONLY" (pay interest during moratorium) | "FULL_DEFERRAL" (nothing due)
+ */
+const applyMoratorium = (schedule, P, annualRate, moratoriumMonths, firstDue, moratoriumType = "INTEREST_ONLY") => {
+  if (!moratoriumMonths || moratoriumMonths <= 0) return schedule;
+  const { fn: offsetFn, step } = FREQUENCY_OFFSETS.MONTHLY;
+  const moratoriumRows = [];
+
+  for (let i = 0; i < moratoriumMonths; i++) {
+    const dueDate = offsetFn(firstDue, step * i);
+    const interestAmt = moratoriumType === "FULL_DEFERRAL" ? 0 : round2((P * annualRate) / (12 * 100));
+    moratoriumRows.push({ paymentFor: dueDate, paymentDate: dueDate, emiPayAmount: interestAmt, principalAmt: 0, interestAmt, amountPaidSoFar: 0, fineAmount: 0, status: "UNPAID", isDelayed: false, isForeclosure: false, isMoratorium: true });
+  }
+
+  // Shift main schedule dates forward by moratoriumMonths
+  const shifted = schedule.map((row, i) => ({
+    ...row,
+    paymentFor: offsetFn(firstDue, step * (moratoriumMonths + i)),
+    paymentDate: offsetFn(firstDue, step * (moratoriumMonths + i)),
+  }));
+
+  return [...moratoriumRows, ...shifted];
+};
+
+/**
+ * Main schedule generator — dispatches to the right strategy.
+ * interestComputation: FLAT | REDUCING | DAILY_REDUCING
+ * loanStructure: EMI | BULLET | STEP_UP | STEP_DOWN
+ * moratoriumMonths: number of months to defer at start
+ * stepSlabs: optional slab config for STEP_UP / STEP_DOWN
+ */
 const generateEMISchedule = ({
   principalLoanAmount,
   interestRate,
   tenureMonths,
   startDate,
   paymentFrequency = "MONTHLY",
+  interestComputation = "FLAT",
+  loanStructure = "EMI",
+  moratoriumMonths = 0,
+  moratoriumType = "INTEREST_ONLY",
+  stepSlabs = null,
 }) => {
-  // Round to whole numbers (no decimals)
-  const round2 = (x) => Math.round(Number(x) || 0);
-
   const P = Number(principalLoanAmount);
   const n = parseInt(tenureMonths, 10);
   const annualRate = Number(interestRate);
-
-  // Calculate totals using SIMPLE interest (not compound)
-  // Simple Interest = P × R × T / 100
-  // where T is in years (n months / 12)
-  const totalInterest = round2((P * annualRate * (n / 12)) / 100);
-  const totalPayable = round2(P + totalInterest);
-
-  // Per-month equal split
-  const monthlyPrincipal = P / n;
-  const monthlyInterest = totalInterest / n;
-  const monthlyEMI = totalPayable / n;
-
-  // Frequency config
   const freq = (paymentFrequency || "MONTHLY").toUpperCase();
   const { fn: offsetFn, step } = FREQUENCY_OFFSETS[freq] || FREQUENCY_OFFSETS.MONTHLY;
   const monthsPerInstallment = FREQUENCY_MONTHS[freq] || 1;
+  const firstDue = parseDate(startDate);
+  const computation = (interestComputation || "FLAT").toUpperCase();
+  const structure = (loanStructure || "EMI").toUpperCase();
 
-  // Build schedule
-  // First due date = startDate itself (dueDay is extracted from startDate)
-  let firstDue = parseDate(startDate);
+  let schedule;
 
-  const numInstallments = Math.ceil(n / monthsPerInstallment);
-  const schedule = [];
-
-  let aggPrincipal = 0;
-  let aggInterest = 0;
-
-  for (let i = 0; i < numInstallments; i++) {
-    const monthsInThisBucket = Math.min(
-      monthsPerInstallment,
-      n - i * monthsPerInstallment
-    );
-
-    const dueDate = offsetFn(firstDue, step * i);
-
-    let principalAmt = round2(monthlyPrincipal * monthsInThisBucket);
-    let interestAmt = round2(monthlyInterest * monthsInThisBucket);
-    let emiPayAmount = round2(monthlyEMI * monthsInThisBucket);
-
-    aggPrincipal = round2(aggPrincipal + principalAmt);
-    aggInterest = round2(aggInterest + interestAmt);
-
-    schedule.push({
-      paymentFor: dueDate,
-      paymentDate: dueDate,
-      emiPayAmount,
-      principalAmt,
-      interestAmt,
-      amountPaidSoFar: 0,
-      fineAmount: 0,
-      status: "UNPAID",
-      isDelayed: false,
-      isForeclosure: false,
-    });
+  if (structure === "BULLET") {
+    schedule = bulletSchedule(P, annualRate, n, firstDue, offsetFn, step, monthsPerInstallment);
+  } else if (structure === "STEP_UP") {
+    schedule = stepUpSchedule(P, annualRate, n, firstDue, offsetFn, step, stepSlabs);
+  } else if (structure === "STEP_DOWN") {
+    schedule = stepDownSchedule(P, annualRate, n, firstDue, offsetFn, step, stepSlabs);
+  } else if (computation === "REDUCING") {
+    schedule = reducingBalanceSchedule(P, annualRate, n, firstDue, offsetFn, step, monthsPerInstallment);
+  } else if (computation === "DAILY_REDUCING") {
+    schedule = dailyReducingSchedule(P, annualRate, n, firstDue, offsetFn, step);
+  } else {
+    // Default: FLAT / simple interest (original logic)
+    schedule = flatInterestSchedule(P, annualRate, n, firstDue, offsetFn, step, monthsPerInstallment);
   }
 
-  // Fix rounding drift on the last row
-  const principalDrift = round2(P - aggPrincipal);
-  const interestDrift = round2(totalInterest - aggInterest);
-
-  if (schedule.length > 0) {
-    const lastRow = schedule[schedule.length - 1];
-    lastRow.principalAmt = round2(lastRow.principalAmt + principalDrift);
-    lastRow.interestAmt = round2(lastRow.interestAmt + interestDrift);
-    lastRow.emiPayAmount = round2(lastRow.principalAmt + lastRow.interestAmt);
-  }
-
-  return schedule;
+  return applyMoratorium(schedule, P, annualRate, moratoriumMonths, firstDue, moratoriumType);
 };
+
+// Also export for use by restructuring controller
+module.exports.generateEMISchedule = generateEMISchedule;
+module.exports.reducingBalanceEMI = reducingBalanceEMI;
 
 // ====================
 // 🟢 CREATE LOAN (fixed)
@@ -243,6 +434,7 @@ exports.createLoan = async (req, res) => {
       loanInvoiceDoc,
       insuranceDoc,
       registrationDoc,
+      guarantorIds: guarantorIdsRaw,
       comment,
       branchId,
       interestType,
@@ -294,6 +486,98 @@ exports.createLoan = async (req, res) => {
     const totalPayable = round2(P + totalInterest);
 
     const freq = (paymentFrequency || "MONTHLY").toUpperCase();
+    const guarantorIds = normalizeGuarantorIds(guarantorIdsRaw);
+
+    const [loanType, borrower, guarantors] = await Promise.all([
+      prisma.loanType.findUnique({
+        where: { id: loanTypeId },
+        select: { id: true, name: true, rules: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          dateOfBirth: true,
+          photoIds: {
+            include: {
+              photoIdType: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      guarantorIds.length
+        ? prisma.user.findMany({
+            where: {
+              id: { in: guarantorIds },
+            },
+            select: {
+              id: true,
+              photoIds: {
+                include: {
+                  photoIdType: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    if (!loanType) {
+      return res.status(400).json({ error: "Invalid loanTypeId" });
+    }
+
+    if (!borrower) {
+      return res.status(400).json({ error: "Invalid userId" });
+    }
+
+    if (guarantorIds.includes(userId)) {
+      return res.status(400).json({ error: "Borrower cannot be added as a guarantor" });
+    }
+
+    try {
+      assertLoanGuarantorRequirements({
+        rules: loanType.rules,
+        guarantorIds,
+      });
+    } catch (policyError) {
+      return res.status(policyError.statusCode || 400).json({
+        error: policyError.message,
+        status: policyError.statusCode || 400,
+      });
+    }
+
+    if (guarantorIds.length !== guarantors.length) {
+      return res.status(400).json({
+        error: "One or more guarantors are invalid",
+        status: 400,
+      });
+    }
+
+    try {
+      assertLoanMatchesProductRules({
+        rules: loanType.rules,
+        principalLoanAmount: P,
+        interestRate: annualRate,
+        tenureMonths: n,
+        paymentFrequency: freq,
+        dueDay,
+        borrowerDateOfBirth: borrower.dateOfBirth,
+        branchId,
+      });
+    } catch (policyError) {
+      return res.status(policyError.statusCode || 400).json({
+        error: policyError.message,
+        status: policyError.statusCode || 400,
+      });
+    }
 
     // Validate EMI is a whole number
     const freqMonths = FREQUENCY_MONTHS[freq] || 1;
@@ -307,6 +591,9 @@ exports.createLoan = async (req, res) => {
     }
 
     // 3) Build schedule only if start/end dates are available
+    // interestType on the loan maps to interestComputation; loanStructure and moratoriumMonths
+    // can be passed from the request body directly.
+    const { loanStructure, moratoriumMonths, moratoriumType, stepSlabs } = req.body;
     const schedule = parsedStartDate
       ? generateEMISchedule({
           principalLoanAmount: P,
@@ -314,6 +601,11 @@ exports.createLoan = async (req, res) => {
           tenureMonths: n,
           startDate: parsedStartDate,
           paymentFrequency: freq,
+          interestComputation: interestType || "FLAT",
+          loanStructure: loanStructure || "EMI",
+          moratoriumMonths: Number(moratoriumMonths) || 0,
+          moratoriumType: moratoriumType || "INTEREST_ONLY",
+          stepSlabs: stepSlabs || null,
         })
       : [];
     const representativeInstallment =
@@ -422,9 +714,17 @@ exports.createLoan = async (req, res) => {
           },
         });
 
+        if (guarantorIds.length > 0) {
+          await tx.loanGuarantor.createMany({
+            data: guarantorIds.map((guarantorId) => ({
+              loanId: loan.id,
+              guarantorId,
+            })),
+          });
+        }
+
         // b) Sub-type
-        const lt = await tx.loanType.findUnique({ where: { id: loanTypeId } });
-        if (lt.name === "TWOWHEELER") {
+        if (loanType.name === "TWOWHEELER") {
           await tx.twoWheelerLoan.create({
             data: {
               loanId: loan.id,
@@ -436,7 +736,7 @@ exports.createLoan = async (req, res) => {
               engineNumber: details?.engineNumber ?? "",
             },
           });
-        } else if (lt.name === "AGRICULTURE") {
+        } else if (loanType.name === "AGRICULTURE") {
           await tx.agricultureLoan.create({
             data: {
               loan: { connect: { id: loan.id } },
@@ -447,7 +747,7 @@ exports.createLoan = async (req, res) => {
               isSeasonal: Boolean(details?.isSeasonal),
             },
           });
-        } else if (lt.name === "MSME") {
+        } else if (loanType.name === "MSME") {
           await tx.mSMELoan.create({
             data: {
               loanId: loan.id,
@@ -524,6 +824,11 @@ exports.updateLoan = async (req, res) => {
         loanInvoiceDoc: true,
         insuranceDoc: true,
         registrationDoc: true,
+        guarantors: {
+          select: {
+            guarantorId: true,
+          },
+        },
       },
     });
     if (!existing) {
@@ -555,12 +860,101 @@ exports.updateLoan = async (req, res) => {
 
     const newTenure = payload.tenureMonths ?? existing.tenureMonths;
     const newFreq = payload.paymentFrequency ?? existing.paymentFrequency;
+    const newGuarantorIds = payload.guarantorIds === undefined
+      ? existing.guarantors.map((item) => item.guarantorId)
+      : normalizeGuarantorIds(payload.guarantorIds);
     const newStartDate = payload.startDate
       ? parseDate(payload.startDate)
       : existing.startDate;
     // Calculate dueDay from newStartDate (day of month)
     const newDueDay = newStartDate.getDate();
     const newLoanTypeId = payload.loanTypeId ?? existing.loanTypeId;
+    const [targetLoanType, borrower, guarantors] = await Promise.all([
+      prisma.loanType.findUnique({
+        where: { id: newLoanTypeId },
+        select: { id: true, name: true, rules: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: existing.userId },
+        select: {
+          id: true,
+          dateOfBirth: true,
+          photoIds: {
+            include: {
+              photoIdType: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      newGuarantorIds.length
+        ? prisma.user.findMany({
+            where: {
+              id: { in: newGuarantorIds },
+            },
+            select: {
+              id: true,
+              photoIds: {
+                include: {
+                  photoIdType: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    if (!targetLoanType) {
+      return res.status(400).json({ error: "Invalid loanTypeId" });
+    }
+
+    if (newGuarantorIds.includes(existing.userId)) {
+      return res.status(400).json({ error: "Borrower cannot be added as a guarantor" });
+    }
+
+    try {
+      assertLoanGuarantorRequirements({
+        rules: targetLoanType.rules,
+        guarantorIds: newGuarantorIds,
+      });
+    } catch (policyError) {
+      return res.status(policyError.statusCode || 400).json({
+        error: policyError.message,
+        status: policyError.statusCode || 400,
+      });
+    }
+
+    if (newGuarantorIds.length !== guarantors.length) {
+      return res.status(400).json({
+        error: "One or more guarantors are invalid",
+        status: 400,
+      });
+    }
+
+    try {
+      assertLoanMatchesProductRules({
+        rules: targetLoanType.rules,
+        principalLoanAmount: newPrincipal,
+        interestRate: newPct,
+        tenureMonths: newTenure,
+        paymentFrequency: newFreq,
+        dueDay: newDueDay,
+        borrowerDateOfBirth: borrower?.dateOfBirth,
+        branchId: payload.branchId ?? existing.branchId,
+      });
+    } catch (policyError) {
+      return res.status(policyError.statusCode || 400).json({
+        error: policyError.message,
+        status: policyError.statusCode || 400,
+      });
+    }
 
     // 3) schedule reset?
     const mustReset =
@@ -722,10 +1116,7 @@ exports.updateLoan = async (req, res) => {
         }
 
         // c) upsert subtype
-        const ltRec = await tx.loanType.findUnique({
-          where: { id: newLoanTypeId },
-        });
-        if (ltRec.name === "TWOWHEELER" && payload.details) {
+        if (targetLoanType.name === "TWOWHEELER" && payload.details) {
           await tx.twoWheelerLoan.upsert({
             where: { loanId: loan.id },
             create: {
@@ -746,7 +1137,7 @@ exports.updateLoan = async (req, res) => {
               engineNumber: payload.details.engineNumber,
             },
           });
-        } else if (ltRec.name === "AGRICULTURE" && payload.details) {
+        } else if (targetLoanType.name === "AGRICULTURE" && payload.details) {
           await tx.agricultureLoan.upsert({
             where: { loanId: loan.id },
             create: {
@@ -761,12 +1152,27 @@ exports.updateLoan = async (req, res) => {
               isSeasonal: payload.details.isSeasonal || false,
             },
           });
-        } else if (ltRec.name === "MSME" && payload.details) {
+        } else if (targetLoanType.name === "MSME" && payload.details) {
           await tx.mSMELoan.upsert({
             where: { loanId: loan.id },
             create: { loanId: loan.id, ...payload.details },
             update: { ...payload.details },
           });
+        }
+
+        if (payload.guarantorIds !== undefined) {
+          await tx.loanGuarantor.deleteMany({
+            where: { loanId: loan.id },
+          });
+
+          if (newGuarantorIds.length > 0) {
+            await tx.loanGuarantor.createMany({
+              data: newGuarantorIds.map((guarantorId) => ({
+                loanId: loan.id,
+                guarantorId,
+              })),
+            });
+          }
         }
 
         // d) audit
@@ -1454,11 +1860,57 @@ exports.approveLoan = async (req, res) => {
         id: true,
         fileNo: true,
         fileStatus: true,
+        adminId: true,
+        employeeId: true,
         tenureMonths: true,
         paymentFrequency: true,
         dueDay: true,
+        branchId: true,
         principalLoanAmount: true,
         interestRate: true,
+        loanInvoiceDoc: { select: { id: true } },
+        insuranceDoc: { select: { id: true } },
+        registrationDoc: { select: { id: true } },
+        user: {
+          select: {
+            id: true,
+            dateOfBirth: true,
+            photoIds: {
+              include: {
+                photoIdType: {
+                  select: {
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        guarantors: {
+          include: {
+            guarantor: {
+              select: {
+                id: true,
+                photoIds: {
+                  include: {
+                    photoIdType: {
+                      select: {
+                        name: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        loanType: {
+          select: {
+            id: true,
+            name: true,
+            rules: true,
+          },
+        },
       },
     });
 
@@ -1494,6 +1946,62 @@ exports.approveLoan = async (req, res) => {
     const parsedStartDate = parseDate(startDate);
     const parsedDisbursedDate = parseDate(disbursedDate);
     const dueDay = parsedStartDate.getDate();
+
+    try {
+      assertLoanApprovalWorkflow({
+        rules: loan.loanType?.rules,
+        loan,
+        approverType: req.user.type,
+        approverAdminId: req.user?.adminId,
+        approverEmployeeId: req.user?.employeeId,
+      });
+    } catch (policyError) {
+      return res.status(policyError.statusCode || 400).json({
+        error: policyError.message,
+        status: policyError.statusCode || 400,
+      });
+    }
+
+    try {
+      assertLoanMatchesProductRules({
+        rules: loan.loanType?.rules,
+        principalLoanAmount: loan.principalLoanAmount,
+        interestRate: loan.interestRate,
+        tenureMonths: loan.tenureMonths,
+        paymentFrequency: loan.paymentFrequency,
+        dueDay,
+        borrowerDateOfBirth: loan.user?.dateOfBirth,
+        branchId: loan.branchId,
+      });
+    } catch (policyError) {
+      return res.status(policyError.statusCode || 400).json({
+        error: policyError.message,
+        status: policyError.statusCode || 400,
+      });
+    }
+
+    try {
+      assertLoanGuarantorRequirements({
+        rules: loan.loanType?.rules,
+        guarantorIds: loan.guarantors.map((item) => item.guarantorId),
+      });
+
+      assertLoanDocumentationRequirements({
+        rules: loan.loanType?.rules,
+        borrowerPhotoIds: loan.user?.photoIds || [],
+        guarantorPhotoIds: loan.guarantors.map((item) => item.guarantor),
+        loanDocumentPresence: buildLoanDocumentPresence({
+          loanInvoiceDoc: loan.loanInvoiceDoc,
+          insuranceDoc: loan.insuranceDoc,
+          registrationDoc: loan.registrationDoc,
+        }),
+      });
+    } catch (policyError) {
+      return res.status(policyError.statusCode || 400).json({
+        error: policyError.message,
+        status: policyError.statusCode || 400,
+      });
+    }
 
     // Calculate endDate based on startDate and tenureMonths
     const endDate = addMonths(parsedStartDate, loan.tenureMonths);

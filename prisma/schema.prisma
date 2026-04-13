@@ -25,12 +25,12 @@ enum EmployeeRole {
 // 📍 Location Models
 // ==========================
 model State {
-  id           String        @id @default(uuid())
-  name         String        @unique
-  city         City[]
-  stateCode    String        @default("00")
-  employees    Employee[]
-  Region       Region[]
+  id            String        @id @default(uuid())
+  name          String        @unique
+  city          City[]
+  stateCode     String        @default("00")
+  employees     Employee[]
+  Region        Region[]
   userAddresses UserAddress[]
 }
 
@@ -62,30 +62,98 @@ model Region {
 // ==========================
 
 model Admin {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                String    @id @default(uuid())
+  name              String
+  email             String    @unique
+  password          String
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  employees              Employee[]
-  loginActivities        LoginActivity[]
-  terminationRequest     TerminationRequest[]
-  actionLogs             ActionLog[]
-  users                  User[]
-  loans                  Loan[]
-  approvedLoans          Loan[]               @relation("LoanApprovedByAdmin")
-  seizedHistoriesAssigned SeizedHistory[]     @relation("AssignedByAdmin")
-  seizedHistoriesReleased SeizedHistory[]     @relation("ReleasedByAdmin")
-  requestedUpdates       UserUpdateRequest[]   @relation("RequestedByAdmin")
-  verifiedPayments       Payment[]             @relation("VerifiedByAdmin")
-  payments               Payment[]
-  seizedContactAttempts  SeizedContactAttempt[]
-  approvedForecloseRequests ForecloseRequest[] @relation("ForecloseApprovedByAdmin")
-  requestedForecloseRequests ForecloseRequest[] @relation("ForecloseRequestedByAdmin")
-  loanApplicationDrafts    LoanApplicationDraft[]
-  userApplicationDrafts    UserApplicationDraft[]
+  employees                  Employee[]
+  loginActivities            LoginActivity[]
+  terminationRequest         TerminationRequest[]
+  actionLogs                 ActionLog[]
+  users                      User[]
+  loans                      Loan[]
+  approvedLoans              Loan[]                 @relation("LoanApprovedByAdmin")
+  seizedHistoriesAssigned    SeizedHistory[]        @relation("AssignedByAdmin")
+  seizedHistoriesReleased    SeizedHistory[]        @relation("ReleasedByAdmin")
+  requestedUpdates           UserUpdateRequest[]    @relation("RequestedByAdmin")
+  verifiedPayments           Payment[]              @relation("VerifiedByAdmin")
+  payments                   Payment[]
+  seizedContactAttempts      SeizedContactAttempt[]
+  approvedForecloseRequests  ForecloseRequest[]     @relation("ForecloseApprovedByAdmin")
+  requestedForecloseRequests ForecloseRequest[]     @relation("ForecloseRequestedByAdmin")
+  loanApplicationDrafts      LoanApplicationDraft[]
+  userApplicationDrafts      UserApplicationDraft[]
+  appConfigsUpdated          AppConfig[]            @relation("AppConfigUpdatedByAdmin")
+  grievancesCreated          GrievanceTicket[]      @relation("GrievanceCreatedByAdmin")
+  grievancesAssigned         GrievanceTicket[]      @relation("GrievanceAssignedByAdmin")
+  grievancesResolved         GrievanceTicket[]      @relation("GrievanceResolvedByAdmin")
+  grievanceComments          GrievanceComment[]     @relation("GrievanceCommentCreatedByAdmin")
+  collectionCasesCreated     CollectionCase[]       @relation("CollectionCaseCreatedByAdmin")
+  collectionCasesAssigned    CollectionCase[]       @relation("CollectionCaseAssignedByAdmin")
+  collectionCasesClosed      CollectionCase[]       @relation("CollectionCaseClosedByAdmin")
+  collectionActionsCreated   CollectionAction[]     @relation("CollectionActionCreatedByAdmin")
+
+  // Phase 2: Approval Matrix
+  approvalMatrices           ApprovalMatrix[]
+  approvalRequestsCreated    ApprovalRequest[]      @relation("ApprovalRequestedByAdmin")
+  approvalVotes              ApprovalVote[]         @relation("ApprovalVoteByAdmin")
+  overrideLogs               OverrideLog[]          @relation("OverrideByAdmin")
+  overrideSupervised         OverrideLog[]          @relation("OverrideSupervisor")
+
+  // Phase 3: KYC
+  kycVerifications           KYCRecord[]            @relation("KYCVerifiedByAdmin")
+  kycDocVerifications        KYCDocument[]          @relation("KYCDocVerifiedByAdmin")
+  kycFlagResolutions         KYCRiskFlag[]          @relation("KYCFlagResolvedByAdmin")
+  blacklistAdded             BlacklistEntry[]       @relation("BlacklistAddedBy")
+  blacklistRemoved           BlacklistEntry[]       @relation("BlacklistRemovedBy")
+
+  // Phase 4: Consent
+  consentTemplatesCreated    ConsentTemplate[]
+
+  // Phase 5: Restructuring
+  restructuringRequestsCreated  RestructuringRequest[] @relation("RestructureRequestedByAdmin")
+  restructuringRequestsApproved RestructuringRequest[] @relation("RestructureApprovedByAdmin")
+  waiverRequestsCreated         WaiverRequest[]        @relation("WaiverRequestedByAdmin")
+  waiverRequestsApproved        WaiverRequest[]        @relation("WaiverApprovedByAdmin")
+
+  // Phase 6: Reconciliation
+  dayEndSubmissions          DayEndClosing[]        @relation("DayEndSubmittedByAdmin")
+  dayEndApprovals            DayEndClosing[]        @relation("DayEndApprovedByAdmin")
+  bankRecons                 BankReconciliation[]   @relation("BankReconByAdmin")
+  suspenseResolutions        SuspenseAccount[]      @relation("SuspenseResolvedByAdmin")
+  reversalRequestsCreated    ReversalRequest[]      @relation("ReversalRequestedByAdmin")
+  reversalRequestsApproved   ReversalRequest[]      @relation("ReversalApprovedByAdmin")
+
+  // Phase 7: Collections enhancements
+  promisesToPayCreated       PromiseToPay[]         @relation("PTPCreatedByAdmin")
+  legalActionsCreated        LegalAction[]          @relation("LegalActionCreatedByAdmin")
+
+  // Phase 8: Collateral
+  collateralsCreated         CollateralRecord[]     @relation("CollateralCreatedByAdmin")
+  valuationsCreated          CollateralValuation[]  @relation("ValuationCreatedByAdmin")
+
+  // Phase 9: Partners
+  channelPartnersCreated     ChannelPartner[]
+  partnerPayoutsProcessed    PartnerPayout[]        @relation("PayoutProcessedByAdmin")
+
+  // Phase 10: Reports
+  savedReportsCreated        SavedReport[]          @relation("ReportCreatedByAdmin")
+  reportRunsTriggered        ReportRun[]            @relation("ReportRunByAdmin")
+
+  // Phase 11: Automation
+  automationRulesCreated     AutomationRule[]
+  tasksAssigned              TaskQueue[]            @relation("TaskAssignedToAdmin")
+  tasksCreated               TaskQueue[]            @relation("TaskCreatedByAdmin")
+
+  // Phase 12: Compliance
+  legalHoldsHeld             LegalHold[]            @relation("LegalHoldHeldBy")
+  legalHoldsReleased         LegalHold[]            @relation("LegalHoldReleasedBy")
+  piiAccessLogs              PIIAccessLog[]         @relation("PIIAccessByAdmin")
 }
 
 model Role {
@@ -97,13 +165,13 @@ model Role {
 }
 
 model Employee {
-  id       String @id @default(uuid())
-  name     String
-  email    String @unique
-  password String
+  id         String  @id @default(uuid())
+  name       String
+  email      String  @unique
+  password   String
   photoUrlId String?
 
-  photoUrl      File? @relation("Photo", fields: [photoUrlId], references: [id])
+  photoUrl File? @relation("Photo", fields: [photoUrlId], references: [id])
 
   roleId String?
   role   Role?   @relation(fields: [roleId], references: [id])
@@ -119,30 +187,86 @@ model Employee {
   state   State?  @relation(fields: [stateId], references: [id])
   city    City?   @relation(fields: [cityId], references: [id])
 
-  createdAt                DateTime              @default(now())
-  updatedAt                DateTime              @updatedAt
-  isDeleted                Boolean               @default(false)
-  isBlocked                Boolean               @default(false)
-  branchId                 String?
-  branch                   Branch?               @relation(fields: [branchId], references: [id])
-  users                    User[]
-  loginActivities          LoginActivity[]
-  actionLogs               ActionLog[]
-  terminationRequest       TerminationRequest[]
-  loans                    Loan[]
-  approvedLoans            Loan[]               @relation("LoanApprovedByEmployee")
-  verifiedPayments         Payment[]             @relation("VerifiedByEmployee")
-  requestedUpdates         UserUpdateRequest[]   @relation("RequestedByEmployee")
-  seizedHistoriesAssigned  SeizedHistory[]      @relation("AssignedByEmployee")
-  seizedHistoriesAssignedTo SeizedHistory[]     @relation("SeizedAssignedTo")
-  seizedHistoriesSeizedBy  SeizedHistory[]      @relation("SeizedBy")
-  seizedHistoriesReleased  SeizedHistory[]      @relation("ReleasedByEmployee")
-  payments                 Payment[]
-  seizedContactAttempts    SeizedContactAttempt[]
-  approvedForecloseRequests ForecloseRequest[] @relation("ForecloseApprovedByEmployee")
-  requestedForecloseRequests ForecloseRequest[] @relation("ForecloseRequestedByEmployee")
-  loanApplicationDrafts    LoanApplicationDraft[]
-  userApplicationDrafts    UserApplicationDraft[]
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+  isDeleted                  Boolean                @default(false)
+  isBlocked                  Boolean                @default(false)
+  branchId                   String?
+  branch                     Branch?                @relation(fields: [branchId], references: [id])
+  users                      User[]
+  loginActivities            LoginActivity[]
+  actionLogs                 ActionLog[]
+  terminationRequest         TerminationRequest[]
+  loans                      Loan[]
+  approvedLoans              Loan[]                 @relation("LoanApprovedByEmployee")
+  verifiedPayments           Payment[]              @relation("VerifiedByEmployee")
+  requestedUpdates           UserUpdateRequest[]    @relation("RequestedByEmployee")
+  seizedHistoriesAssigned    SeizedHistory[]        @relation("AssignedByEmployee")
+  seizedHistoriesAssignedTo  SeizedHistory[]        @relation("SeizedAssignedTo")
+  seizedHistoriesSeizedBy    SeizedHistory[]        @relation("SeizedBy")
+  seizedHistoriesReleased    SeizedHistory[]        @relation("ReleasedByEmployee")
+  payments                   Payment[]
+  seizedContactAttempts      SeizedContactAttempt[]
+  approvedForecloseRequests  ForecloseRequest[]     @relation("ForecloseApprovedByEmployee")
+  requestedForecloseRequests ForecloseRequest[]     @relation("ForecloseRequestedByEmployee")
+  loanApplicationDrafts      LoanApplicationDraft[]
+  userApplicationDrafts      UserApplicationDraft[]
+  appConfigsUpdated          AppConfig[]            @relation("AppConfigUpdatedByEmployee")
+  grievancesCreated          GrievanceTicket[]      @relation("GrievanceCreatedByEmployee")
+  grievancesAssignedBy       GrievanceTicket[]      @relation("GrievanceAssignedByEmployee")
+  grievancesAssignedTo       GrievanceTicket[]      @relation("GrievanceAssignedToEmployee")
+  grievancesResolved         GrievanceTicket[]      @relation("GrievanceResolvedByEmployee")
+  grievanceComments          GrievanceComment[]     @relation("GrievanceCommentCreatedByEmployee")
+  collectionCasesCreated     CollectionCase[]       @relation("CollectionCaseCreatedByEmployee")
+  collectionCasesAssignedBy  CollectionCase[]       @relation("CollectionCaseAssignedByEmployee")
+  collectionCasesAssignedTo  CollectionCase[]       @relation("CollectionCaseAssignedToEmployee")
+  collectionCasesClosed      CollectionCase[]       @relation("CollectionCaseClosedByEmployee")
+  collectionActionsCreated   CollectionAction[]     @relation("CollectionActionCreatedByEmployee")
+
+  // Phase 2: Approval Matrix
+  approvalRequestsCreated    ApprovalRequest[]      @relation("ApprovalRequestedByEmployee")
+  approvalVotes              ApprovalVote[]         @relation("ApprovalVoteByEmployee")
+  overrideLogs               OverrideLog[]          @relation("OverrideByEmployee")
+
+  // Phase 3: KYC
+  kycVerifications           KYCRecord[]            @relation("KYCVerifiedByEmployee")
+  kycDocVerifications        KYCDocument[]          @relation("KYCDocVerifiedByEmployee")
+  kycFlagResolutions         KYCRiskFlag[]          @relation("KYCFlagResolvedByEmployee")
+
+  // Phase 5: Restructuring
+  restructuringRequestsCreated  RestructuringRequest[] @relation("RestructureRequestedByEmployee")
+  restructuringRequestsApproved RestructuringRequest[] @relation("RestructureApprovedByEmployee")
+  waiverRequestsCreated         WaiverRequest[]        @relation("WaiverRequestedByEmployee")
+  waiverRequestsApproved        WaiverRequest[]        @relation("WaiverApprovedByEmployee")
+
+  // Phase 6: Reconciliation
+  dayEndSubmissions          DayEndClosing[]        @relation("DayEndSubmittedByEmployee")
+  bankRecons                 BankReconciliation[]   @relation("BankReconByEmployee")
+  suspenseResolutions        SuspenseAccount[]      @relation("SuspenseResolvedByEmployee")
+  reversalRequestsCreated    ReversalRequest[]      @relation("ReversalRequestedByEmployee")
+  reversalRequestsApproved   ReversalRequest[]      @relation("ReversalApprovedByEmployee")
+
+  // Phase 7: Collections enhancements
+  promisesToPayCreated       PromiseToPay[]         @relation("PTPCreatedByEmployee")
+  legalActionsCreated        LegalAction[]          @relation("LegalActionCreatedByEmployee")
+
+  // Phase 8: Collateral
+  collateralsCreated         CollateralRecord[]     @relation("CollateralCreatedByEmployee")
+  valuationsCreated          CollateralValuation[]  @relation("ValuationCreatedByEmployee")
+
+  // Phase 10: Reports
+  savedReportsCreated        SavedReport[]          @relation("ReportCreatedByEmployee")
+  reportRunsTriggered        ReportRun[]            @relation("ReportRunByEmployee")
+
+  // Phase 11: Tasks
+  tasksAssigned              TaskQueue[]            @relation("TaskAssignedToEmployee")
+  tasksCreated               TaskQueue[]            @relation("TaskCreatedByEmployee")
+
+  // Phase 12: Compliance
+  piiAccessLogs              PIIAccessLog[]         @relation("PIIAccessByEmployee")
+
+  // New modules
+  underwriterTasks           UnderwriterTask[]      @relation("UnderwriterAssigned")
 }
 
 model LoginActivity {
@@ -173,6 +297,10 @@ model ActionLog {
   targetId  String?
   table     String?
   metadata  Json?
+  oldData   Json?    // field-level snapshot before change
+  newData   Json?    // field-level snapshot after change
+  ipAddress String?
+  userAgent String?
   createdAt DateTime @default(now())
 
   admin         Admin?         @relation(fields: [adminId], references: [id])
@@ -184,25 +312,28 @@ model ActionLog {
 // 👥 Users
 // ==========================
 model User {
-  id                 String           @id @default(uuid())
-  firstName          String           @default("")
-  middleName         String           @default("")
-  lastName           String           @default("")
-  relationFirstName  String           @default("")
-  relationMiddleName String           @default("")
-  relationLastName   String           @default("")
-  dateOfBirth        DateTime         @default(now())
-  maritalStatus      String?          @default("")
-  email              String?          @unique
-  phone              String?          @unique
-  officeNumber       String?          // Office contact number
+  id                 String   @id @default(uuid())
+  firstName          String   @default("")
+  middleName         String   @default("")
+  lastName           String   @default("")
+  relationFirstName  String   @default("")
+  relationMiddleName String   @default("")
+  relationLastName   String   @default("")
+  dateOfBirth        DateTime @default(now())
+  maritalStatus      String?  @default("")
+  email              String?  @unique
+  phone              String?  @unique
+  officeNumber       String? // Office contact number
   createdBy          String?
   adminId            String?
   employeeId         String?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  isBlocked          Boolean          @default(false)
-  isDefaulter        Boolean          @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  isBlocked          Boolean  @default(false)
+  isDeleted          Boolean  @default(false)
+  deletedAt          DateTime?
+  deletedBy          String?
+  isDefaulter        Boolean  @default(false)
   qualification      String?
   profession         String?
   creditScore        Int?
@@ -212,29 +343,34 @@ model User {
   genderId           String?
   relationTypeId     String?
 
-  region             Region?          @relation(fields: [regionId], references: [id])
-  relationType       RelationType?    @relation(fields: [relationTypeId], references: [id])
-  gender             Gender?          @relation(fields: [genderId], references: [id])
-  photo              File?            @relation("Photo", fields: [photoId], references: [id])
-  admin              Admin?           @relation(fields: [adminId], references: [id])
-  employee           Employee?        @relation(fields: [employeeId], references: [id])
+  region       Region?       @relation(fields: [regionId], references: [id])
+  relationType RelationType? @relation(fields: [relationTypeId], references: [id])
+  gender       Gender?       @relation(fields: [genderId], references: [id])
+  photo        File?         @relation("Photo", fields: [photoId], references: [id])
+  admin        Admin?        @relation(fields: [adminId], references: [id])
+  employee     Employee?     @relation(fields: [employeeId], references: [id])
 
   guarantorReputationScore Int? // Calculated based on the loans they guaranteed
   totalGuaranteedLoans     Int? // How many loans user has guaranteed
   successfulGuarantees     Int? // Loans where borrower paid on time
   failedGuarantees         Int? // Loans where borrower defaulted
-  guarantorLoans           LoanGuarantor[]     @relation("UserAsGuarantor")
+  guarantorLoans           LoanGuarantor[]        @relation("UserAsGuarantor")
   loans                    Loan[]
   loanApplicationDrafts    LoanApplicationDraft[]
   photoIds                 PhotoID[]
-  proofOfIncomeImages      File[]              @relation("ProofOfIncomeImages")
+  proofOfIncomeImages      File[]                 @relation("ProofOfIncomeImages")
   updateRequests           UserUpdateRequest[]
   addresses                UserAddress[]
-  guarantors               UserGuarantor[]     // Guarantors for this user
+  guarantors               UserGuarantor[] // Guarantors for this user
+  grievances               GrievanceTicket[]
+  kycRecord                KYCRecord?
+  consentRecords           ConsentRecord[]
+  nachMandates             NachMandate[]
+  coBorrowerLoans          LoanCoBorrower[]  @relation("CoBorrowerUser")
 }
 
 model UserAddress {
-  id                String          @id @default(uuid())
+  id                String   @id @default(uuid())
   userId            String
   addressCategoryId String
   address           String
@@ -242,8 +378,8 @@ model UserAddress {
   stateId           String
   cityId            String
   pincode           Int
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   addressCategory AddressCategory @relation(fields: [addressCategoryId], references: [id])
@@ -254,26 +390,26 @@ model UserAddress {
 // Guarantor model for users - stores guarantor information separately
 // Note: Photo IDs are NOT stored in PhotoID table to avoid conflicts if guarantor becomes a user
 model UserGuarantor {
-  id              String   @id @default(uuid())
-  userId          String
-  name            String   // Full name of guarantor
-  fatherName      String   // Father's name
-  mobileNo        String   // Mobile number
-  address         String   // Full address
+  id         String @id @default(uuid())
+  userId     String
+  name       String // Full name of guarantor
+  fatherName String // Father's name
+  mobileNo   String // Mobile number
+  address    String // Full address
 
   // Photo ID details stored directly (not in PhotoID table to avoid conflicts)
-  photoIdType1    String?  // e.g., "AADHAAR", "PAN", etc.
-  photoIdNumber1  String?  // ID number
-  photoIdImages1  Json?    // Array of image URLs/objects
+  photoIdType1   String? // e.g., "AADHAAR", "PAN", etc.
+  photoIdNumber1 String? // ID number
+  photoIdImages1 Json? // Array of image URLs/objects
 
-  photoIdType2    String?  // Second photo ID type
-  photoIdNumber2  String?  // Second ID number
-  photoIdImages2  Json?    // Array of image URLs/objects
+  photoIdType2   String? // Second photo ID type
+  photoIdNumber2 String? // Second ID number
+  photoIdImages2 Json? // Array of image URLs/objects
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserUpdateRequest {
@@ -336,10 +472,13 @@ model Branch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  region    Region     @relation(fields: [regionId], references: [id])
-  loans     Loan[]
-  employees Employee[]
-  showrooms Showroom[]
+  region          Region            @relation(fields: [regionId], references: [id])
+  loans           Loan[]
+  employees       Employee[]
+  showrooms       Showroom[]
+  grievances      GrievanceTicket[]
+  collectionCases CollectionCase[]
+  dayEndClosings  DayEndClosing[]
 
   @@unique([name, regionId]) // Prevent duplicate branch names in the same region
 }
@@ -359,8 +498,8 @@ model Showroom {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branch    Branch   @relation(fields: [branchId], references: [id])
-  loans     Loan[]
+  branch Branch @relation(fields: [branchId], references: [id])
+  loans  Loan[]
 
   @@unique([name, branchId]) // Prevent duplicate showroom names in the same branch
 }
@@ -398,7 +537,8 @@ model LoanType {
   description String?
   rules       Json?
 
-  loans Loan[]
+  loans        Loan[]
+  ruleVersions LoanTypeRuleVersion[]
 }
 
 model LoanGuarantor {
@@ -437,6 +577,59 @@ enum FileStatus {
   FORECLOSED // Foreclosure completed
 }
 
+enum GrievanceStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  REJECTED
+}
+
+enum GrievancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum GrievanceSource {
+  BRANCH
+  CALL_CENTER
+  EMAIL
+  WEB
+  APP
+  OTHER
+}
+
+enum CollectionCaseStatus {
+  OPEN
+  IN_PROGRESS
+  PROMISE_TO_PAY
+  BROKEN_PROMISE
+  RESOLVED
+  CLOSED
+}
+
+enum CollectionPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum CollectionActionType {
+  CALL
+  VISIT
+  NOTICE
+  WHATSAPP
+  SMS
+  EMAIL
+  PROMISE_TO_PAY
+  SETTLEMENT_DISCUSSION
+  FOLLOW_UP
+  OTHER
+}
+
 model Loan {
   id            String    @id @default(uuid())
   fileNo        String    @unique
@@ -470,6 +663,9 @@ model Loan {
   paymentFrequency     String?    @default("MONTHLY")
   fileStatus           FileStatus @default(INITIATED)
   isClosed             Boolean    @default(false)
+  isDeleted            Boolean    @default(false)
+  deletedAt            DateTime?
+  deletedBy            String?
   isDefaulted          Boolean    @default(false)
   totalDelayDays       Int        @default(0)
   defaultReason        String?
@@ -479,9 +675,9 @@ model Loan {
   insuranceAlert       Boolean    @default(false)
   insuranceNumber      String?
   insuranceCompany     String?
-  loanInvoiceDoc       File[]              @relation("loanInvoiceDoc")
-  insuranceDoc         File[]              @relation("insuranceDoc")
-  registrationDoc      File[]              @relation("registrationDoc")
+  loanInvoiceDoc       File[]     @relation("loanInvoiceDoc")
+  insuranceDoc         File[]     @relation("insuranceDoc")
+  registrationDoc      File[]     @relation("registrationDoc")
   comment              String?
   isForeclosed         Boolean    @default(false)
   foreclosedAt         DateTime?
@@ -496,33 +692,219 @@ model Loan {
   branchId             String?
   showroomId           String?
 
-  branch         Branch?          @relation(fields: [branchId], references: [id])
-  showroom       Showroom?        @relation(fields: [showroomId], references: [id])
-  admin          Admin?           @relation(fields: [adminId], references: [id])
-  employee       Employee?        @relation(fields: [employeeId], references: [id])
-  approvedByAdmin    Admin?       @relation("LoanApprovedByAdmin", fields: [approvedByAdminId], references: [id])
-  approvedByEmployee Employee?    @relation("LoanApprovedByEmployee", fields: [approvedByEmployeeId], references: [id])
-  user           User             @relation(fields: [userId], references: [id])
-  emi            EMI[]
-  payments       Payment[]
-  paymentOrders  PaymentOrder[]
-  seizedHistories SeizedHistory[]
-  guarantors     LoanGuarantor[]
-  twoWheelerLoan TwoWheelerLoan?
-  agriLoan       AgricultureLoan?
-  msmeLoan       MSMELoan?
-  forecloseRequests ForecloseRequest[]
+  branch                 Branch?                 @relation(fields: [branchId], references: [id])
+  showroom               Showroom?               @relation(fields: [showroomId], references: [id])
+  admin                  Admin?                  @relation(fields: [adminId], references: [id])
+  employee               Employee?               @relation(fields: [employeeId], references: [id])
+  approvedByAdmin        Admin?                  @relation("LoanApprovedByAdmin", fields: [approvedByAdminId], references: [id])
+  approvedByEmployee     Employee?               @relation("LoanApprovedByEmployee", fields: [approvedByEmployeeId], references: [id])
+  user                   User                    @relation(fields: [userId], references: [id])
+  emi                    EMI[]
+  payments               Payment[]
+  paymentOrders          PaymentOrder[]
+  seizedHistories        SeizedHistory[]
+  guarantors             LoanGuarantor[]
+  twoWheelerLoan         TwoWheelerLoan?
+  agriLoan               AgricultureLoan?
+  msmeLoan               MSMELoan?
+  forecloseRequests      ForecloseRequest[]
   pendingUPITransactions PendingUPITransaction[]
-  editDrafts     LoanApplicationDraft[]
+  editDrafts             LoanApplicationDraft[]
+  grievances             GrievanceTicket[]
+  publicAccessSessions   PublicAccessSession[]
+  collectionCases        CollectionCase[]
+  kfsDeliveries          KFSDelivery[]
+  restructuringRequests  RestructuringRequest[]
+  waiverRequests         WaiverRequest[]
+  collateralRecords      CollateralRecord[]
+  promisesToPay          PromiseToPay[]
+  legalActions           LegalAction[]
+  partnerPayouts         PartnerPayout[]
+  nachMandates           NachMandate[]
+  bounceEvents           BounceEvent[]
+  coBorrowers            LoanCoBorrower[]
+  disbursalChecklist     DisbursalChecklist?
+  disbursalHolds         DisbursalHold[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([userId])                      // hot: list loans per user
-  @@index([fileStatus])                  // hot: filter by status (pending approval, overdue, etc.)
-  @@index([branchId, fileStatus])        // hot: branch-scoped dashboard queries
-  @@index([employeeId, fileStatus])      // hot: employee-scoped dashboard queries
-  @@index([disbursedDate])               // hot: disbursement trend queries
+  @@index([userId]) // hot: list loans per user
+  @@index([fileStatus]) // hot: filter by status (pending approval, overdue, etc.)
+  @@index([branchId, fileStatus]) // hot: branch-scoped dashboard queries
+  @@index([employeeId, fileStatus]) // hot: employee-scoped dashboard queries
+  @@index([disbursedDate]) // hot: disbursement trend queries
+}
+
+model AppConfig {
+  id                  String   @id @default(uuid())
+  key                 String   @unique
+  category            String
+  label               String
+  description         String?
+  value               Json
+  isPublic            Boolean  @default(false)
+  updatedByAdminId    String?
+  updatedByEmployeeId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  updatedByAdmin    Admin?    @relation("AppConfigUpdatedByAdmin", fields: [updatedByAdminId], references: [id])
+  updatedByEmployee Employee? @relation("AppConfigUpdatedByEmployee", fields: [updatedByEmployeeId], references: [id])
+}
+
+model PublicAccessSession {
+  id                 String    @id @default(uuid())
+  loanId             String
+  accessTokenHash    String    @unique
+  verificationMethod String
+  status             String    @default("ACTIVE")
+  context            Json?
+  expiresAt          DateTime
+  lastUsedAt         DateTime?
+  consumedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId, status])
+  @@index([expiresAt])
+}
+
+model GrievanceTicket {
+  id                   String            @id @default(uuid())
+  ticketNumber         String            @unique
+  category             String
+  subject              String
+  description          String
+  status               GrievanceStatus   @default(OPEN)
+  priority             GrievancePriority @default(MEDIUM)
+  source               GrievanceSource   @default(BRANCH)
+  metadata             Json?
+  dueAt                DateTime?
+  firstResponseAt      DateTime?
+  resolvedAt           DateTime?
+  resolutionSummary    String?
+  resolutionMetadata   Json?
+  userId               String?
+  loanId               String?
+  branchId             String?
+  assignedToEmployeeId String?
+  createdByAdminId     String?
+  createdByEmployeeId  String?
+  assignedByAdminId    String?
+  assignedByEmployeeId String?
+  resolvedByAdminId    String?
+  resolvedByEmployeeId String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  user               User?              @relation(fields: [userId], references: [id])
+  loan               Loan?              @relation(fields: [loanId], references: [id])
+  branch             Branch?            @relation(fields: [branchId], references: [id])
+  assignedToEmployee Employee?          @relation("GrievanceAssignedToEmployee", fields: [assignedToEmployeeId], references: [id])
+  createdByAdmin     Admin?             @relation("GrievanceCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  createdByEmployee  Employee?          @relation("GrievanceCreatedByEmployee", fields: [createdByEmployeeId], references: [id])
+  assignedByAdmin    Admin?             @relation("GrievanceAssignedByAdmin", fields: [assignedByAdminId], references: [id])
+  assignedByEmployee Employee?          @relation("GrievanceAssignedByEmployee", fields: [assignedByEmployeeId], references: [id])
+  resolvedByAdmin    Admin?             @relation("GrievanceResolvedByAdmin", fields: [resolvedByAdminId], references: [id])
+  resolvedByEmployee Employee?          @relation("GrievanceResolvedByEmployee", fields: [resolvedByEmployeeId], references: [id])
+  comments           GrievanceComment[]
+
+  @@index([status, priority])
+  @@index([assignedToEmployeeId, status])
+  @@index([loanId])
+  @@index([userId])
+}
+
+model GrievanceComment {
+  id                  String   @id @default(uuid())
+  ticketId            String
+  message             String
+  isInternal          Boolean  @default(false)
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  ticket            GrievanceTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  createdByAdmin    Admin?          @relation("GrievanceCommentCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  createdByEmployee Employee?       @relation("GrievanceCommentCreatedByEmployee", fields: [createdByEmployeeId], references: [id])
+
+  @@index([ticketId, createdAt])
+}
+
+model CollectionCase {
+  id                   String               @id @default(uuid())
+  loanId               String
+  branchId             String?
+  status               CollectionCaseStatus @default(OPEN)
+  priority             CollectionPriority   @default(MEDIUM)
+  bucket               String
+  dpd                  Int                  @default(0)
+  overdueEmiCount      Int                  @default(0)
+  overdueAmount        Decimal              @default(0)
+  overdueFineAmount    Decimal              @default(0)
+  totalDue             Decimal              @default(0)
+  oldestDueDate        DateTime?
+  nextActionAt         DateTime?
+  lastContactAt        DateTime?
+  latestPromiseDate    DateTime?
+  latestPromiseAmount  Decimal?
+  resolutionType       String?
+  notes                String?
+  metadata             Json?
+  assignedToEmployeeId String?
+  createdByAdminId     String?
+  createdByEmployeeId  String?
+  assignedByAdminId    String?
+  assignedByEmployeeId String?
+  closedByAdminId      String?
+  closedByEmployeeId   String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  loan               Loan               @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  branch             Branch?            @relation(fields: [branchId], references: [id])
+  assignedToEmployee Employee?          @relation("CollectionCaseAssignedToEmployee", fields: [assignedToEmployeeId], references: [id])
+  createdByAdmin     Admin?             @relation("CollectionCaseCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  createdByEmployee  Employee?          @relation("CollectionCaseCreatedByEmployee", fields: [createdByEmployeeId], references: [id])
+  assignedByAdmin    Admin?             @relation("CollectionCaseAssignedByAdmin", fields: [assignedByAdminId], references: [id])
+  assignedByEmployee Employee?          @relation("CollectionCaseAssignedByEmployee", fields: [assignedByEmployeeId], references: [id])
+  closedByAdmin      Admin?             @relation("CollectionCaseClosedByAdmin", fields: [closedByAdminId], references: [id])
+  closedByEmployee   Employee?          @relation("CollectionCaseClosedByEmployee", fields: [closedByEmployeeId], references: [id])
+  actions            CollectionAction[]
+  promisesToPay      PromiseToPay[]
+  legalActions       LegalAction[]
+
+  @@index([status, priority])
+  @@index([assignedToEmployeeId, status])
+  @@index([loanId, status])
+  @@index([bucket])
+}
+
+model CollectionAction {
+  id                  String               @id @default(uuid())
+  caseId              String
+  actionType          CollectionActionType
+  outcome             String?
+  notes               String?
+  contactAt           DateTime             @default(now())
+  nextActionAt        DateTime?
+  promiseDate         DateTime?
+  promiseAmount       Decimal?
+  metadata            Json?
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  collectionCase    CollectionCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  createdByAdmin    Admin?         @relation("CollectionActionCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  createdByEmployee Employee?      @relation("CollectionActionCreatedByEmployee", fields: [createdByEmployeeId], references: [id])
+
+  @@index([caseId, contactAt])
 }
 
 model EMI {
@@ -557,9 +939,9 @@ model EMI {
 
   payments Payment[] // one-to-many: all payments linked to this EMI
 
-  @@index([loanId, status])        // hot: all UNPAID/PARTIAL EMIs per loan
-  @@index([loanId, paymentFor])    // hot: fine-refresh ORDER BY paymentFor queries
-  @@index([status, paymentFor])    // hot: due-this-week / upcoming EMI dashboard queries
+  @@index([loanId, status]) // hot: all UNPAID/PARTIAL EMIs per loan
+  @@index([loanId, paymentFor]) // hot: fine-refresh ORDER BY paymentFor queries
+  @@index([status, paymentFor]) // hot: due-this-week / upcoming EMI dashboard queries
 }
 
 model Payment {
@@ -577,8 +959,8 @@ model Payment {
   verifiedByAdminId    String?
   verifiedByEmployeeId String?
   fineDiscount         Decimal?     @default(0) // Discount applied on fine/penal charges
-  loanPendingBefore    Decimal?     // Loan pending amount before this payment
-  loanPendingAfter     Decimal?     // Loan pending amount after this payment
+  loanPendingBefore    Decimal? // Loan pending amount before this payment
+  loanPendingAfter     Decimal? // Loan pending amount after this payment
   metadata             Json?
   adminId              String?
   employeeId           String?
@@ -590,55 +972,56 @@ model Payment {
   admin                Admin?       @relation(fields: [adminId], references: [id])
   employee             Employee?    @relation(fields: [employeeId], references: [id])
   loan                 Loan         @relation(fields: [loanId], references: [id])
+  reversalRequests     ReversalRequest[]
 
-  @@index([loanId, status])        // hot: unverified/pending payments per loan
-  @@index([paymentDate, status])   // hot: dashboard monthly collection aggregate
-  @@index([emiId])                 // hot: payments linked to a specific EMI
+  @@index([loanId, status]) // hot: unverified/pending payments per loan
+  @@index([paymentDate, status]) // hot: dashboard monthly collection aggregate
+  @@index([emiId]) // hot: payments linked to a specific EMI
 }
 
 model ForecloseRequest {
-  id                   String    @id @default(uuid())
-  loanId               String
-  requestedAmount      Decimal
-  calculatedAmount     Decimal
-  paymentMode          PaymentMode?
-  transactionId        String?
-  paymentDate          DateTime
-  status               String    @default("PENDING") // PENDING, APPROVED, REJECTED
-  approvalComment      String?
-  approvedAt           DateTime?
-  approvedByAdminId    String?
-  approvedByEmployeeId String?
-  requestedByAdminId   String?
+  id                    String       @id @default(uuid())
+  loanId                String
+  requestedAmount       Decimal
+  calculatedAmount      Decimal
+  paymentMode           PaymentMode?
+  transactionId         String?
+  paymentDate           DateTime
+  status                String       @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvalComment       String?
+  approvedAt            DateTime?
+  approvedByAdminId     String?
+  approvedByEmployeeId  String?
+  requestedByAdminId    String?
   requestedByEmployeeId String?
-  metadata             Json?      // Store foreclose calculation details
+  metadata              Json? // Store foreclose calculation details
 
-  loan                 Loan      @relation(fields: [loanId], references: [id])
-  approvedByAdmin      Admin?    @relation("ForecloseApprovedByAdmin", fields: [approvedByAdminId], references: [id])
-  approvedByEmployee   Employee? @relation("ForecloseApprovedByEmployee", fields: [approvedByEmployeeId], references: [id])
-  requestedByAdmin     Admin?    @relation("ForecloseRequestedByAdmin", fields: [requestedByAdminId], references: [id])
-  requestedByEmployee  Employee? @relation("ForecloseRequestedByEmployee", fields: [requestedByEmployeeId], references: [id])
+  loan                Loan      @relation(fields: [loanId], references: [id])
+  approvedByAdmin     Admin?    @relation("ForecloseApprovedByAdmin", fields: [approvedByAdminId], references: [id])
+  approvedByEmployee  Employee? @relation("ForecloseApprovedByEmployee", fields: [approvedByEmployeeId], references: [id])
+  requestedByAdmin    Admin?    @relation("ForecloseRequestedByAdmin", fields: [requestedByAdminId], references: [id])
+  requestedByEmployee Employee? @relation("ForecloseRequestedByEmployee", fields: [requestedByEmployeeId], references: [id])
 
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model PaymentOrder {
-  id                String    @id @default(uuid())
-  orderId           String    @unique
-  loanId            String
-  emiId             String?
-  amount            Decimal
-  paymentType       String    @default("BULK") // BULK, EMI
-  gatewayOrderId    String?
-  gatewayPaymentId  String?
-  gatewaySignature  String?
-  transactionId     String?
-  status            String    @default("PENDING") // PENDING, COMPLETED, FAILED
-  metadata          Json?
-  createdAt         DateTime  @default(now())
-  completedAt       DateTime?
-  loan              Loan      @relation(fields: [loanId], references: [id])
+  id               String    @id @default(uuid())
+  orderId          String    @unique
+  loanId           String
+  emiId            String?
+  amount           Decimal
+  paymentType      String    @default("BULK") // BULK, EMI
+  gatewayOrderId   String?
+  gatewayPaymentId String?
+  gatewaySignature String?
+  transactionId    String?
+  status           String    @default("PENDING") // PENDING, COMPLETED, FAILED
+  metadata         Json?
+  createdAt        DateTime  @default(now())
+  completedAt      DateTime?
+  loan             Loan      @relation(fields: [loanId], references: [id])
 }
 
 // ==========================
@@ -647,57 +1030,57 @@ model PaymentOrder {
 
 // Pending UPI transactions awaiting callback
 model PendingUPITransaction {
-  id                    String    @id @default(uuid())
-  loanId                String
-  emiId                 String?
-  merchantTranId        String    @unique
-  refId                 String?   // ICICI generated refId (EZY/EZP prefix)
-  billNumber            String
-  amount                Decimal
-  paymentType           String    @default("bulk") // bulk or emi
-  status                String    @default("PENDING") // PENDING, SUCCESS, FAILURE
-  qrString              String?   // UPI QR string
-  intentURL             String?   // UPI Intent URL for mobile apps
+  id             String  @id @default(uuid())
+  loanId         String
+  emiId          String?
+  merchantTranId String  @unique
+  refId          String? // ICICI generated refId (EZY/EZP prefix)
+  billNumber     String
+  amount         Decimal
+  paymentType    String  @default("bulk") // bulk or emi
+  status         String  @default("PENDING") // PENDING, SUCCESS, FAILURE
+  qrString       String? // UPI QR string
+  intentURL      String? // UPI Intent URL for mobile apps
 
   // Pre-configured payment distribution (optional)
   // When specified, payment will be distributed according to these values
-  emiAmount             Decimal?  // Amount to apply towards EMI
-  fineAmount            Decimal?  // Amount to apply towards fine/penal charges
-  fineDiscount          Decimal?  // Discount to apply on fine
+  emiAmount    Decimal? // Amount to apply towards EMI
+  fineAmount   Decimal? // Amount to apply towards fine/penal charges
+  fineDiscount Decimal? // Discount to apply on fine
 
   // Callback data (populated when callback received)
-  bankRRN               String?
-  payerName             String?
-  payerMobile           String?
-  payerVA               String?
-  txnInitDate           DateTime?
-  txnCompletionDate     DateTime?
-  callbackReceivedAt    DateTime?
+  bankRRN            String?
+  payerName          String?
+  payerMobile        String?
+  payerVA            String?
+  txnInitDate        DateTime?
+  txnCompletionDate  DateTime?
+  callbackReceivedAt DateTime?
 
   // Audit fields
-  createdByAdminId      String?
-  createdByEmployeeId   String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  loan                  Loan      @relation(fields: [loanId], references: [id])
+  loan Loan @relation(fields: [loanId], references: [id])
 }
 
 // UPI Refund tracking
 model UPIRefund {
-  id                      String    @id @default(uuid())
-  originalBankRRN         String
-  originalMerchantTranId  String
-  refundMerchantTranId    String    @unique
-  refundAmount            Decimal
-  status                  String    @default("PENDING") // PENDING, SUCCESS, FAILURE
-  note                    String?
-  refundResponse          Json?     // Full ICICI response
+  id                     String  @id @default(uuid())
+  originalBankRRN        String
+  originalMerchantTranId String
+  refundMerchantTranId   String  @unique
+  refundAmount           Decimal
+  status                 String  @default("PENDING") // PENDING, SUCCESS, FAILURE
+  note                   String?
+  refundResponse         Json? // Full ICICI response
 
-  initiatedByAdminId      String?
-  initiatedByEmployeeId   String?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  initiatedByAdminId    String?
+  initiatedByEmployeeId String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 enum ContactType {
@@ -854,7 +1237,7 @@ model AgricultureLoan {
   isSeasonal         Boolean @default(false)
   registrationNumber String? // Added for agriculture equipment registration
 
-  equipment Equipment  @relation(fields: [equipmentId], references: [id])
+  equipment Equipment @relation(fields: [equipmentId], references: [id])
   // usageArea UsageArea? @relation(fields: [usageAreaId], references: [id])
 
   loan Loan @relation(fields: [loanId], references: [id])
@@ -895,16 +1278,16 @@ enum LoanApplicationStatus {
 }
 
 model LoanApplicationDraft {
-  id                  String               @id @default(uuid())
+  id                  String                @id @default(uuid())
   userId              String
   status              LoanApplicationStatus @default(DRAFT)
-  step                Int                  @default(1)
+  step                Int                   @default(1)
   data                Json?
   sourceLoanId        String?
   createdByAdminId    String?
   createdByEmployeeId String?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
 
   user              User      @relation(fields: [userId], references: [id])
   sourceLoan        Loan?     @relation(fields: [sourceLoanId], references: [id])
@@ -923,14 +1306,14 @@ enum UserApplicationStatus {
 }
 
 model UserApplicationDraft {
-  id                  String              @id @default(uuid())
+  id                  String                @id @default(uuid())
   status              UserApplicationStatus @default(DRAFT)
-  step                Int                 @default(1)
+  step                Int                   @default(1)
   data                Json?
   createdByAdminId    String?
   createdByEmployeeId String?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
 
   createdByAdmin    Admin?    @relation(fields: [createdByAdminId], references: [id])
   createdByEmployee Employee? @relation(fields: [createdByEmployeeId], references: [id])
@@ -972,14 +1355,1488 @@ model File {
   createdAt          DateTime             @default(now())
   terminationRequest TerminationRequest[]
 
-  seizedHistories       SeizedHistory[] @relation("SeizedFiles") // Evidence for seized events
+  seizedHistories        SeizedHistory[] @relation("SeizedFiles") // Evidence for seized events
   releaseSeizedHistories SeizedHistory[] @relation("ReleaseFiles") // Evidence for release events
 
-  photo               User[]    @relation("Photo")
-  proofOfIncomeImages User[]    @relation("ProofOfIncomeImages")
-  photoIDImages       PhotoID[] @relation("PhotoIDImages")
-  employees         Employee[] @relation("Photo")
-  loanInvoiceDoc       Loan[]    @relation("loanInvoiceDoc")
-  insuranceDoc         Loan[]    @relation("insuranceDoc")
-  registrationDoc      Loan[]    @relation("registrationDoc")
+  photo               User[]     @relation("Photo")
+  proofOfIncomeImages User[]     @relation("ProofOfIncomeImages")
+  photoIDImages       PhotoID[]  @relation("PhotoIDImages")
+  employees           Employee[] @relation("Photo")
+  loanInvoiceDoc      Loan[]     @relation("loanInvoiceDoc")
+  insuranceDoc        Loan[]     @relation("insuranceDoc")
+  registrationDoc     Loan[]     @relation("registrationDoc")
+}
+
+// ==========================
+// ✅ PHASE 2: Approval Matrix + Maker-Checker
+// ==========================
+
+enum ApprovalEntityType {
+  LOAN
+  PAYMENT
+  WAIVER
+  FORECLOSURE
+  SETTLEMENT
+  WRITE_OFF
+  RESTRUCTURING
+  COLLATERAL_RELEASE
+  PARTNER_PAYOUT
+}
+
+enum ApprovalRequestStatus {
+  PENDING
+  PARTIALLY_APPROVED
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum ApprovalVoteDecision {
+  APPROVED
+  REJECTED
+}
+
+model ApprovalMatrix {
+  id              String             @id @default(uuid())
+  entityType      ApprovalEntityType
+  name            String
+  description     String?
+  minAmount       Decimal            @default(0)
+  maxAmount       Decimal?           // null = no upper bound
+  requiredCount   Int                @default(1)
+  requiredRoleIds String[]           // roles whose members can approve
+  autoApprove     Boolean            @default(false)
+  isActive        Boolean            @default(true)
+  priority        Int                @default(0) // higher = checked first
+  createdByAdminId String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  createdByAdmin Admin? @relation(fields: [createdByAdminId], references: [id])
+  requests       ApprovalRequest[]
+
+  @@index([entityType, isActive])
+}
+
+model ApprovalRequest {
+  id             String                 @id @default(uuid())
+  matrixId       String?
+  entityType     ApprovalEntityType
+  entityId       String
+  requestedAmount Decimal?
+  status         ApprovalRequestStatus  @default(PENDING)
+  requiredCount  Int                    @default(1)
+  approvedCount  Int                    @default(0)
+  rejectedCount  Int                    @default(0)
+  expiresAt      DateTime?
+  rejectionReason String?
+  metadata       Json?
+  requestedByAdminId    String?
+  requestedByEmployeeId String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  matrix              ApprovalMatrix? @relation(fields: [matrixId], references: [id])
+  requestedByAdmin    Admin?          @relation("ApprovalRequestedByAdmin", fields: [requestedByAdminId], references: [id])
+  requestedByEmployee Employee?       @relation("ApprovalRequestedByEmployee", fields: [requestedByEmployeeId], references: [id])
+  votes               ApprovalVote[]
+
+  @@index([entityType, entityId])
+  @@index([status])
+}
+
+model ApprovalVote {
+  id                String               @id @default(uuid())
+  requestId         String
+  decision          ApprovalVoteDecision
+  reason            String?
+  votedByAdminId    String?
+  votedByEmployeeId String?
+  createdAt         DateTime             @default(now())
+
+  request         ApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  votedByAdmin    Admin?          @relation("ApprovalVoteByAdmin", fields: [votedByAdminId], references: [id])
+  votedByEmployee Employee?       @relation("ApprovalVoteByEmployee", fields: [votedByEmployeeId], references: [id])
+
+  @@index([requestId])
+}
+
+model OverrideLog {
+  id                  String             @id @default(uuid())
+  entityType          ApprovalEntityType
+  entityId            String
+  action              String
+  reason              String
+  supervisorAdminId   String?
+  overriddenByAdminId    String?
+  overriddenByEmployeeId String?
+  metadata            Json?
+  createdAt           DateTime           @default(now())
+
+  overriddenByAdmin    Admin?    @relation("OverrideByAdmin", fields: [overriddenByAdminId], references: [id])
+  overriddenByEmployee Employee? @relation("OverrideByEmployee", fields: [overriddenByEmployeeId], references: [id])
+  supervisorAdmin      Admin?    @relation("OverrideSupervisor", fields: [supervisorAdminId], references: [id])
+
+  @@index([entityType, entityId])
+}
+
+// ==========================
+// 🪪 PHASE 3: KYC Status Machine
+// ==========================
+
+enum KYCStatus {
+  DRAFT
+  PARTIALLY_VERIFIED
+  FULLY_VERIFIED
+  EXPIRED
+  RE_KYC_DUE
+  REJECTED
+}
+
+enum KYCRiskFlagType {
+  PEP                  // Politically Exposed Person
+  DUPLICATE_MOBILE
+  DUPLICATE_PAN
+  DUPLICATE_AADHAAR
+  ADDRESS_MISMATCH
+  BUREAU_MISMATCH
+  BLACKLIST_HIT
+  WATCHLIST_MATCH
+  OTHER
+}
+
+model KYCRecord {
+  id                  String    @id @default(uuid())
+  userId              String    @unique
+  status              KYCStatus @default(DRAFT)
+  verificationMethod  String?   // PHYSICAL, CKYC, DIGILOCKER, VCIP, OTP_ASSISTED
+  verifiedByAdminId    String?
+  verifiedByEmployeeId String?
+  verifiedAt          DateTime?
+  expiresAt           DateTime?
+  nextReviewDue       DateTime?
+  rejectionReason     String?
+  reviewNotes         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verifiedByAdmin    Admin?    @relation("KYCVerifiedByAdmin", fields: [verifiedByAdminId], references: [id])
+  verifiedByEmployee Employee? @relation("KYCVerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])
+  documents         KYCDocument[]
+  riskFlags         KYCRiskFlag[]
+
+  @@index([status])
+}
+
+model KYCDocument {
+  id              String    @id @default(uuid())
+  kycRecordId     String
+  documentType    String    // AADHAAR, PAN, VOTER_ID, PASSPORT, etc.
+  documentNumber  String?
+  fileId          String?
+  verificationStatus String @default("PENDING") // PENDING, VERIFIED, REJECTED
+  verifiedByAdminId    String?
+  verifiedByEmployeeId String?
+  verifiedAt      DateTime?
+  expiresAt       DateTime?
+  rejectionReason String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  kycRecord          KYCRecord @relation(fields: [kycRecordId], references: [id], onDelete: Cascade)
+  verifiedByAdmin    Admin?    @relation("KYCDocVerifiedByAdmin", fields: [verifiedByAdminId], references: [id])
+  verifiedByEmployee Employee? @relation("KYCDocVerifiedByEmployee", fields: [verifiedByEmployeeId], references: [id])
+
+  @@index([kycRecordId])
+}
+
+model KYCRiskFlag {
+  id           String          @id @default(uuid())
+  kycRecordId  String
+  flagType     KYCRiskFlagType
+  description  String?
+  isResolved   Boolean         @default(false)
+  resolvedAt   DateTime?
+  resolvedByAdminId    String?
+  resolvedByEmployeeId String?
+  resolutionNote String?
+  metadata     Json?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  kycRecord          KYCRecord @relation(fields: [kycRecordId], references: [id], onDelete: Cascade)
+  resolvedByAdmin    Admin?    @relation("KYCFlagResolvedByAdmin", fields: [resolvedByAdminId], references: [id])
+  resolvedByEmployee Employee? @relation("KYCFlagResolvedByEmployee", fields: [resolvedByEmployeeId], references: [id])
+
+  @@index([kycRecordId, isResolved])
+  @@index([flagType, isResolved])
+}
+
+model BlacklistEntry {
+  id          String   @id @default(uuid())
+  valueType   String   // PAN, AADHAAR, MOBILE, EMAIL
+  value       String
+  reason      String
+  isActive    Boolean  @default(true)
+  addedByAdminId String?
+  removedByAdminId String?
+  removedAt   DateTime?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  addedByAdmin   Admin? @relation("BlacklistAddedBy", fields: [addedByAdminId], references: [id])
+  removedByAdmin Admin? @relation("BlacklistRemovedBy", fields: [removedByAdminId], references: [id])
+
+  @@unique([valueType, value])
+  @@index([valueType, isActive])
+}
+
+// ==========================
+// 📋 PHASE 4: Consent Management + KFS Delivery
+// ==========================
+
+enum ConsentType {
+  DATA_PROCESSING
+  BUREAU_PULL
+  ACCOUNT_ACCESS
+  COMMUNICATION
+  ESIGN
+  LOAN_TERMS
+  KFS_ACCEPTANCE
+  NACH_MANDATE
+}
+
+model ConsentTemplate {
+  id          String   @id @default(uuid())
+  consentType ConsentType
+  version     String
+  language    String   @default("en")
+  title       String
+  body        String   @db.Text
+  isActive    Boolean  @default(true)
+  createdByAdminId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdByAdmin Admin?          @relation(fields: [createdByAdminId], references: [id])
+  records        ConsentRecord[]
+
+  @@unique([consentType, version, language])
+  @@index([consentType, isActive])
+}
+
+model ConsentRecord {
+  id              String      @id @default(uuid())
+  userId          String
+  loanId          String?
+  consentType     ConsentType
+  templateId      String?
+  version         String?
+  channel         String?     // WEB, APP, BRANCH, API
+  ipAddress       String?
+  deviceInfo      String?
+  consentedAt     DateTime    @default(now())
+  expiresAt       DateTime?
+  isWithdrawn     Boolean     @default(false)
+  withdrawnAt     DateTime?
+  withdrawalReason String?
+  metadata        Json?
+
+  user     User            @relation(fields: [userId], references: [id])
+  template ConsentTemplate? @relation(fields: [templateId], references: [id])
+
+  @@index([userId, consentType])
+  @@index([loanId, consentType])
+}
+
+model KFSDelivery {
+  id             String    @id @default(uuid())
+  loanId         String
+  version        String
+  templateId     String?
+  deliveredAt    DateTime  @default(now())
+  deliveryChannel String?  // WEB, APP, EMAIL, BRANCH
+  acceptedAt     DateTime?
+  ipAddress      String?
+  deviceInfo     String?
+  fileId         String?   // PDF of the KFS
+  metadata       Json?
+
+  loan Loan @relation(fields: [loanId], references: [id])
+
+  @@index([loanId])
+}
+
+// ==========================
+// 🔄 PHASE 5: Restructuring / Rescheduling / Settlement / Waiver
+// ==========================
+
+enum RestructuringType {
+  RESCHEDULE
+  TOP_UP
+  SETTLEMENT
+  WRITE_OFF
+  MORATORIUM
+}
+
+enum RestructuringStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  APPLIED
+  CANCELLED
+}
+
+model RestructuringRequest {
+  id                    String              @id @default(uuid())
+  loanId                String
+  type                  RestructuringType
+  status                RestructuringStatus @default(DRAFT)
+  reason                String
+  boardApprovalRequired Boolean             @default(false)
+  boardApprovalNote     String?
+
+  // Waiver components (if any)
+  interestWaived        Decimal             @default(0)
+  fineWaived            Decimal             @default(0)
+  principalWaived       Decimal             @default(0)
+
+  // New schedule parameters (for RESCHEDULE / MORATORIUM)
+  newTenureMonths       Int?
+  newInterestRate       Float?
+  newStartDate          DateTime?
+  newEmiAmount          Decimal?
+  moratoriumMonths      Int?
+
+  // Settlement
+  settlementAmount      Decimal?
+  settlementDate        DateTime?
+
+  // Snapshot of old schedule before change
+  oldScheduleSnapshot   Json?
+  // Generated new schedule (stored before activation)
+  newScheduleSnapshot   Json?
+
+  approvalComment       String?
+  rejectionReason       String?
+  appliedAt             DateTime?
+
+  requestedByAdminId    String?
+  requestedByEmployeeId String?
+  approvedByAdminId     String?
+  approvedByEmployeeId  String?
+  metadata              Json?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  loan                  Loan      @relation(fields: [loanId], references: [id])
+  requestedByAdmin      Admin?    @relation("RestructureRequestedByAdmin", fields: [requestedByAdminId], references: [id])
+  requestedByEmployee   Employee? @relation("RestructureRequestedByEmployee", fields: [requestedByEmployeeId], references: [id])
+  approvedByAdmin       Admin?    @relation("RestructureApprovedByAdmin", fields: [approvedByAdminId], references: [id])
+  approvedByEmployee    Employee? @relation("RestructureApprovedByEmployee", fields: [approvedByEmployeeId], references: [id])
+  waiverRequests        WaiverRequest[]
+
+  @@index([loanId, status])
+}
+
+enum WaiverType {
+  INTEREST
+  FINE
+  PRINCIPAL
+  PROCESSING_FEE
+  OTHER
+}
+
+enum WaiverStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model WaiverRequest {
+  id                    String        @id @default(uuid())
+  loanId                String
+  restructuringId       String?
+  waiverType            WaiverType
+  requestedAmount       Decimal
+  approvedAmount        Decimal?
+  reason                String
+  status                WaiverStatus  @default(PENDING)
+  policyLimitCheck      Boolean       @default(false)
+  rejectionReason       String?
+  approvalComment       String?
+  requestedByAdminId    String?
+  requestedByEmployeeId String?
+  approvedByAdminId     String?
+  approvedByEmployeeId  String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  loan                Loan                  @relation(fields: [loanId], references: [id])
+  restructuring       RestructuringRequest? @relation(fields: [restructuringId], references: [id])
+  requestedByAdmin    Admin?                @relation("WaiverRequestedByAdmin", fields: [requestedByAdminId], references: [id])
+  requestedByEmployee Employee?             @relation("WaiverRequestedByEmployee", fields: [requestedByEmployeeId], references: [id])
+  approvedByAdmin     Admin?                @relation("WaiverApprovedByAdmin", fields: [approvedByAdminId], references: [id])
+  approvedByEmployee  Employee?             @relation("WaiverApprovedByEmployee", fields: [approvedByEmployeeId], references: [id])
+
+  @@index([loanId, status])
+}
+
+// ==========================
+// 💰 PHASE 6: Reconciliation + Day-End + Suspense + Reversal
+// ==========================
+
+enum DayEndStatus {
+  OPEN
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+model DayEndClosing {
+  id               String       @id @default(uuid())
+  branchId         String
+  date             DateTime     @db.Date
+  openingCash      Decimal      @default(0)
+  expectedCash     Decimal      @default(0)  // sum of cash payments logged
+  declaredCash     Decimal      @default(0)  // what branch declares
+  variance         Decimal      @default(0)  // declaredCash - expectedCash
+  totalCollections Decimal      @default(0)
+  totalOnline      Decimal      @default(0)
+  notes            String?
+  status           DayEndStatus @default(OPEN)
+  submittedAt      DateTime?
+  approvedAt       DateTime?
+  submittedByAdminId    String?
+  submittedByEmployeeId String?
+  approvedByAdminId     String?
+  rejectionReason  String?
+  metadata         Json?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  branch              Branch    @relation(fields: [branchId], references: [id])
+  submittedByAdmin    Admin?    @relation("DayEndSubmittedByAdmin", fields: [submittedByAdminId], references: [id])
+  submittedByEmployee Employee? @relation("DayEndSubmittedByEmployee", fields: [submittedByEmployeeId], references: [id])
+  approvedByAdmin     Admin?    @relation("DayEndApprovedByAdmin", fields: [approvedByAdminId], references: [id])
+
+  @@unique([branchId, date])
+  @@index([date, status])
+}
+
+model BankReconciliation {
+  id                String   @id @default(uuid())
+  branchId          String?
+  statementDate     DateTime @db.Date
+  bankAccountNumber String?
+  bankName          String?
+  statementAmount   Decimal  // Amount as per bank statement
+  systemAmount      Decimal  // Amount as per system records
+  variance          Decimal  @default(0)
+  isReconciled      Boolean  @default(false)
+  reconciledAt      DateTime?
+  notes             String?
+  reconciledByAdminId    String?
+  reconciledByEmployeeId String?
+  metadata          Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  reconciledByAdmin    Admin?    @relation("BankReconByAdmin", fields: [reconciledByAdminId], references: [id])
+  reconciledByEmployee Employee? @relation("BankReconByEmployee", fields: [reconciledByEmployeeId], references: [id])
+
+  @@index([statementDate, isReconciled])
+}
+
+enum SuspenseStatus {
+  UNRESOLVED
+  RESOLVED
+  REFUNDED
+}
+
+model SuspenseAccount {
+  id            String         @id @default(uuid())
+  amount        Decimal
+  source        String         // BANK_TRANSFER, UPI, CASH, CHEQUE, OTHER
+  receivedAt    DateTime
+  referenceNo   String?
+  senderInfo    String?
+  notes         String?
+  status        SuspenseStatus @default(UNRESOLVED)
+  resolvedLoanId String?
+  resolvedAt    DateTime?
+  resolvedByAdminId    String?
+  resolvedByEmployeeId String?
+  metadata      Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  resolvedByAdmin    Admin?    @relation("SuspenseResolvedByAdmin", fields: [resolvedByAdminId], references: [id])
+  resolvedByEmployee Employee? @relation("SuspenseResolvedByEmployee", fields: [resolvedByEmployeeId], references: [id])
+
+  @@index([status])
+}
+
+enum ReversalStatus {
+  PENDING
+  APPROVED
+  PROCESSED
+  REJECTED
+}
+
+model ReversalRequest {
+  id                String        @id @default(uuid())
+  paymentId         String
+  reason            String
+  requestedAmount   Decimal
+  approvedAmount    Decimal?
+  status            ReversalStatus @default(PENDING)
+  rejectionReason   String?
+  processedAt       DateTime?
+  requestedByAdminId    String?
+  requestedByEmployeeId String?
+  approvedByAdminId     String?
+  approvedByEmployeeId  String?
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  payment             Payment   @relation(fields: [paymentId], references: [id])
+  requestedByAdmin    Admin?    @relation("ReversalRequestedByAdmin", fields: [requestedByAdminId], references: [id])
+  requestedByEmployee Employee? @relation("ReversalRequestedByEmployee", fields: [requestedByEmployeeId], references: [id])
+  approvedByAdmin     Admin?    @relation("ReversalApprovedByAdmin", fields: [approvedByAdminId], references: [id])
+  approvedByEmployee  Employee? @relation("ReversalApprovedByEmployee", fields: [approvedByEmployeeId], references: [id])
+
+  @@index([paymentId])
+  @@index([status])
+}
+
+// ==========================
+// 📊 PHASE 7: Collections Enhancements
+// ==========================
+
+model CollectionBucketConfig {
+  id                    String   @id @default(uuid())
+  name                  String   @unique  // e.g. "BUCKET_0", "BUCKET_1_30"
+  label                 String
+  minDpd                Int
+  maxDpd                Int?     // null = open-ended (90+)
+  priority              CollectionPriority @default(MEDIUM)
+  contactMethodOrder    String[] // ["CALL","VISIT","WHATSAPP"]
+  escalationSlaHours    Int      @default(72)
+  maxAttemptsBeforeEscalate Int  @default(3)
+  autoEscalate          Boolean  @default(true)
+  legalEligible         Boolean  @default(false)
+  settlementEligible    Boolean  @default(false)
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([minDpd])
+}
+
+model PromiseToPay {
+  id              String   @id @default(uuid())
+  caseId          String
+  loanId          String
+  promiseDate     DateTime
+  promiseAmount   Decimal
+  isFulfilled     Boolean  @default(false)
+  isBroken        Boolean  @default(false)
+  fulfilledAt     DateTime?
+  brokenAt        DateTime?
+  followUpDate    DateTime?
+  notes           String?
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  collectionCase  CollectionCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  loan            Loan           @relation(fields: [loanId], references: [id])
+  createdByAdmin    Admin?    @relation("PTPCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  createdByEmployee Employee? @relation("PTPCreatedByEmployee", fields: [createdByEmployeeId], references: [id])
+
+  @@index([caseId])
+  @@index([promiseDate, isFulfilled])
+}
+
+enum LegalStage {
+  NONE
+  NOTICE_SENT
+  COURT_FILED
+  DECREE_OBTAINED
+  EXECUTION_PROCEEDING
+  SETTLED_OUT_OF_COURT
+  WITHDRAWN
+}
+
+model LegalAction {
+  id                  String     @id @default(uuid())
+  loanId              String
+  caseId              String?
+  stage               LegalStage @default(NONE)
+  noticeDate          DateTime?
+  filingDate          DateTime?
+  caseNumber          String?
+  court               String?
+  decreeDate          DateTime?
+  decreeAmount        Decimal?
+  nextHearingDate     DateTime?
+  notes               String?
+  lawyerName          String?
+  lawyerContact       String?
+  fileId              String?    // Legal notice / court docs
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  updatedByAdminId    String?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  loan              Loan           @relation(fields: [loanId], references: [id])
+  collectionCase    CollectionCase? @relation(fields: [caseId], references: [id])
+  createdByAdmin    Admin?    @relation("LegalActionCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  createdByEmployee Employee? @relation("LegalActionCreatedByEmployee", fields: [createdByEmployeeId], references: [id])
+
+  @@index([loanId, stage])
+}
+
+// ==========================
+// 🏦 PHASE 8: Collateral Lifecycle
+// ==========================
+
+enum CollateralType {
+  VEHICLE
+  PROPERTY
+  EQUIPMENT
+  GOLD
+  INVENTORY
+  OTHER
+}
+
+enum CollateralStatus {
+  ACTIVE
+  UNDER_LIEN
+  SEIZED
+  RELEASED
+  SOLD
+}
+
+model CollateralRecord {
+  id               String          @id @default(uuid())
+  loanId           String
+  collateralType   CollateralType
+  description      String
+  currentValue     Decimal?
+  lastValuedAt     DateTime?
+  nextValuationDue DateTime?
+  insuredTill      DateTime?
+  insuranceCompany String?
+  policyNumber     String?
+  status           CollateralStatus @default(ACTIVE)
+  notes            String?
+  metadata         Json?
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  loan              Loan                  @relation(fields: [loanId], references: [id])
+  createdByAdmin    Admin?    @relation("CollateralCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  createdByEmployee Employee? @relation("CollateralCreatedByEmployee", fields: [createdByEmployeeId], references: [id])
+  valuations        CollateralValuation[]
+
+  @@index([loanId, status])
+}
+
+model CollateralValuation {
+  id             String   @id @default(uuid())
+  collateralId   String
+  value          Decimal
+  valuedAt       DateTime
+  valuer         String?
+  method         String?  // PHYSICAL, DESK, MARKET
+  reportFileId   String?
+  notes          String?
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  createdAt      DateTime @default(now())
+
+  collateral        CollateralRecord @relation(fields: [collateralId], references: [id], onDelete: Cascade)
+  createdByAdmin    Admin?    @relation("ValuationCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  createdByEmployee Employee? @relation("ValuationCreatedByEmployee", fields: [createdByEmployeeId], references: [id])
+
+  @@index([collateralId, valuedAt])
+}
+
+// ==========================
+// 🤝 PHASE 9: Partner / Channel Management
+// ==========================
+
+enum PartnerType {
+  DSA
+  DEALER
+  BROKER
+  FIELD_AGENT
+  COLLECTION_AGENCY
+  FINTECH
+  OTHER
+}
+
+enum PartnerStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BLACKLISTED
+}
+
+enum CommissionTrigger {
+  DISBURSEMENT
+  FIRST_REPAYMENT
+  FULL_REPAYMENT
+}
+
+enum CommissionType {
+  PERCENTAGE
+  FLAT
+}
+
+model ChannelPartner {
+  id                String        @id @default(uuid())
+  name              String
+  partnerType       PartnerType
+  status            PartnerStatus @default(ACTIVE)
+  contactPerson     String?
+  phone             String?
+  email             String?
+  address           String?
+  panNumber         String?
+  gstNumber         String?
+  agreementStart    DateTime?
+  agreementEnd      DateTime?
+  kycStatus         String        @default("PENDING") // PENDING, VERIFIED, REJECTED
+  eligibleBranchIds String[]
+  eligibleLoanTypeIds String[]
+  notes             String?
+  metadata          Json?
+  createdByAdminId  String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  createdByAdmin    Admin?                   @relation(fields: [createdByAdminId], references: [id])
+  commissionRules   PartnerCommissionRule[]
+  leads             PartnerLead[]
+  payouts           PartnerPayout[]
+  delinquencyMetrics ChannelDelinquencyMetric[]
+
+  @@index([partnerType, status])
+}
+
+model PartnerCommissionRule {
+  id              String            @id @default(uuid())
+  partnerId       String
+  loanTypeId      String?
+  commissionType  CommissionType    @default(PERCENTAGE)
+  commissionValue Decimal
+  trigger         CommissionTrigger @default(DISBURSEMENT)
+  // Clawback: if borrower repays < clawbackThresholdMonths, recover commission
+  clawbackEnabled         Boolean  @default(false)
+  clawbackThresholdMonths Int      @default(3)
+  clawbackPercent         Decimal  @default(100)
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  partner  ChannelPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId, isActive])
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  IN_PROGRESS
+  CONVERTED
+  REJECTED
+  DROPPED
+}
+
+model PartnerLead {
+  id              String     @id @default(uuid())
+  partnerId       String
+  userId          String?    // null until user record created
+  loanId          String?    // null until loan sanctioned
+  status          LeadStatus @default(NEW)
+  source          String?
+  referenceNo     String?
+  convertedAt     DateTime?
+  rejectionReason String?
+  notes           String?
+  metadata        Json?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  partner ChannelPartner @relation(fields: [partnerId], references: [id])
+
+  @@index([partnerId, status])
+}
+
+enum PayoutStatus {
+  PENDING
+  PAID
+  CLAWBACK
+  CANCELLED
+}
+
+model PartnerPayout {
+  id              String       @id @default(uuid())
+  partnerId       String
+  loanId          String
+  ruleId          String?
+  triggerEvent    CommissionTrigger
+  commissionAmount Decimal
+  gstAmount       Decimal      @default(0)
+  netAmount       Decimal
+  status          PayoutStatus @default(PENDING)
+  paidAt          DateTime?
+  transactionRef  String?
+  clawbackReason  String?
+  notes           String?
+  processedByAdminId String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  partner           ChannelPartner @relation(fields: [partnerId], references: [id])
+  loan              Loan           @relation(fields: [loanId], references: [id])
+  processedByAdmin  Admin?         @relation("PayoutProcessedByAdmin", fields: [processedByAdminId], references: [id])
+
+  @@index([partnerId, status])
+  @@index([loanId])
+}
+
+model ChannelDelinquencyMetric {
+  id               String   @id @default(uuid())
+  partnerId        String
+  asOfDate         DateTime @db.Date
+  totalLoans       Int      @default(0)
+  activeLoans      Int      @default(0)
+  overdueLoans     Int      @default(0)
+  npaLoans         Int      @default(0)
+  totalDisbursed   Decimal  @default(0)
+  totalOverdueAmt  Decimal  @default(0)
+  par30            Decimal  @default(0) // Portfolio At Risk 30+
+  par90            Decimal  @default(0)
+  createdAt        DateTime @default(now())
+
+  partner ChannelPartner @relation(fields: [partnerId], references: [id])
+
+  @@unique([partnerId, asOfDate])
+}
+
+// ==========================
+// 📈 PHASE 10: Reporting Builder
+// ==========================
+
+enum ReportFrequency {
+  NONE
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum ReportOutputFormat {
+  EXCEL
+  CSV
+  PDF
+  JSON
+}
+
+enum ReportEntityType {
+  LOANS
+  PAYMENTS
+  USERS
+  COLLECTIONS
+  EMIS
+  PARTNERS
+  EMPLOYEES
+}
+
+model SavedReport {
+  id             String             @id @default(uuid())
+  name           String
+  description    String?
+  entityType     ReportEntityType
+  filtersJson    Json?
+  columnsJson    Json?
+  sortJson       Json?
+  schedule       ReportFrequency    @default(NONE)
+  outputFormat   ReportOutputFormat @default(EXCEL)
+  lastRunAt      DateTime?
+  isActive       Boolean            @default(true)
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  createdByAdmin    Admin?    @relation("ReportCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  createdByEmployee Employee? @relation("ReportCreatedByEmployee", fields: [createdByEmployeeId], references: [id])
+  runs              ReportRun[]
+
+  @@index([entityType])
+}
+
+model ReportRun {
+  id          String    @id @default(uuid())
+  reportId    String
+  triggeredBy String    @default("MANUAL") // MANUAL | SCHEDULED
+  rowCount    Int?
+  fileUrl     String?
+  status      String    @default("PENDING") // PENDING, COMPLETED, FAILED
+  error       String?
+  triggeredByAdminId    String?
+  triggeredByEmployeeId String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  report              SavedReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  triggeredByAdmin    Admin?    @relation("ReportRunByAdmin", fields: [triggeredByAdminId], references: [id])
+  triggeredByEmployee Employee? @relation("ReportRunByEmployee", fields: [triggeredByEmployeeId], references: [id])
+
+  @@index([reportId, createdAt])
+}
+
+// ==========================
+// ⚙️ PHASE 11: Automation Rules + Task Queue
+// ==========================
+
+enum AutomationTriggerEvent {
+  EMI_DUE
+  EMI_OVERDUE
+  DPD_THRESHOLD
+  KYC_EXPIRY
+  INSURANCE_EXPIRY
+  COLLATERAL_VALUATION_DUE
+  PROMISE_TO_PAY_BROKEN
+  COLLECTION_ESCALATION
+  LOAN_APPROVED
+  LOAN_DISBURSED
+  PAYMENT_RECEIVED
+}
+
+enum AutomationAction {
+  CREATE_TASK
+  FLAG_COLLECTION_CASE
+  ESCALATE_CASE
+  LOG_ALERT
+  SEND_NOTIFICATION
+}
+
+model AutomationRule {
+  id             String                  @id @default(uuid())
+  name           String
+  description    String?
+  triggerEvent   AutomationTriggerEvent
+  conditionJson  Json?                   // e.g. { "dpdGte": 30 }
+  action         AutomationAction
+  actionParamsJson Json?                 // e.g. { "taskType": "FOLLOW_UP", "priority": "HIGH" }
+  delayMinutes   Int                     @default(0)
+  isActive       Boolean                 @default(true)
+  createdByAdminId String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  createdByAdmin Admin? @relation(fields: [createdByAdminId], references: [id])
+
+  @@index([triggerEvent, isActive])
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  ESCALATED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model TaskQueue {
+  id               String       @id @default(uuid())
+  taskType         String       // FOLLOW_UP, KYC_REVIEW, INSURANCE_RENEWAL, VALUATION, LEGAL_NOTICE, OTHER
+  entityType       String?      // LOAN, USER, COLLATERAL, etc.
+  entityId         String?
+  title            String
+  description      String?
+  status           TaskStatus   @default(OPEN)
+  priority         TaskPriority @default(MEDIUM)
+  dueAt            DateTime?
+  assignedToEmployeeId String?
+  assignedToAdminId    String?
+  automationRuleId String?
+  completedAt      DateTime?
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  metadata         Json?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  assignedToEmployee Employee? @relation("TaskAssignedToEmployee", fields: [assignedToEmployeeId], references: [id])
+  assignedToAdmin    Admin?    @relation("TaskAssignedToAdmin", fields: [assignedToAdminId], references: [id])
+  createdByAdmin     Admin?    @relation("TaskCreatedByAdmin", fields: [createdByAdminId], references: [id])
+  createdByEmployee  Employee? @relation("TaskCreatedByEmployee", fields: [createdByEmployeeId], references: [id])
+
+  @@index([status, priority])
+  @@index([entityType, entityId])
+  @@index([assignedToEmployeeId, status])
+  @@index([dueAt, status])
+}
+
+model NotificationLog {
+  id            String   @id @default(uuid())
+  templateKey   String?
+  targetType    String   // LOAN, USER, EMPLOYEE, ADMIN
+  targetId      String
+  triggerEvent  String?
+  channel       String   @default("IN_APP") // IN_APP, SMS, EMAIL, WHATSAPP
+  status        String   @default("PENDING") // PENDING, SENT, FAILED
+  contentRendered String? @db.Text
+  error         String?
+  sentAt        DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([targetType, targetId])
+  @@index([status, createdAt])
+}
+
+// ==========================
+// 🗂️ PHASE 12: Data Retention + Legal Hold + PII Access Log
+// ==========================
+
+enum LegalHoldEntityType {
+  USER
+  LOAN
+  PAYMENT
+  COLLECTION_CASE
+  GRIEVANCE
+}
+
+model LegalHold {
+  id          String              @id @default(uuid())
+  entityType  LegalHoldEntityType
+  entityId    String
+  reason      String
+  heldByAdminId String?
+  releasedByAdminId String?
+  releasedAt  DateTime?
+  releaseNote String?
+  metadata    Json?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  heldByAdmin     Admin? @relation("LegalHoldHeldBy", fields: [heldByAdminId], references: [id])
+  releasedByAdmin Admin? @relation("LegalHoldReleasedBy", fields: [releasedByAdminId], references: [id])
+
+  @@unique([entityType, entityId])
+  @@index([entityType, entityId])
+}
+
+model PIIAccessLog {
+  id          String   @id @default(uuid())
+  targetUserId String
+  fieldName   String   // AADHAAR, PAN, MOBILE, DOB, BANK_ACCOUNT
+  accessedByAdminId    String?
+  accessedByEmployeeId String?
+  purpose     String?  // KYC_VERIFICATION, LOAN_PROCESSING, AUDIT, etc.
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  accessedByAdmin    Admin?    @relation("PIIAccessByAdmin", fields: [accessedByAdminId], references: [id])
+  accessedByEmployee Employee? @relation("PIIAccessByEmployee", fields: [accessedByEmployeeId], references: [id])
+
+  @@index([targetUserId, createdAt])
+  @@index([accessedByAdminId, createdAt])
+  @@index([accessedByEmployeeId, createdAt])
+}
+
+// ==========================
+// 🏦 NACH/eNACH Mandate Management
+// ==========================
+
+enum NachMandateStatus {
+  PENDING_REGISTRATION
+  ACTIVE
+  CANCELLED
+  BOUNCED
+  EXPIRED
+  SUSPENDED
+}
+
+enum NachMandateType {
+  NACH
+  ENACH
+  PHYSICAL
+}
+
+model NachMandate {
+  id                String            @id @default(uuid())
+  loanId            String
+  userId            String
+  umrn              String?           @unique  // Unique Mandate Reference Number
+  mandateType       NachMandateType   @default(NACH)
+  status            NachMandateStatus @default(PENDING_REGISTRATION)
+  bankName          String
+  bankBranch        String?
+  accountNumber     String
+  accountType       String            @default("SAVINGS") // SAVINGS, CURRENT
+  ifscCode          String
+  accountHolderName String
+  maxAmount         Decimal
+  frequency         String            @default("MONTHLY") // MONTHLY, QUARTERLY, YEARLY, AD_HOC
+  startDate         DateTime
+  endDate           DateTime?
+  nextPresentationDate DateTime?
+  retryCount        Int               @default(0)
+  maxRetries        Int               @default(3)
+  rejectionReason   String?
+  registeredAt      DateTime?
+  cancelledAt       DateTime?
+  cancelledBy       String?
+  cancelReason      String?
+  metadata          Json?
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  loan              Loan              @relation(fields: [loanId], references: [id])
+  user              User              @relation(fields: [userId], references: [id])
+  bounceEvents      BounceEvent[]
+
+  @@index([loanId, status])
+  @@index([userId])
+  @@index([umrn])
+}
+
+// ==========================
+// 💸 Bounce Charge Recording
+// ==========================
+
+enum BounceEventType {
+  NACH_BOUNCE
+  CHEQUE_BOUNCE
+  UPI_FAILURE
+  NEFT_RETURN
+}
+
+model BounceEvent {
+  id              String          @id @default(uuid())
+  loanId          String
+  emiId           String?
+  mandateId       String?
+  eventType       BounceEventType
+  bounceDate      DateTime
+  returnReason    String?
+  bounceCharge    Decimal         @default(0)
+  gstOnCharge     Decimal         @default(0)
+  totalCharge     Decimal         @default(0)
+  chargeCollected Boolean         @default(false)
+  chargeCollectedAt DateTime?
+  retryDate       DateTime?
+  retryCount      Int             @default(0)
+  instrumentNo    String?         // Cheque number / transaction ref
+  bankRef         String?
+  notes           String?
+  recordedByAdminId    String?
+  recordedByEmployeeId String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  loan            Loan            @relation(fields: [loanId], references: [id])
+  mandate         NachMandate?    @relation(fields: [mandateId], references: [id])
+
+  @@index([loanId, bounceDate])
+  @@index([mandateId])
+}
+
+// ==========================
+// 📊 Month-End Portfolio Snapshot
+// ==========================
+
+model MonthEndSnapshot {
+  id                    String   @id @default(uuid())
+  snapshotDate          DateTime // Last day of the month
+  month                 Int      // 1–12
+  year                  Int
+  totalLoans            Int      @default(0)
+  activeLoans           Int      @default(0)
+  overdueLoans          Int      @default(0)
+  defaultedLoans        Int      @default(0)
+  closedLoans           Int      @default(0)
+  totalDisbursed        Decimal  @default(0)
+  totalOutstanding      Decimal  @default(0)
+  totalOverdue          Decimal  @default(0)
+  totalCollected        Decimal  @default(0)
+  npaAmount             Decimal  @default(0)  // Non-Performing Assets
+  npaCount              Int      @default(0)
+  writtenOffAmount      Decimal  @default(0)
+  writtenOffCount       Int      @default(0)
+  bucketCurrent         Int      @default(0)
+  bucket0to30           Int      @default(0)
+  bucket31to60          Int      @default(0)
+  bucket61to90          Int      @default(0)
+  bucket90Plus          Int      @default(0)
+  loanTypeBreakdown     Json?    // { loanTypeId: { count, outstanding, overdue } }
+  branchBreakdown       Json?    // { branchId: { count, outstanding, overdue } }
+  generatedByAdminId    String?
+  generatedByEmployeeId String?
+  createdAt             DateTime @default(now())
+
+  @@unique([month, year])
+  @@index([year, month])
+}
+
+// ==========================
+// 📨 Communication Templates
+// ==========================
+
+enum CommTemplateType {
+  SMS
+  EMAIL
+  WHATSAPP
+  PUSH_NOTIFICATION
+}
+
+enum CommTemplateCategory {
+  EMI_DUE_REMINDER
+  PAYMENT_CONFIRMATION
+  OVERDUE_NOTICE
+  LEGAL_NOTICE
+  LOAN_APPROVAL
+  LOAN_DISBURSAL
+  KYC_REMINDER
+  INSURANCE_EXPIRY
+  WELCOME
+  CUSTOM
+}
+
+model CommTemplate {
+  id          String               @id @default(uuid())
+  name        String
+  type        CommTemplateType
+  category    CommTemplateCategory
+  subject     String?              // For email
+  body        String               @db.Text
+  variables   Json?                // [ { key: "borrowerName", description: "..." } ]
+  isActive    Boolean              @default(true)
+  language    String               @default("en")
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  logs        CommLog[]
+
+  @@index([type, category, isActive])
+}
+
+model CommLog {
+  id           String   @id @default(uuid())
+  templateId   String?
+  loanId       String?
+  userId       String?
+  type         CommTemplateType
+  recipient    String           // phone / email
+  subject      String?
+  body         String           @db.Text
+  status       String           @default("PENDING") // PENDING, SENT, DELIVERED, FAILED
+  failReason   String?
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  sentByAdminId    String?
+  sentByEmployeeId String?
+  createdAt    DateTime         @default(now())
+
+  template     CommTemplate?    @relation(fields: [templateId], references: [id])
+
+  @@index([loanId, createdAt])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+// ==========================
+// 📋 LoanType Rule Versioning
+// ==========================
+
+model LoanTypeRuleVersion {
+  id          String   @id @default(uuid())
+  loanTypeId  String
+  version     Int
+  rules       Json     // Full rules JSON snapshot
+  changeNote  String?
+  effectiveFrom DateTime @default(now())
+  createdByAdminId    String?
+  createdByEmployeeId String?
+  createdAt   DateTime @default(now())
+
+  loanType    LoanType @relation(fields: [loanTypeId], references: [id])
+
+  @@unique([loanTypeId, version])
+  @@index([loanTypeId, effectiveFrom])
+}
+
+// ==========================
+// 🔢 Configurable Numbering Format
+// ==========================
+
+model NumberingFormat {
+  id         String   @id @default(uuid())
+  entityType String   @unique // FILE_NO, RECEIPT_NO, CUSTOMER_ID, EMPLOYEE_ID
+  prefix     String?          // e.g. "KF", "RCP"
+  suffix     String?
+  separator  String   @default("-")
+  padLength  Int      @default(6)  // Zero-pad length
+  currentSeq Int      @default(0)
+  resetMonthly Boolean @default(false)
+  lastResetAt DateTime?
+  example    String?  // Computed example: "KF-000001"
+  updatedByAdminId String?
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+}
+
+// ==========================
+// 👥 Co-Borrower
+// ==========================
+
+model LoanCoBorrower {
+  id                 String   @id @default(uuid())
+  loanId             String
+  userId             String
+  isPrimary          Boolean  @default(false)
+  incomeContribution Decimal?  // Monthly income contribution
+  relationship       String?   // SPOUSE, PARENT, SIBLING, etc.
+  kycVerified        Boolean  @default(false)
+  consentGiven       Boolean  @default(false)
+  consentAt          DateTime?
+  addedByAdminId     String?
+  addedByEmployeeId  String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  loan               Loan     @relation(fields: [loanId], references: [id])
+  user               User     @relation("CoBorrowerUser", fields: [userId], references: [id])
+
+  @@unique([loanId, userId])
+  @@index([loanId])
+  @@index([userId])
+}
+
+// ==========================
+// 🧑‍💼 Underwriter Queue
+// ==========================
+
+enum UnderwriterTaskStatus {
+  PENDING
+  IN_REVIEW
+  COMPLETED
+  ESCALATED
+  RETURNED
+}
+
+model UnderwriterTask {
+  id                   String               @id @default(uuid())
+  loanApplicationId    String?
+  loanId               String?
+  assignedToEmployeeId String?
+  assignedByAdminId    String?
+  status               UnderwriterTaskStatus @default(PENDING)
+  priority             TaskPriority          @default(MEDIUM)
+  notes                String?
+  decisionComment      String?
+  decisionAt           DateTime?
+  dueDate              DateTime?
+  escalatedAt          DateTime?
+  escalationReason     String?
+  metadata             Json?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  assignedToEmployee   Employee?             @relation("UnderwriterAssigned", fields: [assignedToEmployeeId], references: [id])
+
+  @@index([assignedToEmployeeId, status])
+  @@index([status, priority])
+}
+
+// ==========================
+// ✅ Pre-Disbursal Checklist
+// ==========================
+
+model DisbursalChecklist {
+  id                 String   @id @default(uuid())
+  loanId             String   @unique
+  items              Json     // [{ key, label, checked, blocking, checkedAt, checkedBy }]
+  allBlockingCleared Boolean  @default(false)
+  readyForDisbursal  Boolean  @default(false)
+  clearedByAdminId    String?
+  clearedByEmployeeId String?
+  clearedAt          DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  loan               Loan     @relation(fields: [loanId], references: [id])
+}
+
+// ==========================
+// ⏸️ Disbursal Hold
+// ==========================
+
+enum DisbursalHoldStatus {
+  ACTIVE
+  RELEASED
+  CANCELLED
+}
+
+model DisbursalHold {
+  id               String             @id @default(uuid())
+  loanId           String
+  reason           String
+  holdType         String?            // COMPLIANCE, LEGAL, DOCUMENT_PENDING, MANUAL
+  status           DisbursalHoldStatus @default(ACTIVE)
+  placedByAdminId  String?
+  placedByEmployeeId String?
+  releasedByAdminId String?
+  releasedByEmployeeId String?
+  releaseNote      String?
+  placedAt         DateTime           @default(now())
+  releasedAt       DateTime?
+  expiresAt        DateTime?
+  metadata         Json?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  loan             Loan               @relation(fields: [loanId], references: [id])
+
+  @@index([loanId, status])
+}
+
+// ==========================
+// 🗄️ Data Retention & Archive
+// ==========================
+
+model ArchivedLog {
+  id          String   @id @default(uuid())
+  sourceTable String   // ActionLog, CommLog, PIIAccessLog, NotificationLog
+  sourceId    String
+  data        Json     // Full row snapshot
+  archivedAt  DateTime @default(now())
+
+  @@index([sourceTable, archivedAt])
 }
