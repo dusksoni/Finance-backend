@@ -1,11 +1,6 @@
 const prisma = require("../lib/prisma");
-const twilio = require("twilio");
 const logAction = require("../utils/adminLogger");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
-const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
 
 const toComparable = (value) => {
   if (value === undefined || value === null) return "";

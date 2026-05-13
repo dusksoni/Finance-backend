@@ -1,23 +1,7 @@
 const prisma = require('../lib/prisma');
 const jwt = require('jsonwebtoken');
-const twilio = require('twilio');
+const msg91 = require('../utils/msg91');
 
-// Initialize Twilio client
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
-
-/**
- * OTP Authentication Controller for Mobile User App
- * Supports login by registration number or phone number
- * Uses Twilio Verify for OTP
- */
-
-/**
- * Send OTP for authentication
- * User can provide either registration number (fileNo) or phone number
- */
 exports.sendLoginOTP = async (req, res) => {
   try {
     const { identifier } = req.body; // Can be fileNo or phone number
@@ -93,40 +77,23 @@ exports.sendLoginOTP = async (req, res) => {
       });
     }
 
-    console.log('Loan found:', {
-      loanId: loan.id,
-      fileNo: loan.fileNo,
-      userPhone: userPhone,
-    });
+    const result = await msg91.sendOTP(userPhone);
 
-    // Send OTP using Twilio Verify
-    console.log('Attempting to send OTP via Twilio to:', userPhone);
-
-    try {
-      await twilioClient.verify.v2
-        .services(process.env.TWILIO_VERIFY_SERVICE_SID)
-        .verifications.create({
-          to: `+91${userPhone}`,
-          channel: 'sms'
-        });
-
-      console.log('OTP sent successfully via Twilio');
-
-      res.status(200).json({
-        status: 200,
-        message: 'OTP sent successfully',
-        data: {
-          phone: userPhone.replace(/\d(?=\d{4})/g, '*'), // Mask phone number
-        },
-      });
-    } catch (twilioError) {
-      console.error('Twilio OTP Error:', twilioError);
+    if (!result.success) {
       return res.status(500).json({
         status: 500,
         error: 'Failed to send OTP',
-        message: twilioError.message,
+        message: result.message,
       });
     }
+
+    res.status(200).json({
+      status: 200,
+      message: 'OTP sent successfully',
+      data: {
+        phone: userPhone.replace(/\d(?=\d{4})/g, '*'),
+      },
+    });
   } catch (error) {
     console.error('Send Login OTP Error:', error);
     res.status(500).json({
@@ -224,33 +191,16 @@ exports.verifyLoginOTP = async (req, res) => {
       });
     }
 
-    // Verify OTP using Twilio Verify
-    try {
-      const verificationCheck = await twilioClient.verify.v2
-        .services(process.env.TWILIO_VERIFY_SERVICE_SID)
-        .verificationChecks.create({
-          to: `+91${userPhone}`,
-          code: otp
-        });
+    const result = await msg91.verifyOTP(userPhone, otp);
 
-      console.log('Twilio verification result:', verificationCheck.status);
-
-      if (verificationCheck.status !== 'approved') {
-        return res.status(401).json({
-          status: 401,
-          error: 'Invalid or expired OTP',
-        });
-      }
-    } catch (twilioError) {
-      console.error('Twilio Verify Error:', twilioError);
+    if (!result.success) {
       return res.status(401).json({
         status: 401,
-        error: 'Invalid OTP',
-        message: twilioError.message,
+        error: 'Invalid or expired OTP',
+        message: result.message,
       });
     }
 
-    // Generate JWT token
     const token = jwt.sign(
       {
         userId: loan.user.id,
@@ -259,10 +209,9 @@ exports.verifyLoginOTP = async (req, res) => {
         type: 'mobile_user',
       },
       process.env.SECRET_KEY,
-      { expiresIn: '30d' } // Token valid for 30 days
+      { expiresIn: '30d' }
     );
 
-    // Construct full name from firstName, middleName, lastName
     const fullName = [
       loan.user.firstName,
       loan.user.middleName,
@@ -350,27 +299,20 @@ exports.resendLoginOTP = async (req, res) => {
       });
     }
 
-    // Resend OTP using Twilio
-    try {
-      await twilioClient.verify.v2
-        .services(process.env.TWILIO_VERIFY_SERVICE_SID)
-        .verifications.create({
-          to: `+91${userPhone}`,
-          channel: 'sms'
-        });
+    const result = await msg91.resendOTP(userPhone);
 
-      res.status(200).json({
-        status: 200,
-        message: 'OTP resent successfully',
-      });
-    } catch (twilioError) {
-      console.error('Twilio Resend OTP Error:', twilioError);
+    if (!result.success) {
       return res.status(500).json({
         status: 500,
         error: 'Failed to resend OTP',
-        message: twilioError.message,
+        message: result.message,
       });
     }
+
+    res.status(200).json({
+      status: 200,
+      message: 'OTP resent successfully',
+    });
   } catch (error) {
     console.error('Resend OTP Error:', error);
     res.status(500).json({
