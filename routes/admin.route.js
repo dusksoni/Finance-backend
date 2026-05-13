@@ -8,6 +8,9 @@ const {
   getAdminProfile,
   getActivityLogs,
   getLoginHistory,
+  forgotPassword,
+  resetPassword,
+  refreshToken,
 } = require("../controllers/admin.controller");
 const { authMiddleware, adminOnly, onlyAdminOrEmployee } = require("../middleware/auth");
 const { getAllUsers } = require("../controllers/user.controller");
@@ -16,6 +19,9 @@ const { updateAllOverdueFines } = require("../utils/fineUpdateService");
 const { clearCache, getCacheStats } = require("../utils/fineUpdateCache");
 
 router.post("/login", adminLogin);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password/:token", resetPassword);
+router.post("/refresh-token", refreshToken);
 router.get("/employees", authMiddleware, onlyAdminOrEmployee, getEmployees);
 router.get("/employees/:id", authMiddleware, onlyAdminOrEmployee, getEmployeeById);
 router.get("/users", authMiddleware, adminOnly, getAllUsers);

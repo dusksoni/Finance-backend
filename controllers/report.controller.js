@@ -893,3 +893,50 @@ exports.getPendingEmiReport = async (req, res) => {
     return res.status(500).json({ error: error.message, status: 500 });
   }
 };
+
+// ─── Disbursement Report ──────────────────────────────────────────────────
+exports.getDisbursementReport = async (req, res) => {
+  try {
+    const { fromDate, toDate, branchId, loanTypeId } = req.query;
+
+    const where = { disbursedDate: { not: null } };
+    if (fromDate || toDate) {
+      where.disbursedDate = {};
+      if (fromDate) where.disbursedDate.gte = new Date(fromDate);
+      if (toDate) where.disbursedDate.lte = new Date(toDate);
+    }
+    if (branchId) where.branchId = branchId;
+    if (loanTypeId) where.loanTypeId = loanTypeId;
+
+    const loans = await prisma.loan.findMany({
+      where,
+      include: {
+        user: { select: { firstName: true, lastName: true, phone: true } },
+        loanType: { select: { name: true } },
+        branch: { select: { name: true } },
+      },
+      orderBy: { disbursedDate: "desc" },
+    });
+
+    const data = loans.map((l) => ({
+      fileNo: l.fileNo,
+      borrower: `${l.user.firstName} ${l.user.lastName}`,
+      mobile: l.user.phone,
+      loanType: l.loanType?.name,
+      branch: l.branch?.name,
+      disbursedDate: l.disbursedDate,
+      principalAmount: l.principalLoanAmount,
+      interestAmount: l.interestAmount,
+      totalAmount: l.totalAmount,
+      tenureMonths: l.tenureMonths,
+      interestRate: l.interestRate,
+      status: l.status,
+    }));
+
+    const totalDisbursed = data.reduce((sum, d) => sum + d.principalAmount, 0);
+
+    res.json({ data, summary: { total: data.length, totalDisbursed: Math.round(totalDisbursed) } });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to get disbursement report", message: err.message });
+  }
+};

@@ -1227,11 +1227,10 @@ exports.deleteUser = async (req, res) => {
       employeeId: req.user?.employeeId,
     });
 
-    await prisma.photoID.deleteMany({ where: { userId: id } });
+    // Soft-delete: mark isDeleted instead of hard delete to preserve loan FK references
+    await prisma.user.update({ where: { id }, data: { isDeleted: true } });
 
-    await prisma.user.delete({ where: { id } });
-
-    res.json({ status: 200, message: "User deleted successfully" });
+    res.json({ status: 200, message: "User deactivated successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

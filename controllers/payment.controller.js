@@ -14,6 +14,11 @@ const {
   markLoanFinesUpdated,
 } = require("../utils/fineUpdateCache");
 const logAction = require("../utils/adminLogger");
+const { getRepaymentPolicy } = require("../utils/loanTypeRules");
+const {
+  distributeAcrossComponents,
+  getSortedInstallments,
+} = require("../utils/paymentAllocation");
 
 // Configure Decimal.js for precision
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
@@ -328,6 +333,28 @@ exports.makePayment = async (req, res) => {
           },
         });
 
+        const loanRules = installments[0]?.loan?.loanType?.rules || null;
+        const repaymentPolicy = getRepaymentPolicy(loanRules);
+        const eligibleInstallments = getSortedInstallments(
+          installments.filter((emi) =>
+            repaymentPolicy.allowAdvancePayment
+              ? true
+              : new Date(emi.paymentFor) <= referenceDate
+          ),
+          loanRules
+        );
+
+        if (eligibleInstallments.length === 0) {
+          throw Object.assign(
+            new Error(
+              repaymentPolicy.allowAdvancePayment
+                ? "No pending installments found for this loan"
+                : "Advance payment is disabled for this loan product and no due installment is available"
+            ),
+            { statusCode: 400 }
+          );
+        }
+
         // Check verification permission once
         // Gateway payments are auto-approved, manual CASH payments require permission
         // CHEQUE and manual ONLINE payments should NOT be auto-verified
@@ -378,7 +405,7 @@ exports.makePayment = async (req, res) => {
         let totalEmiCollected = 0;
 
         // Now distribute the payment across EMIs
-        for (const emi of installments) {
+        for (const emi of eligibleInstallments) {
           if (hasManualBreakdown) {
             // In manual mode, check if we have any EMI or Fine amount left to distribute
             if (remainingEmiAmount <= 0 && remainingFineAmount <= 0) break;
@@ -409,6 +436,16 @@ exports.makePayment = async (req, res) => {
           remainingFineDiscount = r2(remainingFineDiscount - discountForThisEmi);
           totalFineDiscountApplied = r2(totalFineDiscountApplied + discountForThisEmi);
           const fineDue = Math.max(fineDueBeforeDiscount - discountForThisEmi, 0);
+
+          const interestOutstanding = Math.max(
+            Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+            0
+          );
+          const principalOutstanding = Math.max(
+            Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+            0
+          );
+          const totalDueForEmi = r2(fineDue + interestOutstanding + principalOutstanding);
 
           // nothing due
           if (emiDue <= 0 && fineDue <= 0) {
@@ -442,41 +479,58 @@ exports.makePayment = async (req, res) => {
             payToEmi = Math.min(remainingEmiAmount, emiDue);
             remainingEmiAmount = r2(remainingEmiAmount - payToEmi);
 
-            // Split EMI amount between interest and principal
-            const interestOutstanding = Math.max(
-              Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
-              0
-            );
-            const principalOutstanding = Math.max(
-              Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
-              0
-            );
-
-            let emiToApply = payToEmi;
-            payInterest = r2(Math.min(emiToApply, interestOutstanding));
-            emiToApply = r2(emiToApply - payInterest);
-            payPrincipal = r2(Math.min(emiToApply, principalOutstanding));
+            const emiComponentAllocation = distributeAcrossComponents({
+              amount: payToEmi,
+              balances: {
+                INTEREST: interestOutstanding,
+                PRINCIPAL: principalOutstanding,
+              },
+              componentOrder: repaymentPolicy.componentAllocationOrder.filter(
+                (component) => component !== "FINE"
+              ),
+            });
+            payInterest = emiComponentAllocation.paid.INTEREST;
+            payPrincipal = emiComponentAllocation.paid.PRINCIPAL;
           } else {
-            // Auto mode: allocate fine → interest → principal
-            const toPay = Math.min(remaining, r2(emiDue + fineDue));
+            const toPay = Math.min(remaining, totalDueForEmi);
             if (toPay <= 0) break;
 
-            payToFine = Math.min(toPay, fineDue);
-            payToEmi = r2(toPay - payToFine);
+            if (!repaymentPolicy.allowPartialPayment && toPay < totalDueForEmi) {
+              throw Object.assign(
+                new Error(
+                  "Partial payments are disabled for this loan product. Pay the full due amount for the installment."
+                ),
+                { statusCode: 400 }
+              );
+            }
 
-            const interestOutstanding = Math.max(
-              Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
-              0
+            const allocation = distributeAcrossComponents({
+              amount: toPay,
+              balances: {
+                FINE: fineDue,
+                INTEREST: interestOutstanding,
+                PRINCIPAL: principalOutstanding,
+              },
+              componentOrder: repaymentPolicy.componentAllocationOrder,
+            });
+            payToFine = allocation.paid.FINE;
+            payInterest = allocation.paid.INTEREST;
+            payPrincipal = allocation.paid.PRINCIPAL;
+            payToEmi = r2(payInterest + payPrincipal);
+          }
+
+          const amountAppliedToThisEmi = r2(payToFine + payToEmi);
+          if (
+            amountAppliedToThisEmi > 0 &&
+            !repaymentPolicy.allowPartialPayment &&
+            amountAppliedToThisEmi < totalDueForEmi
+          ) {
+            throw Object.assign(
+              new Error(
+                "Partial payments are disabled for this loan product. Pay the full due amount for the installment."
+              ),
+              { statusCode: 400 }
             );
-            const principalOutstanding = Math.max(
-              Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
-              0
-            );
-            payInterest = r2(Math.min(payToEmi, interestOutstanding));
-            payPrincipal = r2(Math.min(
-              r2(payToEmi - payInterest),
-              principalOutstanding
-            ));
           }
 
           // Update EMI (amountPaidSoFar = fine + EMI)
@@ -636,9 +690,10 @@ exports.makePayment = async (req, res) => {
     return res.status(200).json({ data: result, status: 200 });
   } catch (err) {
     console.error("Payment Error:", err);
+    const status = err.statusCode || 500;
     return res
-      .status(500)
-      .json({ error: err.message || "Payment failed", status: 500 });
+      .status(status)
+      .json({ error: err.message || "Payment failed", status });
   }
 };
 
@@ -801,11 +856,34 @@ exports.payPaymentById = async (req, res) => {
       async (tx) => {
         // 1) Re-read EMI with a row-level lock via Prisma's findUnique inside tx
         //    Postgres serialises concurrent writers on the same row.
-        const emi = await tx.eMI.findUnique({ where: { id: emiId } });
+        const emi = await tx.eMI.findUnique({
+          where: { id: emiId },
+          include: {
+            loan: {
+              select: {
+                id: true,
+                loanType: {
+                  select: {
+                    rules: true,
+                  },
+                },
+              },
+            },
+          },
+        });
 
         // Guard: reject if EMI is already fully paid or being processed
         if (emi.status === "PAID") {
           throw Object.assign(new Error("EMI is already fully paid"), { statusCode: 400 });
+        }
+
+        const repaymentPolicy = getRepaymentPolicy(emi.loan?.loanType?.rules);
+
+        if (!repaymentPolicy.allowAdvancePayment && new Date(emi.paymentFor) > paymentDate) {
+          throw Object.assign(
+            new Error("Advance payment is disabled for this loan product"),
+            { statusCode: 400 }
+          );
         }
 
         // EMI due should ignore previously paid fine portion:
@@ -830,6 +908,15 @@ exports.payPaymentById = async (req, res) => {
         const fineAlreadyPaid = r2(emi.finePaid || 0);
         const fineDueBeforeDiscount = Math.max(fineAssessed - fineAlreadyPaid, 0);
         const fineDue = Math.max(fineDueBeforeDiscount - discountAmount, 0);
+        const interestOutstanding = Math.max(
+          Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
+          0
+        );
+        const principalOutstanding = Math.max(
+          Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
+          0
+        );
+        const totalDueForEmi = r2(fineDue + interestOutstanding + principalOutstanding);
 
         let payToFine, payToInterest, payToPrincipal;
 
@@ -848,37 +935,54 @@ exports.payPaymentById = async (req, res) => {
           }
 
           payToFine = r2(fineAmount);
-
-          const interestOutstanding = Math.max(
-            Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
-            0
-          );
-          const principalOutstanding = Math.max(
-            Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
-            0
-          );
-
-          let remainingEmi = r2(emiAmount);
-          payToInterest = Math.min(remainingEmi, interestOutstanding);
-          remainingEmi = r2(remainingEmi - payToInterest);
-          payToPrincipal = Math.min(remainingEmi, principalOutstanding);
+          const emiComponentAllocation = distributeAcrossComponents({
+            amount: emiAmount,
+            balances: {
+              INTEREST: interestOutstanding,
+              PRINCIPAL: principalOutstanding,
+            },
+            componentOrder: repaymentPolicy.componentAllocationOrder.filter(
+              (component) => component !== "FINE"
+            ),
+          });
+          payToInterest = emiComponentAllocation.paid.INTEREST;
+          payToPrincipal = emiComponentAllocation.paid.PRINCIPAL;
         } else {
-          let remaining = Math.min(amount, r2(emiDue + fineDue));
-          payToFine = Math.min(remaining, fineDue);
-          remaining = r2(remaining - payToFine);
+          let allocatableAmount = Math.min(amount, totalDueForEmi);
+          if (!repaymentPolicy.allowPartialPayment && allocatableAmount < totalDueForEmi) {
+            throw Object.assign(
+              new Error(
+                "Partial payments are disabled for this loan product. Pay the full due amount for the installment."
+              ),
+              { statusCode: 400 }
+            );
+          }
 
-          const interestOutstanding = Math.max(
-            Number(emi.interestAmt || 0) - Number(emi.interestPaid || 0),
-            0
-          );
-          const principalOutstanding = Math.max(
-            Number(emi.principalAmt || 0) - Number(emi.principalPaid || 0),
-            0
-          );
-          payToInterest = Math.min(remaining, interestOutstanding);
-          payToPrincipal = Math.min(
-            r2(remaining - payToInterest),
-            principalOutstanding
+          const allocation = distributeAcrossComponents({
+            amount: allocatableAmount,
+            balances: {
+              FINE: fineDue,
+              INTEREST: interestOutstanding,
+              PRINCIPAL: principalOutstanding,
+            },
+            componentOrder: repaymentPolicy.componentAllocationOrder,
+          });
+          payToFine = allocation.paid.FINE;
+          payToInterest = allocation.paid.INTEREST;
+          payToPrincipal = allocation.paid.PRINCIPAL;
+        }
+
+        const totalAppliedAmount = r2(payToFine + payToInterest + payToPrincipal);
+        if (
+          totalAppliedAmount > 0 &&
+          !repaymentPolicy.allowPartialPayment &&
+          totalAppliedAmount < totalDueForEmi
+        ) {
+          throw Object.assign(
+            new Error(
+              "Partial payments are disabled for this loan product. Pay the full due amount for the installment."
+            ),
+            { statusCode: 400 }
           );
         }
 
@@ -2270,6 +2374,49 @@ exports.editLastPayment = async (req, res) => {
       return res.status(400).json({ error: "Cannot edit a deleted/reversed payment", status: 400 });
     }
 
+    // ── Maker-checker: amount edits go through ApprovalRequest ───────────────
+    const amountChanging =
+      (amount !== undefined && r2(amount) !== r2(payment.amount)) ||
+      emiAmount !== undefined ||
+      fineAmount !== undefined ||
+      (paymentDate !== undefined && new Date(paymentDate).getTime() !== new Date(payment.paymentDate).getTime());
+
+    if (amountChanging) {
+      const matrix = await prisma.approvalMatrix.findFirst({
+        where: { entityType: "PAYMENT", isActive: true },
+        orderBy: { priority: "desc" },
+      });
+      if (matrix && !matrix.autoApprove) {
+        const approvalRequest = await prisma.approvalRequest.create({
+          data: {
+            matrixId: matrix.id,
+            entityType: "PAYMENT",
+            entityId: paymentId,
+            requestedAmount: r2(amount || payment.amount),
+            requiredCount: matrix.requiredCount ?? 1,
+            metadata: { action: "EDIT", changes: req.body },
+            requestedByAdminId: req.user.adminId,
+            requestedByEmployeeId: req.user.employeeId,
+          },
+        });
+        await logAction({
+          action: "PAYMENT_EDIT_PENDING_APPROVAL",
+          table: "Payment",
+          targetId: paymentId,
+          adminId: req.user.adminId,
+          employeeId: req.user.employeeId,
+          loginActivityId: req.user.activity,
+          metadata: { approvalRequestId: approvalRequest.id, changes: req.body },
+        });
+        return res.status(202).json({
+          message: "Payment edit requires approval. Request submitted.",
+          approvalRequestId: approvalRequest.id,
+          status: 202,
+        });
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Check if this is a gateway payment (QR payments should not be editable)
     if (payment.transactionId && (payment.paymentMode === "UPI" || payment.paymentMode === "ONLINE")) {
       // Check if it came from ICICI gateway
@@ -2671,6 +2818,41 @@ exports.deleteLastEmiPayment = async (req, res) => {
     if (!payment.emiId) {
       return res.status(400).json({ error: "Only EMI-linked payments can be deleted", status: 400 });
     }
+
+    // ── Maker-checker: deletions go through ApprovalRequest ──────────────────
+    const matrix = await prisma.approvalMatrix.findFirst({
+      where: { entityType: "PAYMENT", isActive: true },
+      orderBy: { priority: "desc" },
+    });
+    if (matrix && !matrix.autoApprove) {
+      const approvalRequest = await prisma.approvalRequest.create({
+        data: {
+          matrixId: matrix.id,
+          entityType: "PAYMENT",
+          entityId: paymentId,
+          requestedAmount: r2(payment.amount),
+          requiredCount: matrix.requiredCount ?? 1,
+          metadata: { action: "DELETE", reason },
+          requestedByAdminId: req.user.adminId,
+          requestedByEmployeeId: req.user.employeeId,
+        },
+      });
+      await logAction({
+        action: "PAYMENT_DELETE_PENDING_APPROVAL",
+        table: "Payment",
+        targetId: paymentId,
+        adminId: req.user.adminId,
+        employeeId: req.user.employeeId,
+        loginActivityId: req.user.activity,
+        metadata: { approvalRequestId: approvalRequest.id, reason },
+      });
+      return res.status(202).json({
+        message: "Payment deletion requires approval. Request submitted.",
+        approvalRequestId: approvalRequest.id,
+        status: 202,
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Gateway/QR protection (same behavior as edit)
     if (payment.transactionId && (payment.paymentMode === "UPI" || payment.paymentMode === "ONLINE")) {

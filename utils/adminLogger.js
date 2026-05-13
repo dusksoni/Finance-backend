@@ -20,6 +20,10 @@ const logAction = async ({
   targetId,
   message,
   metadata = {},
+  oldData = undefined,
+  newData = undefined,
+  ipAddress = undefined,
+  userAgent = undefined,
 }) => {
   try {
     let normalizedMetadata = metadata;
@@ -40,6 +44,10 @@ const logAction = async ({
         table,
         targetId,
         metadata: normalizedMetadata,
+        oldData,
+        newData,
+        ipAddress,
+        userAgent,
       },
     });
   } catch (error) {

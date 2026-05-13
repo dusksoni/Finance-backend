@@ -472,3 +472,103 @@ exports.getEmployees = async (req, res) => {
     limit,
   });
 };
+
+// ─── Forgot Password ───────────────────────────────────────────────────────
+// Generates a reset token and stores it. In production, email this link to admin.
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required" });
+
+    const admin = await prisma.admin.findFirst({ where: { email } });
+    // Always return success to prevent email enumeration
+    if (!admin) return res.json({ message: "If this email exists, a reset link has been sent." });
+
+    const crypto = require("crypto");
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.admin.update({
+      where: { id: admin.id },
+      data: { resetToken: token, resetTokenExpiry: expiry },
+    });
+
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const resetLink = `${frontendUrl}/reset-password/${token}`;
+    // TODO: Replace console.log with actual email sending (nodemailer/sendgrid)
+    console.log(`[PASSWORD-RESET] Reset link for ${email}: ${resetLink}`);
+
+    res.json({ message: "If this email exists, a reset link has been sent." });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to process forgot password", message: err.message });
+  }
+};
+
+// ─── Reset Password ────────────────────────────────────────────────────────
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 8)
+      return res.status(400).json({ error: "Password must be at least 8 characters" });
+
+    const admin = await prisma.admin.findFirst({
+      where: { resetToken: token, resetTokenExpiry: { gte: new Date() } },
+    });
+
+    if (!admin) return res.status(400).json({ error: "Invalid or expired reset token" });
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await prisma.admin.update({
+      where: { id: admin.id },
+      data: { password: hashed, resetToken: null, resetTokenExpiry: null },
+    });
+
+    res.json({ message: "Password reset successfully" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to reset password", message: err.message });
+  }
+};
+
+// ─── Refresh Token ─────────────────────────────────────────────────────────
+exports.refreshToken = async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ error: "Token is required" });
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+    } catch {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+
+    // Check if token is too old (more than 30 days)
+    const issued = decoded.iat * 1000;
+    if (Date.now() - issued > 30 * 24 * 60 * 60 * 1000) {
+      return res.status(401).json({ error: "Token too old, please log in again" });
+    }
+
+    // Verify the admin/employee still exists
+    const { adminId, employeeId } = decoded;
+    if (adminId) {
+      const admin = await prisma.admin.findUnique({ where: { id: adminId }, select: { id: true, isActive: true } });
+      if (!admin || !admin.isActive) return res.status(401).json({ error: "Account not active" });
+    } else if (employeeId) {
+      const emp = await prisma.employee.findUnique({ where: { id: employeeId }, select: { id: true, isActive: true } });
+      if (!emp || !emp.isActive) return res.status(401).json({ error: "Account not active" });
+    }
+
+    // Issue new 7-day token
+    const newToken = jwt.sign(
+      { adminId: decoded.adminId, employeeId: decoded.employeeId, role: decoded.role, activity: decoded.activity },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({ token: newToken });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to refresh token", message: err.message });
+  }
+};
