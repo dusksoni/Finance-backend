@@ -1,6 +1,7 @@
 const prisma = require("../lib/prisma");
 const logAction = require("../utils/adminLogger");
 const { generateEMISchedule } = require("./loan.controller");
+const { getBranchFilter } = require("../utils/regionFilter");
 
 // ─── Restructuring Requests ───────────────────────────────────────────────────
 
@@ -48,8 +49,10 @@ exports.createRequest = async (req, res) => {
 exports.listRequests = async (req, res) => {
   try {
     const { loanId, status, type } = req.query;
+    const regionBranchFilter = loanId ? null : getBranchFilter(req.user);
     const where = {};
     if (loanId) where.loanId = loanId;
+    else if (regionBranchFilter) where.loan = regionBranchFilter;
     if (status) where.status = status;
     if (type) where.type = type;
     const requests = await prisma.restructuringRequest.findMany({
@@ -141,8 +144,8 @@ exports.applyRequest = async (req, res) => {
     await prisma.$transaction(async (tx) => {
       // ── WRITE_OFF ──────────────────────────────────────────────────────────
       if (request.type === "WRITE_OFF") {
-        await tx.eMISchedule.updateMany({
-          where: { loanId: loan.id, isPaid: false },
+        await tx.eMI.updateMany({
+          where: { loanId: loan.id, status: { not: "PAID" } },
           data: { status: "CANCELLED" },
         });
         await tx.loan.update({
@@ -159,8 +162,8 @@ exports.applyRequest = async (req, res) => {
       // ── SETTLEMENT ────────────────────────────────────────────────────────
       if (request.type === "SETTLEMENT") {
         const settlementAmt = Number(request.settlementAmount) || 0;
-        await tx.eMISchedule.updateMany({
-          where: { loanId: loan.id, isPaid: false },
+        await tx.eMI.updateMany({
+          where: { loanId: loan.id, status: { not: "PAID" } },
           data: { status: "CANCELLED" },
         });
         // Record settlement as a payment entry for reconciliation
@@ -202,8 +205,8 @@ exports.applyRequest = async (req, res) => {
       const moratoriumMonths = request.moratoriumMonths || 0;
 
       // Determine remaining principal (unpaid)
-      const unpaidEmis = loan.emi.filter((e) => !e.isPaid);
-      const remainingPrincipal = unpaidEmis.reduce((s, e) => s + Number(e.principalAmount || 0), 0) || loan.pendingAmount;
+      const unpaidEmis = loan.emi.filter((e) => e.status !== "PAID");
+      const remainingPrincipal = unpaidEmis.reduce((s, e) => s + Number(e.principalAmt || 0), 0) || Number(loan.pendingAmount);
 
       const schedule = generateEMISchedule({
         principalLoanAmount: remainingPrincipal,
@@ -218,33 +221,33 @@ exports.applyRequest = async (req, res) => {
       });
 
       // Delete unpaid EMIs
-      await tx.eMISchedule.deleteMany({
-        where: { loanId: loan.id, isPaid: false },
+      await tx.eMI.deleteMany({
+        where: { loanId: loan.id, status: { not: "PAID" } },
       });
 
-      // Insert new schedule
-      const totalInterest = schedule.reduce((s, e) => s + (e.interestAmount || 0), 0);
-      const totalAmount = schedule.reduce((s, e) => s + (e.totalAmount || e.emiAmount || 0), 0);
-      const monthlyEmi = schedule.find((e) => !e.isMoratorium)?.emiAmount || 0;
+      // Insert new schedule using the same field names as generateEMISchedule output
+      const totalInterest = schedule.reduce((s, e) => s + Number(e.interestAmt || 0), 0);
+      const totalAmount = schedule.reduce((s, e) => s + Number(e.emiPayAmount || 0), 0);
+      const monthlyEmi = schedule.find((e) => !e.isMoratorium)?.emiPayAmount || 0;
 
-      for (const row of schedule) {
-        await tx.eMISchedule.create({
-          data: {
-            loanId: loan.id,
-            emiNumber: row.emiNumber,
-            dueDate: new Date(row.dueDate),
-            emiAmount: row.emiAmount || 0,
-            principalAmount: row.principalAmount || 0,
-            interestAmount: row.interestAmount || 0,
-            fineAmount: 0,
-            isPaid: false,
-            status: row.isMoratorium ? "MORATORIUM" : "PENDING",
-          },
-        });
-      }
+      await tx.eMI.createMany({
+        data: schedule.map((row) => ({
+          loanId: loan.id,
+          paymentFor: new Date(row.paymentFor),
+          paymentDate: new Date(row.paymentFor),
+          emiPayAmount: row.emiPayAmount || 0,
+          principalAmt: row.principalAmt || 0,
+          interestAmt: row.interestAmt || 0,
+          fineAmount: 0,
+          amountPaidSoFar: 0,
+          status: row.isMoratorium ? "MORATORIUM" : "UNPAID",
+          isDelayed: false,
+          isForeclosure: false,
+        })),
+      });
 
       const newEndDate = schedule.length > 0
-        ? new Date(schedule[schedule.length - 1].dueDate)
+        ? new Date(schedule[schedule.length - 1].paymentFor)
         : loan.endDate;
 
       await tx.loan.update({
@@ -305,8 +308,10 @@ exports.createWaiver = async (req, res) => {
 exports.listWaivers = async (req, res) => {
   try {
     const { loanId, status } = req.query;
+    const regionBranchFilter = loanId ? null : getBranchFilter(req.user);
     const where = {};
     if (loanId) where.loanId = loanId;
+    else if (regionBranchFilter) where.loan = regionBranchFilter;
     if (status) where.status = status;
     const waivers = await prisma.waiverRequest.findMany({ where, orderBy: { createdAt: "desc" } });
     res.json({ data: waivers });

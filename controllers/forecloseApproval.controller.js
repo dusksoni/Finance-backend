@@ -2,6 +2,7 @@
 const prisma = require("../lib/prisma");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
 const logAction = require("../utils/adminLogger");
+const { getBranchFilter } = require("../utils/regionFilter");
 
 // Create a foreclose approval request
 exports.createForecloseRequest = async (req, res) => {
@@ -57,7 +58,7 @@ exports.createForecloseRequest = async (req, res) => {
     const enhancedMetadata = {
       ...metadata,
       useGateway: useGateway || false,
-      paymentSource: useGateway ? 'ICICI_GATEWAY' : 'MANUAL_ENTRY',
+      paymentSource: useGateway ? 'PAYMENT_GATEWAY' : 'MANUAL_ENTRY',
     };
 
     // Create the foreclose request
@@ -140,12 +141,16 @@ exports.listForecloseRequests = async (req, res) => {
 
     const statuses = statusMap[statusQuery] || ["PENDING"];
 
+    const regionBranchFilter = branchId ? null : getBranchFilter(req.user);
+
     const where = {
       status: { in: statuses },
     };
 
     if (branchId) {
       where.loan = { branchId };
+    } else if (regionBranchFilter) {
+      where.loan = regionBranchFilter;
     }
 
     if (search) {

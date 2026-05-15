@@ -135,6 +135,102 @@ const APP_CONFIG_DEFINITIONS = {
       authorizedSignatoryDesignation: "Authorized Signatory",
     },
   },
+  // ─── Payment Gateways ───────────────────────────────────────────────────────
+  "payment.orange": {
+    category: "payment",
+    label: "Orange PG (UPI/QR)",
+    description: "PhiCommerce Orange PG — UPI QR code payments. Already integrated.",
+    isPublic: false,
+    value: {
+      enabled: false,
+      merchantId: "",              // e.g. T_03341
+      aggregatorId: "",            // e.g. J_03345
+      secretKey: "",               // HMAC-SHA256 signing key
+      currencyCode: "356",         // 356 = INR
+      apiUrl: "https://qa.phicommerce.com/pg/api/v2",
+      returnUrl: "",               // Callback URL posted to after payment
+    },
+  },
+  "payment.icici": {
+    category: "payment",
+    label: "ICICI EazyPay (UPI/QR)",
+    description: "ICICI Bank EazyPay — UPI QR code payments with RSA-encrypted API. Already integrated.",
+    isPublic: false,
+    value: {
+      enabled: false,
+      mode: "sandbox",            // sandbox | production
+      merchantId: "",             // ICICI_MERCHANT_ID
+      subMerchantId: "",          // ICICI_SUB_MERCHANT_ID (defaults to merchantId)
+      terminalId: "5411",         // MCC code (5411 = grocery, change per business)
+      apiKey: "",                 // ICICI_API_KEY
+      merchantVPA: "",            // e.g. yourcompany@icici
+      merchantName: "",           // Displayed in UPI apps
+      gatewayUrl: "https://apibankingonesandbox.icicibank.com", // sandbox URL
+      callbackUrl: "",            // Your server callback endpoint for ICICI webhook
+    },
+  },
+  "payment.razorpay": {
+    category: "payment",
+    label: "Razorpay",
+    description: "Razorpay payment gateway credentials and settings.",
+    isPublic: false,
+    value: {
+      enabled: false,
+      mode: "test",              // test | live
+      keyId: "",
+      keySecret: "",
+      webhookSecret: "",
+      currency: "INR",
+      captureAutomatically: true,
+      description: "Loan EMI Payment",
+      logo: "",
+      brandColor: "#11a75c",
+    },
+  },
+  "payment.cashfree": {
+    category: "payment",
+    label: "Cashfree",
+    description: "Cashfree payment gateway credentials and settings.",
+    isPublic: false,
+    value: {
+      enabled: false,
+      mode: "sandbox",           // sandbox | production
+      appId: "",
+      secretKey: "",
+      webhookSecret: "",
+      currency: "INR",
+      captureAutomatically: true,
+    },
+  },
+  "payment.payu": {
+    category: "payment",
+    label: "PayU",
+    description: "PayU payment gateway credentials and settings.",
+    isPublic: false,
+    value: {
+      enabled: false,
+      mode: "test",              // test | live
+      merchantKey: "",
+      merchantSalt: "",
+      webhookSecret: "",
+      currency: "INR",
+    },
+  },
+  "payment.settings": {
+    category: "payment",
+    label: "Payment Settings",
+    description: "Global payment collection settings across all gateways.",
+    isPublic: false,
+    value: {
+      activeGateway: "none",     // none | orange | razorpay | cashfree | payu
+      allowPartialPayment: false,
+      allowOverpayment: false,
+      minPayableAmount: 1,
+      receiptAutoGenerate: true,
+      notifyBorrowerOnSuccess: true,
+      notifyAdminOnSuccess: false,
+    },
+  },
   // ─── Branding ───────────────────────────────────────────────────────────────
   "branding.company_profile": {
     category: "branding",

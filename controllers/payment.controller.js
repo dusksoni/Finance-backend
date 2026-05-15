@@ -19,6 +19,19 @@ const {
   distributeAcrossComponents,
   getSortedInstallments,
 } = require("../utils/paymentAllocation");
+const { pushInApp } = require("../utils/notificationService");
+const { notifyRegionalApprovers, notifyCreator, notifyUser } = require("../utils/notifyRegional");
+const { getPaymentBranchFilter } = require("../utils/regionFilter");
+
+// Notify regional PAYMENT_VERIFY holders that a payment needs approval (fire-and-forget)
+async function notifyPaymentApprovers({ branchId, title, message, linkUrl, excludeEmployeeId }) {
+  notifyRegionalApprovers({ branchId, permission: "PAYMENT_VERIFY", title, message, linkUrl, triggerEvent: "PAYMENT_VERIFY", excludeEmployeeId }).catch(() => {});
+}
+
+// Notify the employee who recorded the payment + the user (post-approval)
+async function notifyPaymentCreator({ creatorEmployeeId, title, message, linkUrl }) {
+  notifyCreator({ employeeId: creatorEmployeeId, title, message, linkUrl, triggerEvent: "PAYMENT_CONFIRMED" }).catch(() => {});
+}
 
 // Configure Decimal.js for precision
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
@@ -687,6 +700,20 @@ exports.makePayment = async (req, res) => {
       ...getActorContext(req.user),
     });
 
+    // Fire-and-forget: notify approvers if pending, or notify user if auto-approved (gateway)
+    prisma.loan.findUnique({ where: { id: loanId }, select: { branchId: true, userId: true } }).then((ln) => {
+      const link = result?.paymentId ? `/payment/${result.paymentId}` : `/loan/${loanId}`;
+      if (useGateway) {
+        // Gateway / QR auto-approved — notify the customer
+        if (ln?.userId) notifyUser({ userId: ln.userId, title: "Payment Confirmed", message: `Your payment of ₹${amountPaid} has been received and confirmed`, linkUrl: link, triggerEvent: "PAYMENT_CONFIRMED" });
+      } else {
+        const isVerified = paymentMode === "CASH" && result?.verified;
+        if (!isVerified) {
+          notifyPaymentApprovers({ branchId: ln?.branchId, title: "Payment Needs Verification", message: `₹${amountPaid} payment via ${paymentMode || "payment"} for loan ${loanId} needs approval`, linkUrl: link, excludeEmployeeId: req.user?.employeeId });
+        }
+      }
+    }).catch(() => {});
+
     return res.status(200).json({ data: result, status: 200 });
   } catch (err) {
     console.error("Payment Error:", err);
@@ -1157,6 +1184,17 @@ exports.payPaymentById = async (req, res) => {
       ...getActorContext(req.user),
     });
 
+    // Fire-and-forget: notify approvers if pending, or notify user if auto-approved (gateway)
+    prisma.loan.findUnique({ where: { id: txResult.loanId }, select: { branchId: true, userId: true } }).then((ln) => {
+      const payLink = `/payment/${txResult.paymentId}`;
+      if (!canSelfVerify) {
+        notifyPaymentApprovers({ branchId: ln?.branchId, title: "EMI Payment Needs Verification", message: `₹${totalPaid} EMI payment via ${paymentMode || "payment"} needs approval`, linkUrl: payLink, excludeEmployeeId: req.user?.employeeId });
+      } else if (ln?.userId) {
+        // Gateway / QR auto-approved — notify the customer directly
+        notifyUser({ userId: ln.userId, title: "Payment Confirmed", message: `Your EMI payment of ₹${totalPaid} has been received and confirmed`, linkUrl: payLink, triggerEvent: "PAYMENT_CONFIRMED" });
+      }
+    }).catch(() => {});
+
     return res.status(200).json({
       data: {
         message: canSelfVerify ? "Payment Success" : "Payment Success waiting for approval",
@@ -1221,18 +1259,20 @@ exports.verifyPayment = async (req, res) => {
 
       // 2) Deterministically recompute this payment's breakdown (fine / interest / principal)
       //    by replaying all payments for this EMI in chronological order.
-      const emiRow = await tx.eMI.findUnique({
-        where: { id: inst.emiId },
-        select: {
-          id: true,
-          loanId: true,
-          paymentFor: true,
-          emiPayAmount: true,
-          principalAmt: true,
-          interestAmt: true,
-          fineAmount: true,
-        },
-      });
+      const emiRow = inst.emiId
+        ? await tx.eMI.findUnique({
+            where: { id: inst.emiId },
+            select: {
+              id: true,
+              loanId: true,
+              paymentFor: true,
+              emiPayAmount: true,
+              principalAmt: true,
+              interestAmt: true,
+              fineAmount: true,
+            },
+          })
+        : null;
 
       const allEmiPayments = await tx.payment.findMany({
         where: { emiId: inst.emiId },
@@ -1252,7 +1292,7 @@ exports.verifyPayment = async (req, res) => {
       let thisPaidToInterest = 0;
       let thisPaidToPrincipal = 0;
 
-      for (const p of allEmiPayments) {
+      for (const p of emiRow ? allEmiPayments : []) {
         // EMI due uses ONLY EMI component (interest+principal) previously paid
         const emiComponentPaid = r2(interestPaidSoFar + principalPaidSoFar);
         const emiDueNow = Math.max(
@@ -1330,6 +1370,14 @@ exports.verifyPayment = async (req, res) => {
       };
     }, { maxWait: 2000, timeout: 30000 });
 
+    // Notify the employee who recorded this payment + the customer
+    if (inst.employeeId) {
+      notifyPaymentCreator({ creatorEmployeeId: inst.employeeId, title: "Payment Approved", message: `Your payment of ₹${inst.amount} for loan ${inst.loanId} has been verified`, linkUrl: `/payment/${paymentId}` });
+    }
+    if (inst.loan?.userId) {
+      notifyUser({ userId: inst.loan.userId, title: "Payment Confirmed", message: `Your payment of ₹${inst.amount} has been verified and applied to your loan`, linkUrl: `/payment/${paymentId}`, triggerEvent: "PAYMENT_CONFIRMED" });
+    }
+
     return res.json({ message: "Verified", data: result });
   } catch (err) {
     console.error("verifyPayment error:", err);
@@ -1342,11 +1390,14 @@ exports.getUnverifiedPayments = async (req, res) => {
   try {
     const { page = 1, limit = 20, loanId, userId, status } = req.query;
 
+    const regionFilter = getPaymentBranchFilter(req.user);
+
     const where = {
-      // verified: false,
       ...(loanId ? { loanId } : {}),
       ...(userId ? { loan: { is: { userId } } } : {}),
       ...(status ? { status: status } : { status: { notIn: ["REVERSED", "DELETED"] } }),
+      // Merge region filter into loan condition if no explicit loanId given
+      ...(!loanId && regionFilter ? regionFilter : {}),
     };
 
     console.log(where);
@@ -2127,6 +2178,14 @@ exports.reversePayment = async (req, res) => {
         // no-op if your helper isn't available/throws
       }
     });
+
+    // Notify the employee who recorded this payment + the customer
+    if (payment.employeeId) {
+      notifyCreator({ employeeId: payment.employeeId, title: "Payment Reversed", message: `Payment of ₹${payment.amount} for loan ${payment.loanId} has been reversed`, linkUrl: `/payment/${paymentId}`, triggerEvent: "PAYMENT_REVERSED" });
+    }
+    if (payment.loan?.userId) {
+      notifyUser({ userId: payment.loan.userId, title: "Payment Reversed", message: `A payment of ₹${payment.amount} on your loan has been reversed. Please contact support if you have questions`, linkUrl: `/payment/${paymentId}`, triggerEvent: "PAYMENT_REVERSED" });
+    }
 
     res.json({ message: "Payment reversed" });
   } catch (err) {

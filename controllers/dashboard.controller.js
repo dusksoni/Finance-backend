@@ -8,6 +8,7 @@ const {
   addDays,
   format,
 } = require("date-fns");
+const { getBranchFilter } = require("../utils/regionFilter");
 
 const OVERDUE_STATUSES = [
   "OVERDUE",
@@ -110,15 +111,26 @@ const resolveScope = async (user) => {
     permissions.includes("DASHBOARD_VIEW_ALL");
   const canViewBranch = permissions.includes("DASHBOARD_BRANCH_VIEW");
 
+  // Use regional access scope from auth middleware (accessScope / extraRegionIds)
+  // This supersedes the old single-branch logic
+  const accessScope = user.accessScope || "REGION";
+  const regionBranchFilter = getBranchFilter(user); // null means no restriction
+
   let level = "SELF";
   let loanWhere = { employeeId: employee.id };
 
-  if (canViewOrg) {
+  if (canViewOrg || accessScope === "ALL") {
     level = "ORG";
     loanWhere = {};
+  } else if (accessScope === "STATE" && regionBranchFilter) {
+    level = "STATE";
+    loanWhere = regionBranchFilter;
   } else if (canViewBranch && employee.branchId) {
     level = "BRANCH";
-    loanWhere = { branchId: employee.branchId };
+    loanWhere = regionBranchFilter || { branchId: employee.branchId };
+  } else if (regionBranchFilter) {
+    level = "REGION";
+    loanWhere = regionBranchFilter;
   }
 
   return {

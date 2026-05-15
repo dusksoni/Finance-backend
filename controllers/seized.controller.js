@@ -1,6 +1,7 @@
 const prisma = require("../lib/prisma");
 const logAction = require("../utils/adminLogger");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
+const { getBranchFilter } = require("../utils/regionFilter");
 
 exports.createSeized = async (req, res) => {
   try {
@@ -538,8 +539,12 @@ exports.getAllSeizedHistories = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
+    const regionBranchFilter = getBranchFilter(req.user);
+    const seizedWhere = regionBranchFilter ? { loan: regionBranchFilter } : {};
+
     const [data, total] = await Promise.all([
       prisma.seizedHistory.findMany({
+        where: seizedWhere,
         skip,
         take: limit,
         orderBy: { createdAt: "desc" },
@@ -584,7 +589,7 @@ exports.getAllSeizedHistories = async (req, res) => {
           }
         }
       }),
-      prisma.seizedHistory.count(),
+      prisma.seizedHistory.count({ where: seizedWhere }),
     ]);
     res.json({
       status: 200,

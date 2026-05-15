@@ -18,7 +18,7 @@ exports.exportToExcel = async (req, res) => {
     }
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = "Kushal Finance";
+    workbook.creator = "Finance";
     workbook.created = new Date();
 
     // Overview Sheet

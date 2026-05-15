@@ -54,6 +54,9 @@ exports.getEmployeeById = async (req, res) => {
         email: true,
         isBlocked: true,
         photoUrl: true,
+        accessScope: true,
+        extraRegionIds: true,
+        extraStateIds: true,
         region: {
           select: {
             id: true,
@@ -256,7 +259,7 @@ exports.updateSelfPassword = async (req, res) => {
 // CREATE EMPLOYEE
 exports.createEmployee = async (req, res) => {
   try {
-    const { name, email, password, roleId, regionId, branchId, photo } =
+    const { name, email, password, roleId, regionId, branchId, photo, accessScope, extraRegionIds, extraStateIds } =
       req.body;
 
     const existingEmployee = await prisma.employee.findUnique({
@@ -286,10 +289,14 @@ exports.createEmployee = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const profilePhoto = photo ? await createFiles([photo]) : [];
+    const VALID_SCOPES = ["REGION", "STATE", "ALL"];
     const data = {
       name,
       email,
       password: hashedPassword,
+      accessScope: VALID_SCOPES.includes(accessScope) ? accessScope : "REGION",
+      extraRegionIds: Array.isArray(extraRegionIds) ? extraRegionIds.filter(Boolean) : [],
+      extraStateIds: Array.isArray(extraStateIds) ? extraStateIds.filter(Boolean) : [],
       ...(req.user.adminId
         ? { admin: { connect: { id: req.user.adminId } } }
         : {}),
@@ -337,6 +344,9 @@ exports.putEmployee = async (req, res) => {
       phone,
       branchId,
       photo,
+      accessScope,
+      extraRegionIds,
+      extraStateIds,
     } = req.body;
 
     const employee = await prisma.employee.findUnique({ where: { id } });
@@ -347,6 +357,7 @@ exports.putEmployee = async (req, res) => {
       return res.status(403).json({ error: "Permission denied", status: 403 });
     }
 
+    const VALID_SCOPES = ["REGION", "STATE", "ALL"];
     const updateData = {
       name,
       role: { connect: { id: roleId } },
@@ -356,6 +367,9 @@ exports.putEmployee = async (req, res) => {
       email,
       phone,
       branch: branchId ? { connect: { id: branchId } } : undefined,
+      ...(accessScope && VALID_SCOPES.includes(accessScope) ? { accessScope } : {}),
+      ...(Array.isArray(extraRegionIds) ? { extraRegionIds: extraRegionIds.filter(Boolean) } : {}),
+      ...(Array.isArray(extraStateIds) ? { extraStateIds: extraStateIds.filter(Boolean) } : {}),
       ...(photo?.secure_url
         ? {
             photoUrl: photo.secure_url,

@@ -21,9 +21,12 @@ const STAGE_ORDER = [
 exports.listLegalActions = async (req, res) => {
   try {
     const { stage, loanId, page = 1, limit = 50 } = req.query;
+    const { getBranchFilter } = require("../utils/regionFilter");
+    const regionBranchFilter = loanId ? null : getBranchFilter(req.user);
     const where = {};
     if (stage) where.stage = stage;
     if (loanId) where.loanId = loanId;
+    else if (regionBranchFilter) where.loan = regionBranchFilter;
 
     const [actions, total] = await Promise.all([
       prisma.legalAction.findMany({

@@ -11,7 +11,7 @@ exports.uploadMiddleware = upload.single("image");
 const buildUploadOptions = (file) => {
   const options = {
     resource_type: "auto",
-    folder: "kushal_finance",
+    folder: "nbfc_finance",
   };
 
   if (!file) {
@@ -40,7 +40,7 @@ function streamUpload(req) {
     const stream = cloudinary.uploader.upload_stream(
       {
         resource_type: "auto",
-        folder: "kushal_finance",
+        folder: "nbfc_finance",
       },
       (error, result) => {
         if (result) {

@@ -20,21 +20,6 @@ exports.createRegion = async (req, res) => {
       return res.status(400).json({ error: "Region with the same name, state, and city already exists" });
     }
 
-    // Check for duplicate roles
-    const existingRoles = await prisma.role.findMany({
-      where: {
-        region: {
-          name: name,
-          stateId: stateId,
-          cityId: cityId,
-        },
-      },
-    });
-
-    if (existingRoles.length > 0) {
-      return res.status(400).json({ error: "Roles for this region already exist" });
-    }
-
     const region = await prisma.region.create({
       data: {
         name: name,

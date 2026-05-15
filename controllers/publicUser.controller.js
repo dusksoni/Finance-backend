@@ -7,13 +7,7 @@ const {
   markLoanFinesUpdated,
 } = require("../utils/fineUpdateCache");
 const { processPostPayment } = require("../utils/loanUtils");
-const {
-  createPaymentOrder,
-  verifyPaymentSignature,
-  checkPaymentStatus,
-  generatePaymentLink,
-  ICICI_CONFIG,
-} = require("../utils/iciciPaymentGateway");
+const { generateQR: gatewayGenerateQR, checkStatus: gatewayCheckStatus } = require("../utils/paymentGateway");
 const {
   buildPublicLoanLookupWhere,
   createRawPublicAccessToken,
@@ -36,14 +30,7 @@ const {
   distributeAcrossComponents,
   getSortedInstallments,
 } = require("../utils/paymentAllocation");
-const fs = require('fs');
-const path = require('path');
 
-// Check if we're in development mode (keys/credentials missing)
-const isDevelopmentMode = !fs.existsSync(path.join(__dirname, '../keys/icici_public_key.pem')) ||
-                          !fs.existsSync(path.join(__dirname, '../keys/merchant_private_key.pem')) ||
-                          !process.env.ICICI_MERCHANT_ID ||
-                          !process.env.ICICI_API_KEY;
 
 // Configure Decimal.js for precision
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
@@ -1851,42 +1838,21 @@ exports.createPaymentGatewayOrder = async (req, res) => {
       ? `EMI Payment - Loan ${loan.fileNo}`
       : `Bulk Payment - Loan ${loan.fileNo}`;
 
-    let orderResult;
+    const qrResult = await gatewayGenerateQR({
+      loanId: loan.id,
+      emiId: emiId || null,
+      amount: Number(amount),
+      paymentType: paymentType || "BULK",
+    });
 
-    if (isDevelopmentMode) {
-      // DEVELOPMENT MODE: Generate mock payment URL
-      console.log('📱 [DEV MODE] Creating mock payment order');
-
-      orderResult = {
-        success: true,
-        orderId: orderId,
-        paymentUrl: `http://localhost:3001/dev-payment-simulator?orderId=${orderId}&amount=${amount}`,
-        paymentId: `DEV_${Date.now()}`,
-        signature: 'DEV_SIGNATURE',
-        data: {
-          developmentMode: true,
-          note: 'Development mode - no actual payment gateway'
-        }
-      };
-    } else {
-      // PRODUCTION MODE: Create payment order with ICICI
-      orderResult = await createPaymentOrder({
-        orderId,
-        amount: Number(amount),
-        customerName,
-        customerEmail: loan.user.email,
-        customerPhone: loan.user.phone,
-        description,
-      });
-
-      if (!orderResult.success) {
-        return res.status(500).json({
-          error: "Failed to create payment order",
-          details: orderResult.error,
-          status: 500
-        });
-      }
-    }
+    const orderResult = {
+      orderId: qrResult.merchantTranId || orderId,
+      paymentUrl: qrResult.qrString || qrResult.intentURL || "",
+      paymentId: qrResult.transactionId || orderId,
+      qrString: qrResult.qrString,
+      gateway: qrResult.gateway,
+      developmentMode: qrResult.developmentMode,
+    };
 
     // Store pending order in database (optional - for tracking)
     await prisma.paymentOrder.create({
@@ -1913,11 +1879,13 @@ exports.createPaymentGatewayOrder = async (req, res) => {
     return res.json({
       status: 200,
       data: {
-        orderId: orderId,
+        orderId: orderResult.orderId,
         paymentUrl: orderResult.paymentUrl,
+        qrString: orderResult.qrString,
         gatewayOrderId: orderResult.paymentId,
         amount: Number(amount),
-        signature: orderResult.signature,
+        gateway: orderResult.gateway,
+        developmentMode: orderResult.developmentMode,
       },
     });
   } catch (err) {
@@ -1928,118 +1896,22 @@ exports.createPaymentGatewayOrder = async (req, res) => {
 
 /**
  * POST /api/public/payment/callback
- * Handle ICICI payment gateway callback
+ * Handle payment gateway callback (Orange PG / PhiCommerce)
  */
 exports.handlePaymentCallback = async (req, res) => {
   try {
-    const {
-      orderId,
-      paymentId,
-      signature,
-      status,
-      amount,
-      transactionId,
-    } = req.body;
+    console.log("Payment callback received:", req.body);
 
-    console.log("Payment callback received:", { orderId, paymentId, status });
+    // Delegate to Orange PG handler — it verifies signature and auto-processes payment
+    const { handleCallback } = require("./gateways/orangeGateway");
+    await handleCallback(req.body).catch((err) => console.error("Orange PG callback error:", err));
 
-    // Verify signature
-    const isValid = verifyPaymentSignature({
-      orderId,
-      paymentId,
-      signature,
-      status,
-    });
-
-    if (!isValid) {
-      console.error("Invalid payment signature");
-      return res.status(400).json({
-        error: "Invalid signature",
-        status: 400
-      });
+    const orderId = req.body.orderId;
+    if (!orderId) {
+      return res.json({ status: 200, message: "Callback received" });
     }
 
-    // Find payment order
-    const paymentOrder = await prisma.paymentOrder.findUnique({
-      where: { orderId: orderId },
-    }).catch(() => null);
-
-    if (!paymentOrder) {
-      console.error("Payment order not found:", orderId);
-      return res.status(404).json({
-        error: "Payment order not found",
-        status: 404
-      });
-    }
-
-    // Update payment order status
-    await prisma.paymentOrder.update({
-      where: { orderId: orderId },
-      data: {
-        status: status === "SUCCESS" ? "COMPLETED" : "FAILED",
-        gatewayPaymentId: paymentId,
-        gatewaySignature: signature,
-        transactionId: transactionId,
-        completedAt: new Date(),
-      },
-    }).catch((err) => {
-      console.error("Failed to update payment order:", err);
-    });
-
-    if (status === "SUCCESS") {
-      // Process the payment
-      const paymentData = {
-        amountPaid: paymentOrder.amount,
-        paymentMode: "ONLINE",
-        transactionId: transactionId || paymentId,
-        paymentDate: new Date(),
-        gatewayOrderId: orderId,
-        gatewayPaymentId: paymentId,
-        gatewaySignature: signature,
-      };
-
-      // Call appropriate payment endpoint based on type
-      if (paymentOrder.emiId) {
-        // EMI-specific payment
-        await this.payPublicEmiById(
-          {
-            params: { loanId: paymentOrder.loanId, emiId: paymentOrder.emiId },
-            body: paymentData,
-          },
-          { json: () => {}, status: () => ({ json: () => {} }) }
-        );
-      } else {
-        // Bulk payment
-        await this.makePublicPayment(
-          {
-            params: { loanId: paymentOrder.loanId },
-            body: paymentData,
-          },
-          { json: () => {}, status: () => ({ json: () => {} }) }
-        );
-      }
-
-      return res.json({
-        status: 200,
-        message: "Payment successful",
-        data: {
-          orderId,
-          paymentId,
-          amount: paymentOrder.amount,
-          loanId: paymentOrder.loanId,
-        },
-      });
-    } else {
-      return res.json({
-        status: 200,
-        message: "Payment failed",
-        data: {
-          orderId,
-          paymentId,
-          status,
-        },
-      });
-    }
+    return res.json({ status: 200, message: "Callback processed" });
   } catch (err) {
     console.error("handlePaymentCallback error:", err);
     return res.status(500).json({ error: err.message, status: 500 });
@@ -2066,31 +1938,21 @@ exports.checkPublicPaymentStatus = async (req, res) => {
       });
     }
 
-    // If still pending, check with gateway
+    // If still pending, check with unified gateway
     if (paymentOrder.status === "PENDING") {
-      const gatewayStatus = await checkPaymentStatus(orderId);
-
-      if (gatewayStatus.success) {
-        // Update local status
+      const gatewayStatus = await gatewayCheckStatus(orderId).catch(() => null);
+      if (gatewayStatus) {
+        const mappedStatus = gatewayStatus.status === "SUCCESS" ? "COMPLETED"
+          : gatewayStatus.status === "FAILURE" ? "FAILED"
+          : "PENDING";
         await prisma.paymentOrder.update({
-          where: { orderId: orderId },
-          data: {
-            status: gatewayStatus.status === "SUCCESS" ? "COMPLETED" : "FAILED",
-            gatewayPaymentId: gatewayStatus.paymentId,
-            completedAt: new Date(),
-          },
-        }).catch((err) => {
-          console.error("Failed to update payment order:", err);
-        });
+          where: { orderId },
+          data: { status: mappedStatus, completedAt: mappedStatus !== "PENDING" ? new Date() : undefined },
+        }).catch(() => {});
 
         return res.json({
           status: 200,
-          data: {
-            orderId,
-            status: gatewayStatus.status,
-            amount: gatewayStatus.amount,
-            paymentId: gatewayStatus.paymentId,
-          },
+          data: { orderId, status: gatewayStatus.status, amount: gatewayStatus.localData?.amount, gateway: gatewayStatus.gateway },
         });
       }
     }
@@ -2114,25 +1976,18 @@ exports.checkPublicPaymentStatus = async (req, res) => {
 
 /**
  * POST /api/public/loan/:loanId/payment/generate-qr
- * Generate ICICI UPI QR code for public payment (unauthenticated)
+ * Generate UPI QR code for public payment — routes through active gateway
  */
 exports.generatePublicQR = async (req, res) => {
   try {
     const { publicPortal } = await getPublicPortalConfig();
     if (!publicPortal.enabled) {
-      return res.status(403).json({
-        status: 403,
-        error: "Borrower self-service portal is currently disabled",
-      });
+      return res.status(403).json({ status: 403, error: "Borrower self-service portal is currently disabled" });
     }
 
     const { amount, paymentType } = req.body;
-
     if (!amount || amount <= 0) {
-      return res.status(400).json({
-        error: 'Valid amount is required',
-        status: 400
-      });
+      return res.status(400).json({ error: "Valid amount is required", status: 400 });
     }
 
     const loan = await resolveAccessiblePublicLoan(getResolvedPublicLoanId(req), {
@@ -2141,67 +1996,31 @@ exports.generatePublicQR = async (req, res) => {
     });
 
     if (!["ACTIVE", "OVERDUE", "DEFAULTED", "DISBURSED", "SEIZED", "SEIZED_INITIATED"].includes(loan.fileStatus)) {
-      return res.status(403).json({
-        error: "Cannot make payment for this loan",
-        status: 403
-      });
+      return res.status(403).json({ error: "Cannot make payment for this loan", status: 403 });
     }
 
-    // Use the ICICI payment controller's logic
-    const iciciController = require('./iciciPayment.controller');
-    
-    // Create a modified request object with the actual loan ID
-    const modifiedReq = {
-      ...req,
-      body: {
-        loanId: loan.id, // Use actual loan UUID
-        amount,
-        paymentType
-      },
-      user: null // No user for public payment
-    };
-
-    // Call the ICICI controller
-    await iciciController.generateQR(modifiedReq, res);
-    
+    const { generateQR } = require("../utils/paymentGateway");
+    const data = await generateQR({ loanId: loan.id, amount, paymentType, user: null });
+    return res.status(200).json({ status: 200, data });
   } catch (error) {
-    console.error('generatePublicQR error:', error);
-    return res.status(error.statusCode || 500).json({
-      error: error.message || 'Failed to generate QR code',
-      status: error.statusCode || 500
-    });
+    console.error("generatePublicQR error:", error);
+    return res.status(error.statusCode || 500).json({ error: error.message || "Failed to generate QR code", status: error.statusCode || 500 });
   }
 };
 
 /**
  * GET /api/public/loan/:loanId/payment/upi-status/:merchantTranId
- * Check ICICI UPI transaction status (unauthenticated)
+ * Check UPI transaction status — routes through active gateway
  */
 exports.checkPublicUPIStatus = async (req, res) => {
   try {
     const { merchantTranId } = req.params;
-
-    // Use the ICICI payment controller's logic
-    const iciciController = require('./iciciPayment.controller');
-    
-    // Create a modified request object
-    const modifiedReq = {
-      ...req,
-      params: {
-        merchantTranId
-      },
-      user: null // No user for public payment
-    };
-
-    // Call the ICICI controller
-    await iciciController.checkTransactionStatus(modifiedReq, res);
-    
+    const { checkStatus } = require("../utils/paymentGateway");
+    const data = await checkStatus(merchantTranId);
+    return res.status(200).json({ status: 200, data });
   } catch (error) {
-    console.error('checkPublicUPIStatus error:', error);
-    return res.status(500).json({
-      error: error.message || 'Failed to check transaction status',
-      status: 500
-    });
+    console.error("checkPublicUPIStatus error:", error);
+    return res.status(error.statusCode || 500).json({ error: error.message || "Failed to check transaction status", status: error.statusCode || 500 });
   }
 };
 

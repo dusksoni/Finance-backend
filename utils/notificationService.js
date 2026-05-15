@@ -187,4 +187,43 @@ async function sendByCategory(category, type, recipient, variables = {}, meta = 
   return sendFromTemplate({ templateId: template.id, recipient, variables, ...meta });
 }
 
-module.exports = { sendFromTemplate, sendRaw, sendByCategory, renderBody };
+/**
+ * Push an in-app notification to an admin or employee and emit via WebSocket.
+ * Use this from any controller (payment, loan approval, etc.) to notify staff instantly.
+ *
+ * @param {object} opts
+ * @param {"ADMIN"|"EMPLOYEE"|"USER"} opts.targetType
+ * @param {string} opts.targetId
+ * @param {string} opts.title
+ * @param {string} opts.message
+ * @param {string} [opts.triggerEvent]
+ * @param {string} [opts.linkUrl]
+ */
+async function pushInApp({ targetType, targetId, title, message, triggerEvent = "SYSTEM", linkUrl }) {
+  const notification = await prisma.notificationLog.create({
+    data: {
+      targetType,
+      targetId,
+      channel: "IN_APP",
+      triggerEvent,
+      contentRendered: message,
+      title,
+      linkUrl,
+      status: "PENDING",
+    },
+  });
+
+  // Emit via WebSocket if connected — lazy require to avoid circular dep
+  try {
+    const { emitNotification, emitUnreadCount } = require("./socket");
+    emitNotification(targetType, targetId, notification);
+    const unreadCount = await prisma.notificationLog.count({
+      where: { targetType, targetId, status: "PENDING" },
+    });
+    emitUnreadCount(targetType, targetId, unreadCount);
+  } catch (_) {}
+
+  return notification;
+}
+
+module.exports = { sendFromTemplate, sendRaw, sendByCategory, renderBody, pushInApp };

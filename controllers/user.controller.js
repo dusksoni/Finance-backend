@@ -1,6 +1,7 @@
 const prisma = require("../lib/prisma");
 const logAction = require("../utils/adminLogger");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
+const { getRegionFilter } = require("../utils/regionFilter");
 
 const toComparable = (value) => {
   if (value === undefined || value === null) return "";
@@ -359,7 +360,8 @@ exports.getAllUsers = async (req, res) => {
               },
             ]
           : []),
-        ...(regionId ? [{ regionId }] : []),
+        // Explicit regionId from query takes priority; otherwise apply scope-based filter
+        ...(regionId ? [{ regionId }] : (() => { const f = getRegionFilter(req.user); return f ? [f] : []; })()),
       ],
     };
 

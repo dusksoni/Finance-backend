@@ -1,5 +1,15 @@
 const prisma = require("../lib/prisma");
 const logAction = require("../utils/adminLogger");
+const { pushInApp } = require("../utils/notificationService");
+const { notifyRegionalApprovers, notifyCreator, notifyUser } = require("../utils/notifyRegional");
+const { getRegionFilter } = require("../utils/regionFilter");
+
+async function notifyAdmins(title, message, linkUrl, triggerEvent = "KYC_EVENT") {
+  try {
+    const admin = await prisma.admin.findFirst({ select: { id: true } });
+    if (admin) await pushInApp({ targetType: "ADMIN", targetId: admin.id, title, message, triggerEvent, linkUrl });
+  } catch (_) {}
+}
 
 // ─── KYC List (all users with KYC status) ────────────────────────────────────
 exports.listKYC = async (req, res) => {
@@ -7,7 +17,11 @@ exports.listKYC = async (req, res) => {
     const { status, search, page = 1, limit = 50 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const where = {};
+    // Region scoping — KYCRecord has no regionId, but its user does
+    const regionFilter = getRegionFilter(req.user);
+    const userRegionWhere = regionFilter ? { user: regionFilter } : {};
+
+    const where = { ...userRegionWhere };
     if (status) where.status = status;
 
     const [records, total] = await Promise.all([
@@ -33,6 +47,7 @@ exports.listKYC = async (req, res) => {
         where: {
           isDeleted: false,
           id: { notIn: Array.from(usersWithKyc) },
+          ...(regionFilter || {}),
           ...(search ? {
             OR: [
               { firstName: { contains: search, mode: "insensitive" } },
@@ -101,6 +116,19 @@ exports.updateKYCStatus = async (req, res) => {
 
     const record = await prisma.kYCRecord.update({ where: { userId }, data });
     await logAction({ adminId: req.user.adminId, employeeId: req.user.employeeId, loginActivityId: req.user.activity, action: `KYC STATUS UPDATED: ${status}`, table: "KYCRecord", targetId: record.id });
+
+    // Notify the employee who created this user + the customer
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { employeeId: true } });
+    if (user?.employeeId) {
+      const isApproved = status === "FULLY_VERIFIED";
+      notifyCreator({ employeeId: user.employeeId, title: isApproved ? "KYC Approved" : "KYC Status Updated", message: `KYC for user ${userId} has been ${status === "FULLY_VERIFIED" ? "fully verified" : status === "REJECTED" ? "rejected" : "updated to " + status}`, linkUrl: `/kyc/${userId}`, triggerEvent: "KYC_STATUS_UPDATED" });
+    }
+    if (status === "FULLY_VERIFIED") {
+      notifyUser({ userId, title: "KYC Verified", message: "Your KYC has been fully verified. You can now access all services.", linkUrl: `/kyc/${userId}`, triggerEvent: "KYC_APPROVED" });
+    } else if (status === "REJECTED") {
+      notifyUser({ userId, title: "KYC Rejected", message: `Your KYC has been rejected${rejectionReason ? ": " + rejectionReason : ". Please resubmit your documents."}`, linkUrl: `/kyc/${userId}`, triggerEvent: "KYC_REJECTED" });
+    }
+
     res.json({ message: "KYC status updated", data: record });
   } catch (err) {
     res.status(500).json({ error: "Failed to update KYC status", message: err.message });
@@ -120,6 +148,13 @@ exports.addDocument = async (req, res) => {
     const doc = await prisma.kYCDocument.create({
       data: { kycRecordId: record.id, documentType, documentNumber, fileId, expiresAt: expiresAt ? new Date(expiresAt) : null },
     });
+
+    // Notify regional KYC_APPROVE holders that a document needs review
+    // KYC is user-scoped; use user's branchId from their loans (or fall back to any branch)
+    const userForBranch = await prisma.user.findUnique({ where: { id: userId }, select: { loans: { select: { branchId: true }, take: 1 } } });
+    const kycBranchId = userForBranch?.loans?.[0]?.branchId || null;
+    notifyRegionalApprovers({ branchId: kycBranchId, permission: "KYC_APPROVE", title: "KYC Document Uploaded", message: `New ${documentType} document for user ${userId} needs review`, linkUrl: `/kyc/${userId}`, triggerEvent: "KYC_DOCUMENT_ADDED", excludeEmployeeId: req.user?.employeeId });
+
     res.status(201).json({ message: "Document added", data: doc });
   } catch (err) {
     res.status(500).json({ error: "Failed to add KYC document", message: err.message });

@@ -36,22 +36,24 @@ model State {
 
 model City {
   id            String        @id @default(uuid())
-  name          String        @unique
+  name          String
   stateId       String
   state         State         @relation(fields: [stateId], references: [id])
   employees     Employee[]
   Region        Region[]
   userAddresses UserAddress[]
+
+  @@unique([name, stateId])
 }
 
 model Region {
   id      String @id @default(uuid())
   name    String
   stateId String
-  cityId  String
+  cityId  String?
 
   state     State      @relation(fields: [stateId], references: [id])
-  city      City       @relation(fields: [cityId], references: [id])
+  city      City?      @relation(fields: [cityId], references: [id])
   users     User[]
   branches  Branch[]
   employees Employee[]
@@ -164,6 +166,15 @@ model Role {
   employees   Employee[]
 }
 
+model Permission {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  label     String
+  group     String
+  type      String
+  createdAt DateTime @default(now())
+}
+
 model Employee {
   id         String  @id @default(uuid())
   name       String
@@ -178,6 +189,12 @@ model Employee {
 
   regionId String?
   region   Region? @relation(fields: [regionId], references: [id])
+
+  // Regional access control
+  // REGION = own region only (default) | STATE = selected states | ALL = no filter (HQ/auditor)
+  accessScope    String   @default("REGION")
+  extraRegionIds String[] @default([])
+  extraStateIds  String[] @default([])
 
   adminId String?
   admin   Admin?  @relation(fields: [adminId], references: [id])
@@ -2400,17 +2417,20 @@ model TaskQueue {
 }
 
 model NotificationLog {
-  id            String   @id @default(uuid())
-  templateKey   String?
-  targetType    String   // LOAN, USER, EMPLOYEE, ADMIN
-  targetId      String
-  triggerEvent  String?
-  channel       String   @default("IN_APP") // IN_APP, SMS, EMAIL, WHATSAPP
-  status        String   @default("PENDING") // PENDING, SENT, FAILED
-  contentRendered String? @db.Text
-  error         String?
-  sentAt        DateTime?
-  createdAt     DateTime @default(now())
+  id              String    @id @default(uuid())
+  templateKey     String?
+  targetType      String    // LOAN, USER, EMPLOYEE, ADMIN
+  targetId        String
+  triggerEvent    String?
+  channel         String    @default("IN_APP") // IN_APP, SMS, EMAIL, WHATSAPP
+  status          String    @default("PENDING") // PENDING, SENT, FAILED
+  contentRendered String?   @db.Text
+  title           String?
+  linkUrl         String?
+  isRead          Boolean   @default(false)
+  error           String?
+  sentAt          DateTime?
+  createdAt       DateTime  @default(now())
 
   @@index([targetType, targetId])
   @@index([status, createdAt])

@@ -1,5 +1,15 @@
 const prisma = require("../lib/prisma");
 const logAction = require("../utils/adminLogger");
+const { pushInApp } = require("../utils/notificationService");
+const { notifyGrievanceManagers, notifyCreator } = require("../utils/notifyRegional");
+const { getBranchFilter } = require("../utils/regionFilter");
+
+async function notifyAdmins(title, message, linkUrl, triggerEvent = "GRIEVANCE_EVENT") {
+  try {
+    const admin = await prisma.admin.findFirst({ select: { id: true } });
+    if (admin) await pushInApp({ targetType: "ADMIN", targetId: admin.id, title, message, triggerEvent, linkUrl });
+  } catch (_) {}
+}
 const {
   buildGrievanceTicketNumber,
   calculateDueAtForPriority,
@@ -115,6 +125,14 @@ exports.createGrievanceTicket = async (req, res) => {
         },
       });
 
+    const grievanceLink = `/grievances/${ticket.id}`;
+    // Notify all GRIEVANCE_MANAGE employees (company-wide dedicated support team)
+    notifyGrievanceManagers({ title: "New Grievance Ticket", message: `Ticket ${ticket.ticketNumber}: ${ticket.subject} (${ticket.priority})`, linkUrl: grievanceLink, excludeEmployeeId: req.user?.employeeId });
+    // If auto-assigned, notify the specific assigned employee
+    if (autoAssignedEmployee?.id) {
+      pushInApp({ targetType: "EMPLOYEE", targetId: autoAssignedEmployee.id, title: "Grievance Assigned to You", message: `Ticket ${ticket.ticketNumber}: ${ticket.subject}`, triggerEvent: "GRIEVANCE_ASSIGNED", linkUrl: grievanceLink }).catch(() => {});
+    }
+
     return res.status(201).json({
       status: 201,
       message: "Grievance ticket created successfully",
@@ -147,13 +165,18 @@ exports.listGrievanceTickets = async (req, res) => {
     const parsedLimit = Number(limit) || 20;
     const skip = (parsedPage - 1) * parsedLimit;
 
+    const valid = (v) => v && v !== "undefined" && v !== "null";
+    // Grievance tickets have branchId — use branch region filter
+    const branchRegionFilter = getBranchFilter(req.user);
     const where = {
-      ...(status ? { status: String(status) } : {}),
-      ...(priority ? { priority: String(priority) } : {}),
-      ...(category ? { category: String(category) } : {}),
-      ...(assignedToEmployeeId ? { assignedToEmployeeId: String(assignedToEmployeeId) } : {}),
-      ...(loanId ? { loanId: String(loanId) } : {}),
-      ...(userId ? { userId: String(userId) } : {}),
+      ...(valid(status) ? { status: String(status) } : {}),
+      ...(valid(priority) ? { priority: String(priority) } : {}),
+      ...(valid(category) ? { category: String(category) } : {}),
+      ...(valid(assignedToEmployeeId) ? { assignedToEmployeeId: String(assignedToEmployeeId) } : {}),
+      ...(valid(loanId) ? { loanId: String(loanId) } : {}),
+      ...(valid(userId) ? { userId: String(userId) } : {}),
+      // Apply regional scope only when no explicit loanId/userId filter given
+      ...(!valid(loanId) && !valid(userId) && branchRegionFilter ? branchRegionFilter : {}),
       ...(search
         ? {
             OR: [
@@ -337,6 +360,9 @@ exports.assignGrievanceTicket = async (req, res) => {
       },
     });
 
+    // Notify the assigned employee
+    pushInApp({ targetType: "EMPLOYEE", targetId: assignedToEmployeeId, title: "Grievance Assigned to You", message: `Ticket ${updated.ticketNumber} has been assigned to you`, triggerEvent: "GRIEVANCE_ASSIGNED", linkUrl: `/grievances/${updated.id}` }).catch(() => {});
+
     return res.json({
       status: 200,
       message: "Grievance assigned successfully",
@@ -380,6 +406,10 @@ exports.updateGrievanceTicketStatus = async (req, res) => {
     const updated = await prisma.grievanceTicket.update({
       where: { id: req.params.id },
       data,
+      select: {
+        id: true, ticketNumber: true, subject: true, status: true,
+        createdByEmployeeId: true, assignedToEmployeeId: true,
+      },
     });
 
     await logAction({
@@ -389,11 +419,20 @@ exports.updateGrievanceTicketStatus = async (req, res) => {
       action: "UPDATED GRIEVANCE STATUS",
       table: "GrievanceTicket",
       targetId: updated.id,
-      metadata: {
-        ticketNumber: updated.ticketNumber,
-        status: updated.status,
-      },
+      metadata: { ticketNumber: updated.ticketNumber, status: updated.status },
     });
+
+    // On resolve/close: notify ticket creator and assigned employee
+    if (["RESOLVED", "CLOSED"].includes(status)) {
+      const link = `/grievances/${updated.id}`;
+      const msg = `Ticket ${updated.ticketNumber}: ${updated.subject} has been ${status.toLowerCase()}`;
+      if (updated.createdByEmployeeId && updated.createdByEmployeeId !== req.user?.employeeId) {
+        notifyCreator({ employeeId: updated.createdByEmployeeId, title: `Grievance ${status === "RESOLVED" ? "Resolved" : "Closed"}`, message: msg, linkUrl: link, triggerEvent: "GRIEVANCE_RESOLVED" });
+      }
+      if (updated.assignedToEmployeeId && updated.assignedToEmployeeId !== req.user?.employeeId && updated.assignedToEmployeeId !== updated.createdByEmployeeId) {
+        notifyCreator({ employeeId: updated.assignedToEmployeeId, title: `Grievance ${status === "RESOLVED" ? "Resolved" : "Closed"}`, message: msg, linkUrl: link, triggerEvent: "GRIEVANCE_RESOLVED" });
+      }
+    }
 
     return res.json({
       status: 200,

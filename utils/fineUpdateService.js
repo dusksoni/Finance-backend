@@ -103,8 +103,8 @@ async function updateAllOverdueFines() {
         return false;
       });
 
-      const results = await Promise.all(updates);
-      updatedCount += results.filter(Boolean).length;
+      const results = await Promise.allSettled(updates);
+      updatedCount += results.filter((r) => r.status === "fulfilled" && r.value).length;
     }
 
     const duration = Date.now() - startTime;

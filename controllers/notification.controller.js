@@ -2,6 +2,7 @@
 // In-app notification bell: list, mark read, mark all read, count unread
 
 const prisma = require("../lib/prisma");
+const { emitNotification, emitUnreadCount } = require("../utils/socket");
 
 // ─── List notifications for the logged-in user ────────────────────────────
 exports.listNotifications = async (req, res) => {
@@ -14,7 +15,7 @@ exports.listNotifications = async (req, res) => {
     const targetId = req.user.adminId || req.user.employeeId;
 
     const where = { targetType, targetId };
-    if (unreadOnly === "true") where.status = "PENDING";
+    if (unreadOnly === "true") where.isRead = false;
 
     const [notifications, total] = await Promise.all([
       prisma.notificationLog.findMany({
@@ -27,7 +28,7 @@ exports.listNotifications = async (req, res) => {
     ]);
 
     const unreadCount = await prisma.notificationLog.count({
-      where: { targetType, targetId, status: "PENDING" },
+      where: { targetType, targetId, isRead: false },
     });
 
     res.json({ data: notifications, total, unreadCount, page: parseInt(page), limit: parseInt(limit) });
@@ -41,7 +42,7 @@ exports.markRead = async (req, res) => {
   try {
     const notification = await prisma.notificationLog.update({
       where: { id: req.params.id },
-      data: { status: "SENT", sentAt: new Date() },
+      data: { status: "SENT", sentAt: new Date(), isRead: true },
     });
     res.json({ data: notification });
   } catch (err) {
@@ -56,8 +57,8 @@ exports.markAllRead = async (req, res) => {
     const targetId = req.user.adminId || req.user.employeeId;
 
     const result = await prisma.notificationLog.updateMany({
-      where: { targetType, targetId, status: "PENDING" },
-      data: { status: "SENT", sentAt: new Date() },
+      where: { targetType, targetId, isRead: false },
+      data: { status: "SENT", sentAt: new Date(), isRead: true },
     });
 
     res.json({ message: `${result.count} notifications marked as read` });
@@ -73,7 +74,7 @@ exports.getUnreadCount = async (req, res) => {
     const targetId = req.user.adminId || req.user.employeeId;
 
     const count = await prisma.notificationLog.count({
-      where: { targetType, targetId, status: "PENDING" },
+      where: { targetType, targetId, isRead: false },
     });
 
     res.json({ unreadCount: count });
@@ -85,7 +86,7 @@ exports.getUnreadCount = async (req, res) => {
 // ─── Create notification (internal use / admin broadcast) ─────────────────
 exports.createNotification = async (req, res) => {
   try {
-    const { targetType, targetId, channel = "IN_APP", triggerEvent, content } = req.body;
+    const { targetType, targetId, channel = "IN_APP", triggerEvent, content, title, linkUrl } = req.body;
 
     const notification = await prisma.notificationLog.create({
       data: {
@@ -94,9 +95,18 @@ exports.createNotification = async (req, res) => {
         channel,
         triggerEvent,
         contentRendered: content,
+        title: title || null,
+        linkUrl: linkUrl || null,
         status: "PENDING",
       },
     });
+
+    // Push to connected user instantly via WebSocket
+    emitNotification(targetType, targetId, notification);
+    const unreadCount = await prisma.notificationLog.count({
+      where: { targetType, targetId, isRead: false },
+    });
+    emitUnreadCount(targetType, targetId, unreadCount);
 
     res.status(201).json({ data: notification });
   } catch (err) {
@@ -134,6 +144,11 @@ exports.broadcastNotification = async (req, res) => {
         status: "PENDING",
       })),
     });
+
+    // Push to all connected users via WebSocket
+    for (const t of targets) {
+      emitNotification(t.targetType, t.targetId, { contentRendered: message, triggerEvent: "BROADCAST", status: "PENDING", createdAt: new Date() });
+    }
 
     res.json({ message: `Broadcast sent to ${targets.length} users` });
   } catch (err) {

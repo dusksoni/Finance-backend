@@ -199,7 +199,9 @@ exports.deleteCity = async (req, res) => {
 
 exports.getCities = async (req, res) => {
   try {
-    const cities = await prisma.city.findMany({ include: { state: true } });
+    const { stateId } = req.query;
+    const where = stateId ? { stateId } : {};
+    const cities = await prisma.city.findMany({ where, include: { state: true }, orderBy: { name: "asc" } });
     res.status(200).json(cities);
   } catch (err) {
     res.status(500).json({ error: err.message });

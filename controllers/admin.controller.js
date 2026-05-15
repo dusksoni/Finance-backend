@@ -85,9 +85,9 @@ exports.getAdminProfile = async (req, res) => {
     });
 
     if (!admin) {
-      return res.status(404).json({
-        status: 404,
-        message: "Admin not found",
+      return res.status(401).json({
+        status: 401,
+        message: "Session expired. Please log in again.",
       });
     }
 
@@ -441,6 +441,9 @@ exports.getEmployees = async (req, res) => {
         name: true,
         isBlocked: true,
         photoUrl: true,
+        accessScope: true,
+        extraRegionIds: true,
+        extraStateIds: true,
         region: {
           select: {
             id: true,

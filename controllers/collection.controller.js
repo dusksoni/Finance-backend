@@ -3,6 +3,9 @@ const { addDays, isBefore } = require("date-fns");
 const logAction = require("../utils/adminLogger");
 const { buildCollectionSummaryFromEmis } = require("../utils/collectionCase");
 const { getCollectionPolicy } = require("../utils/loanTypeRules");
+const { notifyCreator } = require("../utils/notifyRegional");
+const { getBranchFilter } = require("../utils/regionFilter");
+const { pushInApp } = require("../utils/notificationService");
 
 const ACTIVE_CASE_STATUSES = ["OPEN", "IN_PROGRESS", "PROMISE_TO_PAY", "BROKEN_PROMISE"];
 
@@ -221,12 +224,16 @@ exports.listCollectionCases = async (req, res) => {
     const parsedPage = Number(page) || 1;
     const parsedLimit = Number(limit) || 20;
 
+    const valid = (v) => v && v !== "undefined" && v !== "null";
+    // Apply regional scope if no explicit branchId provided
+    const branchRegionFilter = valid(branchId) ? null : getBranchFilter(req.user);
     const where = {
-      ...(status ? { status: String(status) } : {}),
-      ...(bucket ? { bucket: String(bucket) } : {}),
-      ...(priority ? { priority: String(priority) } : {}),
-      ...(assignedToEmployeeId ? { assignedToEmployeeId: String(assignedToEmployeeId) } : {}),
-      ...(branchId ? { branchId: String(branchId) } : {}),
+      ...(valid(status) ? { status: String(status) } : {}),
+      ...(valid(bucket) ? { bucket: String(bucket) } : {}),
+      ...(valid(priority) ? { priority: String(priority) } : {}),
+      ...(valid(assignedToEmployeeId) ? { assignedToEmployeeId: String(assignedToEmployeeId) } : {}),
+      ...(valid(branchId) ? { branchId: String(branchId) } : {}),
+      ...(branchRegionFilter || {}),
       ...(search
         ? {
             loan: {
@@ -284,10 +291,11 @@ exports.listCollectionCases = async (req, res) => {
 exports.getCollectionSummary = async (req, res) => {
   try {
     const { branchId, assignedToEmployeeId, status } = req.query;
+    const valid = (v) => v && v !== "undefined" && v !== "null";
     const where = {
-      ...(branchId ? { branchId: String(branchId) } : {}),
-      ...(assignedToEmployeeId ? { assignedToEmployeeId: String(assignedToEmployeeId) } : {}),
-      ...(status ? { status: String(status) } : {}),
+      ...(valid(branchId) ? { branchId: String(branchId) } : {}),
+      ...(valid(assignedToEmployeeId) ? { assignedToEmployeeId: String(assignedToEmployeeId) } : {}),
+      ...(valid(status) ? { status: String(status) } : {}),
     };
 
     const cases = await prisma.collectionCase.findMany({
@@ -429,6 +437,9 @@ exports.assignCollectionCase = async (req, res) => {
         ...buildActorFields(req, "assigned"),
       },
     });
+
+    // Notify the assigned employee
+    pushInApp({ targetType: "EMPLOYEE", targetId: assignedToEmployeeId, title: "Collection Case Assigned", message: `A collection case has been assigned to you`, triggerEvent: "COLLECTION_ASSIGNED", linkUrl: `/collections/${req.params.id}` }).catch(() => {});
 
     return res.json({
       status: 200,

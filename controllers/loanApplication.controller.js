@@ -38,20 +38,7 @@ const validateStep = (stepNum, data) => {
     else if (isNaN(emi) || emi <= 0)
       errors.push("Installment amount must be greater than 0.");
 
-    // Validate EMI is a whole number (match frontend + createLoan logic)
-    if (!isNaN(principal) && !isNaN(rate) && !isNaN(tenure) && data.paymentFrequency) {
-      const FREQ_MONTHS = { MONTHLY: 1, QUARTERLY: 3, HALF_YEARLY: 6, YEARLY: 12 };
-      const freqMonths = FREQ_MONTHS[(data.paymentFrequency || "MONTHLY").toUpperCase()] || 1;
-      const numInstallments = Math.ceil(tenure / freqMonths);
-      const totalInterest = Math.round((principal * rate * (tenure / 12)) / 100);
-      const totalPayable = Math.round(principal + totalInterest);
-      const rawEMI = totalPayable / numInstallments;
-      if (!Number.isInteger(rawEMI) && Math.abs(rawEMI - Math.round(rawEMI)) > 0.001) {
-        errors.push(
-          `EMI amount (${rawEMI.toFixed(2)}) is not a whole number. Adjust the interest rate or installment so total payable (${totalPayable}) divides evenly into ${numInstallments} installments.`
-        );
-      }
-    }
+    // EMI is always rounded to whole rupees at creation — no decimal check needed
   }
 
   if (stepNum === 3) {

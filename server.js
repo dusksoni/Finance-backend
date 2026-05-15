@@ -1,4 +1,5 @@
 const express = require("express");
+const http = require("http");
 require("dotenv").config();
 
 // ─── Environment validation — crash early with clear message ───────────────
@@ -16,6 +17,13 @@ const morgan = require("morgan");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 const { initializeCronJobs, updateAllOverdueFines } = require("./utils/fineUpdateService");
+
+// ─── Observability ─────────────────────────────────────────────────────────
+const sentry = require("./utils/sentry");
+sentry.init(app);
+
+const { initMetrics, metricsMiddleware, metricsHandler } = require("./middleware/metrics");
+initMetrics();
 
 // ─── Route imports ─────────────────────────────────────────────────────────
 const adminRoutes = require("./routes/admin.route");
@@ -38,7 +46,7 @@ const reportRoutes = require("./routes/report.route");
 const auditRoutes = require("./routes/audit.route");
 const dashboardRoutes = require("./routes/dashboard.route");
 const publicUserRoutes = require("./routes/publicUser.route");
-const iciciPaymentRoutes = require("./routes/iciciPayment.route");
+const paymentGatewayRoutes = require("./routes/payment.route");
 const seizedRoutes = require("./routes/seized.route");
 const bulkUploadRoutes = require("./routes/bulkUpload.route");
 const otpRoutes = require("./routes/otp.route");
@@ -83,6 +91,10 @@ app.use(helmet({
 app.use(compression());
 app.use(morgan("combined"));
 
+// Prometheus — must be before routes so all requests are measured
+app.use(metricsMiddleware);
+app.get("/metrics", metricsHandler);
+
 // Global rate limit — 200 req/min per IP
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -100,14 +112,14 @@ const authLimiter = rateLimit({
   message: { error: "Too many login attempts, please try again later." },
 });
 
+const allowedOrigins = [
+  ...( process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(",").map(s => s.trim()) : [] ),
+  "http://localhost:5173",
+  "http://localhost:3000",
+];
 app.use(
   cors({
-    origin: [
-      "https://admin.kushalfinance.com",
-      "https://uat.kushalfinance.com",
-      "http://localhost:5173",
-      "http://localhost:3000",
-    ],
+    origin: allowedOrigins,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -176,7 +188,7 @@ app.use("/api/report", reportRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/public", publicUserRoutes);
-app.use("/api/icici-payment", iciciPaymentRoutes);
+app.use("/api/payment", paymentGatewayRoutes);
 app.use("/api/seized", seizedRoutes);
 app.use("/api/bulk-upload", bulkUploadRoutes);
 app.use("/api/otp", otpRoutes);
@@ -214,6 +226,9 @@ app.use("/api/cibil", cibilRoutes);
 app.use("/api/legal-actions", legalActionRoutes);
 app.use("/api/rbi-returns", rbiReturnRoutes);
 
+// ─── Sentry error handler (must be before custom error handler) ────────────
+app.use(sentry.errorHandler());
+
 // ─── Global error handler ──────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
@@ -221,9 +236,13 @@ app.use((err, req, res, next) => {
 });
 
 const { seedDefaultTemplates } = require("./utils/seedDefaultTemplates");
+const { initSocket } = require("./utils/socket");
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, async () => {
+const httpServer = http.createServer(app);
+initSocket(httpServer);
+
+httpServer.listen(PORT, async () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   initializeCronJobs();
 

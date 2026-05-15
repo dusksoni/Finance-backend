@@ -12,6 +12,16 @@ const {
 } = require("date-fns");
 const logAction = require("../utils/adminLogger");
 const checkVerifyPermission = require("../middleware/checkVerifyPermission");
+const { pushInApp } = require("../utils/notificationService");
+const { notifyRegionalApprovers, notifyCreator, notifyUser } = require("../utils/notifyRegional");
+const { getBranchFilter } = require("../utils/regionFilter");
+
+async function notifyAdmins(title, message, linkUrl, triggerEvent = "LOAN_EVENT") {
+  try {
+    const admin = await prisma.admin.findFirst({ select: { id: true } });
+    if (admin) await pushInApp({ targetType: "ADMIN", targetId: admin.id, title, message, triggerEvent, linkUrl });
+  } catch (_) {}
+}
 const { calculateFine } = require("../utils/calculateFine");
 const {
   assertLoanMatchesProductRules,
@@ -232,10 +242,10 @@ const flatInterestSchedule = (P, annualRate, n, firstDue, offsetFn, step, months
     schedule.push({ paymentFor: dueDate, paymentDate: dueDate, emiPayAmount, principalAmt, interestAmt, amountPaidSoFar: 0, fineAmount: 0, status: "UNPAID", isDelayed: false, isForeclosure: false });
   }
 
-  const lastRow = schedule[schedule.length - 1];
-  lastRow.principalAmt = round2(lastRow.principalAmt + round2(P - aggPrincipal));
-  lastRow.interestAmt = round2(lastRow.interestAmt + round2(totalInterest - aggInterest));
-  lastRow.emiPayAmount = round2(lastRow.principalAmt + lastRow.interestAmt);
+  const firstRow = schedule[0];
+  firstRow.principalAmt = round2(firstRow.principalAmt + round2(P - aggPrincipal));
+  firstRow.interestAmt = round2(firstRow.interestAmt + round2(totalInterest - aggInterest));
+  firstRow.emiPayAmount = round2(firstRow.principalAmt + firstRow.interestAmt);
   return schedule;
 };
 
@@ -579,16 +589,11 @@ exports.createLoan = async (req, res) => {
       });
     }
 
-    // Validate EMI is a whole number
+    // Compute whole-rupee per-installment amount; totalPayable stays as-is so
+    // the schedule's own drift correction keeps row sums consistent with the loan total.
     const freqMonths = FREQUENCY_MONTHS[freq] || 1;
     const numInstallments = Math.ceil(n / freqMonths);
-    const rawEMI = totalPayable / numInstallments;
-    if (!Number.isInteger(rawEMI) && Math.abs(rawEMI - Math.round(rawEMI)) > 0.001) {
-      return res.status(400).json({
-        error: `EMI amount (${rawEMI.toFixed(2)}) is not a whole number. Adjust the interest rate or installment amount so the total payable (${totalPayable}) divides evenly into ${numInstallments} installments.`,
-        status: 400,
-      });
-    }
+    const roundedEMI = Math.round(totalPayable / numInstallments);
 
     // 3) Build schedule only if start/end dates are available
     // interestType on the loan maps to interestComputation; loanStructure and moratoriumMonths
@@ -609,7 +614,7 @@ exports.createLoan = async (req, res) => {
         })
       : [];
     const representativeInstallment =
-      schedule[0]?.emiPayAmount ?? round2(totalPayable / n);
+      schedule[0]?.emiPayAmount ?? roundedEMI;
     const computedEndDate =
       schedule.length > 0 ? schedule[schedule.length - 1].paymentFor : null;
     // Store placeholder dates when EMI schedule is pending so Prisma's NOT NULL constraints are satisfied.
@@ -785,6 +790,17 @@ exports.createLoan = async (req, res) => {
       },
       { maxWait: 2000, timeout: 30000 }
     );
+
+    // Notify regional LOAN_APPROVE holders that a new application needs review
+    notifyRegionalApprovers({
+      branchId: created?.branchId,
+      permission: "LOAN_APPROVE",
+      title: "New Loan Application",
+      message: `Loan application for ₹${created?.principalLoanAmount || ""} (File: ${created?.fileNo || created?.id}) needs approval`,
+      linkUrl: `/loan/${created.id}`,
+      triggerEvent: "LOAN_CREATED",
+      excludeEmployeeId: req.user?.employeeId,
+    }).catch(() => {});
 
     return res
       .status(201)
@@ -1270,6 +1286,8 @@ exports.closeLoan = async (req, res) => {
         isClosed: true,
         isForeclosed: true,
         pendingAmount: true,
+        employeeId: true,
+        userId: true,
       }
     });
 
@@ -1348,6 +1366,14 @@ exports.closeLoan = async (req, res) => {
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
     });
+
+    const loanClosedLink = `/loan/${id}`;
+    if (existingLoan.employeeId) {
+      notifyCreator({ employeeId: existingLoan.employeeId, title: "Loan Closed", message: `Loan ${existingLoan.fileNo || id} has been fully closed`, linkUrl: loanClosedLink, triggerEvent: "LOAN_CLOSED" });
+    }
+    if (existingLoan.userId) {
+      notifyUser({ userId: existingLoan.userId, title: "Your Loan is Closed", message: `Congratulations! Your loan (File No: ${existingLoan.fileNo || id}) has been fully repaid and closed`, linkUrl: loanClosedLink, triggerEvent: "LOAN_CLOSED" });
+    }
 
     res.json({
       message: "Loan closed successfully",
@@ -1527,12 +1553,16 @@ exports.listLoans = async (req, res) => {
     }
 
     // 🧠 Build filter
+    // If caller provides branchId explicitly, use it; otherwise apply regional scope
+    const regionBranchFilter = branchId ? null : getBranchFilter(req.user);
+
     const loanWhere = {
       ...(isClosed !== undefined && { isClosed: isClosed === "true" }),
       ...(isDefaulted !== undefined && { isDefaulted: isDefaulted === "true" }),
       ...(fileStatus && { fileStatus }),
       ...(branchId && { branchId }),
       ...(showroomId && { showroomId }),
+      ...(regionBranchFilter && regionBranchFilter),
       ...(fromDate &&
         toDate && {
           startDate: {
@@ -2006,23 +2036,6 @@ exports.approveLoan = async (req, res) => {
     // Calculate endDate based on startDate and tenureMonths
     const endDate = addMonths(parsedStartDate, loan.tenureMonths);
 
-    // Validate EMI is a whole number before generating schedule
-    const round2Approve = (x) => Math.round(Number(x) || 0);
-    const approveP = Number(loan.principalLoanAmount);
-    const approveN = Number(loan.tenureMonths);
-    const approveRate = Number(loan.interestRate);
-    const approveFreq = (loan.paymentFrequency || "MONTHLY").toUpperCase();
-    const approveFreqMonths = FREQUENCY_MONTHS[approveFreq] || 1;
-    const approveTotal = round2Approve(approveP + round2Approve((approveP * approveRate * (approveN / 12)) / 100));
-    const approveInstallments = Math.ceil(approveN / approveFreqMonths);
-    const approveRawEMI = approveTotal / approveInstallments;
-    if (!Number.isInteger(approveRawEMI) && Math.abs(approveRawEMI - Math.round(approveRawEMI)) > 0.001) {
-      return res.status(400).json({
-        error: `EMI amount (${approveRawEMI.toFixed(2)}) is not a whole number. The loan's interest rate or principal must be adjusted so the total (${approveTotal}) divides evenly into ${approveInstallments} installments.`,
-        status: 400,
-      });
-    }
-
     // Generate EMI schedule based on approved startDate
     const emiSchedule = generateEMISchedule({
       principalLoanAmount: loan.principalLoanAmount,
@@ -2033,6 +2046,7 @@ exports.approveLoan = async (req, res) => {
     });
 
     const approvedAt = new Date();
+    const representativeEmi = emiSchedule.find((e) => !e.isMoratorium)?.emiPayAmount ?? null;
     const updated = await prisma.loan.update({
       where: { id },
       data: {
@@ -2051,6 +2065,7 @@ exports.approveLoan = async (req, res) => {
         dueDay,
         endDate,
         disbursedDate: parsedDisbursedDate,
+        ...(representativeEmi !== null ? { monthlyPayableAmount: representativeEmi } : {}),
       },
       include: {
         user: true,
@@ -2077,6 +2092,15 @@ exports.approveLoan = async (req, res) => {
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
     });
+
+    // Notify the employee who submitted this loan + the customer
+    const loanLink = `/loan/${id}`;
+    if (loan.employeeId) {
+      notifyCreator({ employeeId: loan.employeeId, title: "Loan Approved", message: `Loan ${updated.fileNo || id} has been approved and is now active`, linkUrl: loanLink, triggerEvent: "LOAN_APPROVED" });
+    }
+    if (loan.user?.id) {
+      notifyUser({ userId: loan.user.id, title: "Your Loan is Approved", message: `Your loan application has been approved. File No: ${updated.fileNo || id}`, linkUrl: loanLink, triggerEvent: "LOAN_APPROVED" });
+    }
 
     return res.status(200).json({
       message: "Loan approved successfully",
@@ -2165,6 +2189,14 @@ exports.rejectLoan = async (req, res) => {
       adminId: req.user?.adminId,
       employeeId: req.user?.employeeId,
     });
+
+    // Notify the employee who submitted this loan + the customer
+    if (updated.employeeId) {
+      notifyCreator({ employeeId: updated.employeeId, title: "Loan Application Rejected", message: `Loan ${updated.fileNo || id} was rejected: ${comment}`, linkUrl: `/loan/${id}`, triggerEvent: "LOAN_REJECTED" });
+    }
+    if (updated.user?.id) {
+      notifyUser({ userId: updated.user.id, title: "Loan Application Rejected", message: `Your loan application has been rejected. Reason: ${comment}`, linkUrl: `/loan/${id}`, triggerEvent: "LOAN_REJECTED" });
+    }
 
     return res.status(200).json({
       message: "Loan rejected successfully",

@@ -329,7 +329,7 @@ exports.exportFormattedDashboard = async (req, res) => {
 
     // Prepare metadata
     const reportMetadata = {
-      title: "Kushal Finance - Dashboard Report",
+      title: "Finance - Dashboard Report",
       dateRange: startDate && endDate
         ? `${formatDateCompact(startDate)} to ${formatDateCompact(endDate)}`
         : rangeType || "All Time",
