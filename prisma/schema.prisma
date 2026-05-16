@@ -678,6 +678,8 @@ model Loan {
   endDate              DateTime
   dueDay               Int        @default(5)
   paymentFrequency     String?    @default("MONTHLY")
+  loanStructure        String?    @default("EMI")   // EMI | BULLET | STEP_UP | STEP_DOWN | CUSTOM
+  scheduleMetadata     Json?                         // stores customSlabs / stepSlabs for schedule regeneration
   fileStatus           FileStatus @default(INITIATED)
   isClosed             Boolean    @default(false)
   isDeleted            Boolean    @default(false)

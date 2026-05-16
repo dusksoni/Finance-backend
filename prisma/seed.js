@@ -294,6 +294,56 @@ async function main() {
   console.log("✅ Reference data seeded.");
 
   // ============================================================
+  // 📍 REGIONS, BRANCHES & SHOWROOMS
+  // ============================================================
+  const stateMP23 = allStates.find((s) => s.stateCode === "23")?.id; // MP
+  const stateMH27 = allStates.find((s) => s.stateCode === "27")?.id; // MH
+  const stateGJ24 = allStates.find((s) => s.stateCode === "24")?.id; // GJ
+  const stateRJ08 = allStates.find((s) => s.stateCode === "08")?.id; // RJ
+  const stateUP09 = allStates.find((s) => s.stateCode === "09")?.id; // UP
+  const stateTN33 = allStates.find((s) => s.stateCode === "33")?.id; // TN
+  const stateKA29 = allStates.find((s) => s.stateCode === "29")?.id; // KA
+
+  const regionCentral   = await prisma.region.create({ data: { name: "Central India Region", stateId: stateMP23 } });
+  const regionWest      = await prisma.region.create({ data: { name: "West India Region",    stateId: stateMH27 } });
+  const regionGujarat   = await prisma.region.create({ data: { name: "Gujarat Region",       stateId: stateGJ24 } });
+  const regionNorth     = await prisma.region.create({ data: { name: "North India Region",   stateId: stateRJ08 } });
+  const regionUPEast    = await prisma.region.create({ data: { name: "UP & East Region",     stateId: stateUP09 } });
+  const regionSouth     = await prisma.region.create({ data: { name: "South India Region",   stateId: stateTN33 } });
+  const regionKarnataka = await prisma.region.create({ data: { name: "Karnataka Region",     stateId: stateKA29 } });
+  console.log("✅ 7 regions seeded.");
+
+  const branchBhopal    = await prisma.branch.create({ data: { name: "Bhopal Main Branch",  regionId: regionCentral.id,   address: "12, New Market, Bhopal, MP 462001",         pincode: 462001, phone: "07552555100", email: "bhopal.main@finance.com" } });
+  const branchIndore    = await prisma.branch.create({ data: { name: "Indore Branch",        regionId: regionCentral.id,   address: "34, MG Road, Indore, MP 452001",            pincode: 452001, phone: "07312555200", email: "indore@finance.com"       } });
+  const branchJabalpur  = await prisma.branch.create({ data: { name: "Jabalpur Branch",      regionId: regionCentral.id,   address: "7, Russell Chowk, Jabalpur, MP 482001",     pincode: 482001, phone: "07612555300", email: "jabalpur@finance.com"     } });
+  const branchMumbai    = await prisma.branch.create({ data: { name: "Mumbai Main Branch",   regionId: regionWest.id,      address: "101, Nariman Point, Mumbai, MH 400021",     pincode: 400021, phone: "02222555400", email: "mumbai.main@finance.com"   } });
+  const branchPune      = await prisma.branch.create({ data: { name: "Pune Branch",          regionId: regionWest.id,      address: "56, FC Road, Pune, MH 411004",              pincode: 411004, phone: "02022555500", email: "pune@finance.com"          } });
+  const branchAhmedabad = await prisma.branch.create({ data: { name: "Ahmedabad Branch",     regionId: regionGujarat.id,   address: "22, CG Road, Ahmedabad, GJ 380006",         pincode: 380006, phone: "07922555600", email: "ahmedabad@finance.com"     } });
+  const branchSurat     = await prisma.branch.create({ data: { name: "Surat Branch",         regionId: regionGujarat.id,   address: "8, Ring Road, Surat, GJ 395002",            pincode: 395002, phone: "02612555700", email: "surat@finance.com"         } });
+  const branchJaipur    = await prisma.branch.create({ data: { name: "Jaipur Branch",        regionId: regionNorth.id,     address: "14, MI Road, Jaipur, RJ 302001",            pincode: 302001, phone: "01412555800", email: "jaipur@finance.com"        } });
+  const branchLucknow   = await prisma.branch.create({ data: { name: "Lucknow Branch",       regionId: regionUPEast.id,    address: "88, Hazratganj, Lucknow, UP 226001",        pincode: 226001, phone: "05222555900", email: "lucknow@finance.com"       } });
+  const branchKanpur    = await prisma.branch.create({ data: { name: "Kanpur Branch",        regionId: regionUPEast.id,    address: "45, The Mall, Kanpur, UP 208001",           pincode: 208001, phone: "05122556000", email: "kanpur@finance.com"        } });
+  const branchChennai   = await prisma.branch.create({ data: { name: "Chennai Branch",       regionId: regionSouth.id,     address: "3, Anna Salai, Chennai, TN 600002",         pincode: 600002, phone: "04422556100", email: "chennai@finance.com"       } });
+  const branchBengaluru = await prisma.branch.create({ data: { name: "Bengaluru Branch",     regionId: regionKarnataka.id, address: "1, MG Road, Bengaluru, KA 560001",          pincode: 560001, phone: "08022556200", email: "bengaluru@finance.com"     } });
+  console.log("✅ 12 branches seeded.");
+
+  await prisma.showroom.createMany({
+    data: [
+      { name: "Bhopal Auto Hub",      branchId: branchBhopal.id,    address: "13, New Market, Bhopal" },
+      { name: "Indore Wheels Center", branchId: branchIndore.id,    address: "35, MG Road, Indore" },
+      { name: "Mumbai Motors",        branchId: branchMumbai.id,    address: "102, Nariman Point, Mumbai" },
+      { name: "Pune Vehicle Point",   branchId: branchPune.id,      address: "57, FC Road, Pune" },
+      { name: "Ahmedabad Auto Zone",  branchId: branchAhmedabad.id, address: "23, CG Road, Ahmedabad" },
+      { name: "Surat Motor World",    branchId: branchSurat.id,     address: "9, Ring Road, Surat" },
+      { name: "Jaipur Auto Plaza",    branchId: branchJaipur.id,    address: "15, MI Road, Jaipur" },
+      { name: "Lucknow Drive Inn",    branchId: branchLucknow.id,   address: "89, Hazratganj, Lucknow" },
+      { name: "Chennai Cars & Bikes", branchId: branchChennai.id,   address: "4, Anna Salai, Chennai" },
+      { name: "Bengaluru Moto Hub",   branchId: branchBengaluru.id, address: "2, MG Road, Bengaluru" },
+    ],
+  });
+  console.log("✅ 10 showrooms seeded.");
+
+  // ============================================================
   // 👤 ADMIN
   // ============================================================
   const admin = await prisma.admin.create({
@@ -377,6 +427,8 @@ async function main() {
       password: employeePassword,
       roleId: financeManagerRole.id,
       adminId: admin.id,
+      branchId: branchBhopal.id,
+      regionId: regionCentral.id,
     },
   });
 
@@ -387,6 +439,8 @@ async function main() {
       password: employeePassword,
       roleId: salesExecutiveRole.id,
       adminId: admin.id,
+      branchId: branchIndore.id,
+      regionId: regionCentral.id,
     },
   });
 
@@ -397,6 +451,8 @@ async function main() {
       password: employeePassword,
       roleId: salesExecutiveRole.id,
       adminId: admin.id,
+      branchId: branchAhmedabad.id,
+      regionId: regionGujarat.id,
     },
   });
 
@@ -407,6 +463,8 @@ async function main() {
       password: employeePassword,
       roleId: supportAgentRole.id,
       adminId: admin.id,
+      branchId: branchMumbai.id,
+      regionId: regionWest.id,
     },
   });
 
@@ -417,6 +475,8 @@ async function main() {
       password: employeePassword,
       roleId: financeManagerRole.id,
       adminId: admin.id,
+      branchId: branchJaipur.id,
+      regionId: regionNorth.id,
     },
   });
 

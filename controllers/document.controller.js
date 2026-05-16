@@ -114,7 +114,7 @@ exports.generateKFS = async (req, res) => {
     kv(doc, "Loan Amount Sanctioned", formatINR(loan.principalLoanAmount));
     kv(doc, "Tenure", `${loan.tenureMonths} Months`);
     kv(doc, "Rate of Interest", `${loan.interestRate || loan.loanType?.interestRate}% per annum (Reducing Balance)`);
-    kv(doc, "EMI Amount", formatINR(loan.monthlyPayableAmount || loan.emiAmount));
+    kv(doc, "EMI Amount", formatINR(loan.monthlyPayableAmount));
     kv(doc, "Total Amount Payable", formatINR(loan.totalAmount));
     kv(doc, "Disbursement Date", formatDate(loan.disbursedDate || loan.approvedAt));
     kv(doc, "First EMI Date", loan.emi?.[0] ? formatDate(loan.emi[0].paymentFor) : "-");
@@ -205,7 +205,7 @@ exports.generateSanctionLetter = async (req, res) => {
     kv(doc, "Sanctioned Amount", formatINR(loan.principalLoanAmount));
     kv(doc, "Rate of Interest", `${loan.interestRate || loan.loanType?.interestRate}% per annum (Reducing Balance)`);
     kv(doc, "Loan Tenure", `${loan.tenureMonths} Months`);
-    kv(doc, "EMI Amount", formatINR(loan.monthlyPayableAmount || loan.emiAmount));
+    kv(doc, "EMI Amount", formatINR(loan.monthlyPayableAmount));
     kv(doc, "First EMI Date", loan.emi?.[0] ? formatDate(loan.emi[0].paymentFor) : "-");
     kv(doc, "Total Amount Payable", formatINR(loan.totalAmount));
 

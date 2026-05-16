@@ -82,21 +82,33 @@ async function main() {
   });
   console.log("✅ Roles created.");
 
+  // ── Fetch branches if seeded by 04_branches.js ────────────────
+  const branchBhopal    = await prisma.branch.findFirst({ where: { name: "Bhopal Main Branch" } });
+  const branchIndore    = await prisma.branch.findFirst({ where: { name: "Indore Branch" } });
+  const branchAhmedabad = await prisma.branch.findFirst({ where: { name: "Ahmedabad Branch" } });
+  const branchMumbai    = await prisma.branch.findFirst({ where: { name: "Mumbai Main Branch" } });
+  const branchJaipur    = await prisma.branch.findFirst({ where: { name: "Jaipur Branch" } });
+
+  const regionCentral   = branchBhopal    ? await prisma.region.findUnique({ where: { id: branchBhopal.regionId } })    : null;
+  const regionGujarat   = branchAhmedabad ? await prisma.region.findUnique({ where: { id: branchAhmedabad.regionId } }) : null;
+  const regionWest      = branchMumbai    ? await prisma.region.findUnique({ where: { id: branchMumbai.regionId } })    : null;
+  const regionNorth     = branchJaipur    ? await prisma.region.findUnique({ where: { id: branchJaipur.regionId } })    : null;
+
   // ── Employees ──────────────────────────────────────────────
   const empRajesh = await prisma.employee.create({
-    data: { name: "Rajesh Kumar",  email: "rajesh.kumar@finance.com",  password: employeePassword, roleId: financeManagerRole.id, adminId: admin.id },
+    data: { name: "Rajesh Kumar",  email: "rajesh.kumar@finance.com",  password: employeePassword, roleId: financeManagerRole.id, adminId: admin.id, ...(branchBhopal    ? { branchId: branchBhopal.id,    regionId: regionCentral?.id } : {}) },
   });
   const empPriya = await prisma.employee.create({
-    data: { name: "Priya Sharma",  email: "priya.sharma@finance.com",  password: employeePassword, roleId: salesExecutiveRole.id,  adminId: admin.id },
+    data: { name: "Priya Sharma",  email: "priya.sharma@finance.com",  password: employeePassword, roleId: salesExecutiveRole.id,  adminId: admin.id, ...(branchIndore    ? { branchId: branchIndore.id,    regionId: regionCentral?.id } : {}) },
   });
   const empAmit = await prisma.employee.create({
-    data: { name: "Amit Patel",    email: "amit.patel@finance.com",    password: employeePassword, roleId: salesExecutiveRole.id,  adminId: admin.id },
+    data: { name: "Amit Patel",    email: "amit.patel@finance.com",    password: employeePassword, roleId: salesExecutiveRole.id,  adminId: admin.id, ...(branchAhmedabad ? { branchId: branchAhmedabad.id, regionId: regionGujarat?.id } : {}) },
   });
   const empSneha = await prisma.employee.create({
-    data: { name: "Sneha Joshi",   email: "sneha.joshi@finance.com",   password: employeePassword, roleId: supportAgentRole.id,    adminId: admin.id },
+    data: { name: "Sneha Joshi",   email: "sneha.joshi@finance.com",   password: employeePassword, roleId: supportAgentRole.id,    adminId: admin.id, ...(branchMumbai    ? { branchId: branchMumbai.id,    regionId: regionWest?.id    } : {}) },
   });
   const empVikram = await prisma.employee.create({
-    data: { name: "Vikram Singh",  email: "vikram.singh@finance.com",  password: employeePassword, roleId: financeManagerRole.id,  adminId: admin.id },
+    data: { name: "Vikram Singh",  email: "vikram.singh@finance.com",  password: employeePassword, roleId: financeManagerRole.id,  adminId: admin.id, ...(branchJaipur    ? { branchId: branchJaipur.id,    regionId: regionNorth?.id   } : {}) },
   });
   console.log("✅ Employees created.");
 

@@ -32,13 +32,33 @@ const validateStep = (stepNum, data) => {
     if (!data.paymentFrequency?.trim())
       errors.push("Payment frequency is required.");
 
-    const emi = Number(data.monthlyPayableAmount);
-    if (!data.monthlyPayableAmount && data.monthlyPayableAmount !== 0)
-      errors.push("Installment amount is required.");
-    else if (isNaN(emi) || emi <= 0)
-      errors.push("Installment amount must be greater than 0.");
+    const structure = (data.loanStructure || "EMI").toUpperCase();
 
-    // EMI is always rounded to whole rupees at creation — no decimal check needed
+    if (structure === "CUSTOM") {
+      const slabs = data.customSlabs;
+      const freqMonths = { MONTHLY: 1, QUARTERLY: 3, HALF_YEARLY: 6, YEARLY: 12 }[data.paymentFrequency] || 1;
+      const numInstallments = data.tenureMonths ? Math.ceil(Number(data.tenureMonths) / freqMonths) : 0;
+      const totalInterest = Math.round((Number(data.principalLoanAmount) * Number(data.interestRate) * (Number(data.tenureMonths) / 12)) / 100);
+      const totalPayable = Math.round(Number(data.principalLoanAmount) + totalInterest);
+
+      if (!Array.isArray(slabs) || slabs.length === 0)
+        errors.push("Custom schedule: at least one installment is required.");
+      else if (slabs.length !== numInstallments)
+        errors.push(`Custom schedule: expected ${numInstallments} installments, got ${slabs.length}.`);
+      else if (slabs.some((sl) => Math.round(Number(sl.amount) || 0) <= 0))
+        errors.push("Custom schedule: all installment amounts must be positive.");
+      else {
+        const slabTotal = slabs.reduce((s, sl) => s + Math.round(Number(sl.amount) || 0), 0);
+        if (slabTotal !== totalPayable)
+          errors.push(`Custom schedule: installments total ₹${slabTotal} but must equal ₹${totalPayable}.`);
+      }
+    } else {
+      const emi = Number(data.monthlyPayableAmount);
+      if (!data.monthlyPayableAmount && data.monthlyPayableAmount !== 0)
+        errors.push("Installment amount is required.");
+      else if (isNaN(emi) || emi <= 0)
+        errors.push("Installment amount must be greater than 0.");
+    }
   }
 
   if (stepNum === 3) {
@@ -416,6 +436,8 @@ exports.createDraftFromLoan = async (req, res) => {
       paymentFrequency: loan.paymentFrequency,
       agreementDate: loan.agreementDate,
       monthlyPayableAmount: loan.monthlyPayableAmount,
+      loanStructure: loan.loanStructure || "EMI",
+      customSlabs: loan.scheduleMetadata?.customSlabs || [],
       // Step 3
       twoWheeler,
       agriculture,

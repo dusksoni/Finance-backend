@@ -335,6 +335,40 @@ const stepDownSchedule = (P, annualRate, n, firstDue, offsetFn, step, stepSlabs 
 };
 
 /**
+ * Custom schedule: caller provides explicit per-installment amounts.
+ * customSlabs: [{ amount: 2000 }, { amount: 3000 }, ...] — one entry per installment.
+ * Total of all amounts MUST equal totalPayable (validated before this is called).
+ * Interest/principal split is proportional to the flat-interest ratio for that installment.
+ */
+const customSchedule = (P, annualRate, n, firstDue, offsetFn, step, monthsPerInstallment, customSlabs) => {
+  const totalInterest = round2((P * annualRate * (n / 12)) / 100);
+  const totalPayable = round2(P + totalInterest);
+  const numInstallments = Math.ceil(n / monthsPerInstallment);
+  const interestRatio = totalPayable > 0 ? totalInterest / totalPayable : 0;
+
+  const schedule = [];
+  for (let i = 0; i < numInstallments; i++) {
+    const dueDate = offsetFn(firstDue, step * i);
+    const emiPayAmount = round2(customSlabs[i]?.amount || 0);
+    const interestAmt = round2(emiPayAmount * interestRatio);
+    const principalAmt = round2(emiPayAmount - interestAmt);
+    schedule.push({
+      paymentFor: dueDate,
+      paymentDate: dueDate,
+      emiPayAmount,
+      principalAmt,
+      interestAmt,
+      amountPaidSoFar: 0,
+      fineAmount: 0,
+      status: "UNPAID",
+      isDelayed: false,
+      isForeclosure: false,
+    });
+  }
+  return schedule;
+};
+
+/**
  * Apply moratorium: prepend N interest-only (or zero-payment) EMIs before the main schedule.
  * moratoriumType: "INTEREST_ONLY" (pay interest during moratorium) | "FULL_DEFERRAL" (nothing due)
  */
@@ -362,9 +396,10 @@ const applyMoratorium = (schedule, P, annualRate, moratoriumMonths, firstDue, mo
 /**
  * Main schedule generator — dispatches to the right strategy.
  * interestComputation: FLAT | REDUCING | DAILY_REDUCING
- * loanStructure: EMI | BULLET | STEP_UP | STEP_DOWN
+ * loanStructure: EMI | BULLET | STEP_UP | STEP_DOWN | CUSTOM
  * moratoriumMonths: number of months to defer at start
  * stepSlabs: optional slab config for STEP_UP / STEP_DOWN
+ * customSlabs: required when loanStructure=CUSTOM — [{ amount: number }, ...]
  */
 const generateEMISchedule = ({
   principalLoanAmount,
@@ -377,6 +412,7 @@ const generateEMISchedule = ({
   moratoriumMonths = 0,
   moratoriumType = "INTEREST_ONLY",
   stepSlabs = null,
+  customSlabs = null,
 }) => {
   const P = Number(principalLoanAmount);
   const n = parseInt(tenureMonths, 10);
@@ -390,7 +426,9 @@ const generateEMISchedule = ({
 
   let schedule;
 
-  if (structure === "BULLET") {
+  if (structure === "CUSTOM") {
+    schedule = customSchedule(P, annualRate, n, firstDue, offsetFn, step, monthsPerInstallment, customSlabs || []);
+  } else if (structure === "BULLET") {
     schedule = bulletSchedule(P, annualRate, n, firstDue, offsetFn, step, monthsPerInstallment);
   } else if (structure === "STEP_UP") {
     schedule = stepUpSchedule(P, annualRate, n, firstDue, offsetFn, step, stepSlabs);
@@ -598,7 +636,31 @@ exports.createLoan = async (req, res) => {
     // 3) Build schedule only if start/end dates are available
     // interestType on the loan maps to interestComputation; loanStructure and moratoriumMonths
     // can be passed from the request body directly.
-    const { loanStructure, moratoriumMonths, moratoriumType, stepSlabs } = req.body;
+    const { loanStructure, moratoriumMonths, moratoriumType, stepSlabs, customSlabs } = req.body;
+
+    // Validate custom slabs when loanStructure is CUSTOM
+    if ((loanStructure || "EMI").toUpperCase() === "CUSTOM") {
+      if (!Array.isArray(customSlabs) || customSlabs.length === 0) {
+        return res.status(400).json({ error: "customSlabs array is required when loanStructure is CUSTOM", status: 400 });
+      }
+      const slabTotal = customSlabs.reduce((s, sl) => s + Math.round(Number(sl.amount) || 0), 0);
+      if (slabTotal !== totalPayable) {
+        return res.status(400).json({
+          error: `Custom EMI amounts sum to ₹${slabTotal} but must equal total payable ₹${totalPayable} (principal + interest).`,
+          status: 400,
+        });
+      }
+      if (customSlabs.length !== numInstallments) {
+        return res.status(400).json({
+          error: `Custom EMI schedule must have exactly ${numInstallments} entries (one per installment).`,
+          status: 400,
+        });
+      }
+      if (customSlabs.some((sl) => Math.round(Number(sl.amount) || 0) <= 0)) {
+        return res.status(400).json({ error: "Each custom EMI amount must be greater than zero.", status: 400 });
+      }
+    }
+
     const schedule = parsedStartDate
       ? generateEMISchedule({
           principalLoanAmount: P,
@@ -611,6 +673,7 @@ exports.createLoan = async (req, res) => {
           moratoriumMonths: Number(moratoriumMonths) || 0,
           moratoriumType: moratoriumType || "INTEREST_ONLY",
           stepSlabs: stepSlabs || null,
+          customSlabs: customSlabs || null,
         })
       : [];
     const representativeInstallment =
@@ -682,11 +745,12 @@ exports.createLoan = async (req, res) => {
             penaltyPercentage: penaltyPct,
             tenureMonths: n,
             paymentFrequency: freq,
+            loanStructure: (loanStructure || "EMI").toUpperCase(),
+            scheduleMetadata: customSlabs ? { customSlabs } : (stepSlabs ? { stepSlabs } : null),
 
             rtoCharges,
             processingCharges,
             otherCharges,
-            // ourPaymentType, // REMOVED
 
             ...scheduleFields,
 
@@ -2037,12 +2101,20 @@ exports.approveLoan = async (req, res) => {
     const endDate = addMonths(parsedStartDate, loan.tenureMonths);
 
     // Generate EMI schedule based on approved startDate
+    // Restore all schedule params from the stored loan record
+    const storedMeta = loan.scheduleMetadata || {};
     const emiSchedule = generateEMISchedule({
       principalLoanAmount: loan.principalLoanAmount,
       interestRate: loan.interestRate,
       tenureMonths: loan.tenureMonths,
       startDate: parsedStartDate,
       paymentFrequency: loan.paymentFrequency,
+      interestComputation: loan.interestType || "FLAT",
+      loanStructure: loan.loanStructure || "EMI",
+      moratoriumMonths: Number(loan.moratoriumMonths) || 0,
+      moratoriumType: storedMeta.moratoriumType || "INTEREST_ONLY",
+      stepSlabs: storedMeta.stepSlabs || null,
+      customSlabs: storedMeta.customSlabs || null,
     });
 
     const approvedAt = new Date();
@@ -2075,9 +2147,13 @@ exports.approveLoan = async (req, res) => {
       },
     });
 
-    // Create EMI records
+    // Create EMI records — strip isMoratorium (not a DB field), use MORATORIUM status for those rows
     await prisma.eMI.createMany({
-      data: emiSchedule.map((row) => ({ ...row, loanId: id })),
+      data: emiSchedule.map(({ isMoratorium, ...row }) => ({
+        ...row,
+        loanId: id,
+        status: isMoratorium ? "MORATORIUM" : (row.status || "UNPAID"),
+      })),
     });
 
     await logAction({

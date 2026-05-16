@@ -65,6 +65,48 @@ async function main() {
   const stateRJ   = await prisma.state.findFirst({ where: { stateCode: "08" } }); // Rajasthan
   const stateUP   = await prisma.state.findFirst({ where: { stateCode: "09" } }); // UP
 
+  // ── fetch or create branches/regions (idempotent) ────────────────────────
+  let regionCentral = await prisma.region.findFirst({ where: { name: "Central India Region" } });
+  let regionWest    = await prisma.region.findFirst({ where: { name: "West India Region" } });
+  let regionGujarat = await prisma.region.findFirst({ where: { name: "Gujarat Region" } });
+  let regionNorth   = await prisma.region.findFirst({ where: { name: "North India Region" } });
+  let regionUPEast  = await prisma.region.findFirst({ where: { name: "UP & East Region" } });
+
+  // Create regions if 04_branches.js hasn't run yet
+  if (!regionCentral) regionCentral = await prisma.region.create({ data: { name: "Central India Region", stateId: stateMP.id } });
+  if (!regionWest)    regionWest    = await prisma.region.create({ data: { name: "West India Region",    stateId: stateMH.id } });
+  if (!regionGujarat) regionGujarat = await prisma.region.create({ data: { name: "Gujarat Region",       stateId: stateGJ.id } });
+  if (!regionNorth)   regionNorth   = await prisma.region.create({ data: { name: "North India Region",   stateId: stateRJ.id } });
+  if (!regionUPEast)  regionUPEast  = await prisma.region.create({ data: { name: "UP & East Region",     stateId: stateUP.id } });
+
+  const upsertBranch = async (name, regionId, extra = {}) => {
+    const existing = await prisma.branch.findFirst({ where: { name, regionId } });
+    if (existing) return existing;
+    return prisma.branch.create({ data: { name, regionId, ...extra } });
+  };
+  const upsertShowroom = async (name, branchId, address) => {
+    const existing = await prisma.showroom.findFirst({ where: { name, branchId } });
+    if (existing) return existing;
+    return prisma.showroom.create({ data: { name, branchId, address } });
+  };
+
+  const branchBhopal    = await upsertBranch("Bhopal Main Branch",  regionCentral.id, { address: "12, New Market, Bhopal, MP 462001",     pincode: 462001, phone: "07552555100", email: "bhopal.main@finance.com" });
+  const branchIndore    = await upsertBranch("Indore Branch",        regionCentral.id, { address: "34, MG Road, Indore, MP 452001",          pincode: 452001, phone: "07312555200", email: "indore@finance.com"       });
+  const branchMumbai    = await upsertBranch("Mumbai Main Branch",   regionWest.id,    { address: "101, Nariman Point, Mumbai, MH 400021",   pincode: 400021, phone: "02222555400", email: "mumbai.main@finance.com"   });
+  const branchPune      = await upsertBranch("Pune Branch",          regionWest.id,    { address: "56, FC Road, Pune, MH 411004",            pincode: 411004, phone: "02022555500", email: "pune@finance.com"          });
+  const branchAhmedabad = await upsertBranch("Ahmedabad Branch",     regionGujarat.id, { address: "22, CG Road, Ahmedabad, GJ 380006",       pincode: 380006, phone: "07922555600", email: "ahmedabad@finance.com"     });
+  const branchJaipur    = await upsertBranch("Jaipur Branch",        regionNorth.id,   { address: "14, MI Road, Jaipur, RJ 302001",          pincode: 302001, phone: "01412555800", email: "jaipur@finance.com"        });
+  const branchLucknow   = await upsertBranch("Lucknow Branch",       regionUPEast.id,  { address: "88, Hazratganj, Lucknow, UP 226001",      pincode: 226001, phone: "05222555900", email: "lucknow@finance.com"       });
+
+  const showroomBhopal    = await upsertShowroom("Bhopal Auto Hub",      branchBhopal.id,    "13, New Market, Bhopal");
+  const showroomIndore    = await upsertShowroom("Indore Wheels Center", branchIndore.id,    "35, MG Road, Indore");
+  const showroomMumbai    = await upsertShowroom("Mumbai Motors",        branchMumbai.id,    "102, Nariman Point, Mumbai");
+  const showroomPune      = await upsertShowroom("Pune Vehicle Point",   branchPune.id,      "57, FC Road, Pune");
+  const showroomAhmedabad = await upsertShowroom("Ahmedabad Auto Zone",  branchAhmedabad.id, "23, CG Road, Ahmedabad");
+  const showroomJaipur    = await upsertShowroom("Jaipur Auto Plaza",    branchJaipur.id,    "15, MI Road, Jaipur");
+  const showroomLucknow   = await upsertShowroom("Lucknow Drive Inn",    branchLucknow.id,   "89, Hazratganj, Lucknow");
+  console.log("✅ Regions, branches & showrooms ready.");
+
   const cityBhopal    = await prisma.city.findFirst({ where: { name: "Bhopal",  stateId: stateMP.id } });
   const cityIndore    = await prisma.city.findFirst({ where: { name: "Indore",  stateId: stateMP.id } });
   const cityMumbai    = await prisma.city.findFirst({ where: { name: "Mumbai",  stateId: stateMH.id } });
@@ -198,7 +240,7 @@ async function main() {
   // Helper: create a loan with EMI schedule and optional past payments
   const createLoan = async ({
     fileNo, user, loanType, principal, interestRate, tenureMonths, startDateDaysAgo,
-    fileStatus, paidMonths = 0, employeeId,
+    fileStatus, paidMonths = 0, employeeId, branchId, showroomId,
   }) => {
     const startDate = pastDate(startDateDaysAgo);
     const disbursedDate = new Date(startDate);
@@ -219,6 +261,8 @@ async function main() {
         adminId:             admin.id,
         employeeId:          employeeId || empRajesh.id,
         loanTypeId:          loanType.id,
+        ...(branchId   ? { branchId }   : {}),
+        ...(showroomId ? { showroomId } : {}),
         principalLoanAmount: principal,
         interestAmount:      totalInterest,
         totalAmount:         totalAmount,
@@ -316,6 +360,7 @@ async function main() {
     fileNo: "LN-2025-001", user: u1, loanType: loanTypeTW,
     principal: 85000, interestRate: 14, tenureMonths: 24, startDateDaysAgo: 150,
     fileStatus: "ACTIVE", paidMonths: 4, employeeId: empRajesh.id,
+    branchId: branchBhopal.id, showroomId: showroomBhopal.id,
   });
 
   // 2. Sunita Devi — Active Personal loan, 2 EMIs paid out of 12
@@ -323,6 +368,7 @@ async function main() {
     fileNo: "LN-2025-002", user: u2, loanType: loanTypePersonal,
     principal: 50000, interestRate: 18, tenureMonths: 12, startDateDaysAgo: 75,
     fileStatus: "ACTIVE", paidMonths: 2, employeeId: empPriya.id,
+    branchId: branchIndore.id, showroomId: showroomIndore.id,
   });
 
   // 3. Arjun Mehta — Business loan, 7 paid out of 36 (healthy)
@@ -330,6 +376,7 @@ async function main() {
     fileNo: "LN-2024-088", user: u3, loanType: loanTypeBusiness,
     principal: 300000, interestRate: 16, tenureMonths: 36, startDateDaysAgo: 240,
     fileStatus: "ACTIVE", paidMonths: 7, employeeId: empAmit.id,
+    branchId: branchAhmedabad.id, showroomId: showroomAhmedabad.id,
   });
 
   // 4. Kavya Nair — Personal loan, fully new (just disbursed, 0 EMIs paid)
@@ -337,6 +384,7 @@ async function main() {
     fileNo: "LN-2025-007", user: u4, loanType: loanTypePersonal,
     principal: 250000, interestRate: 18, tenureMonths: 24, startDateDaysAgo: 10,
     fileStatus: "ACTIVE", paidMonths: 0, employeeId: empPriya.id,
+    branchId: branchMumbai.id, showroomId: showroomMumbai.id,
   });
 
   // 5. Mohan Lal — OVERDUE TW loan — started 8 months ago, only 5 paid, now overdue
@@ -344,6 +392,7 @@ async function main() {
     fileNo: "LN-2024-055", user: u5, loanType: loanTypeTW,
     principal: 65000, interestRate: 14, tenureMonths: 24, startDateDaysAgo: 240,
     fileStatus: "OVERDUE", paidMonths: 5, employeeId: empRajesh.id,
+    branchId: branchJaipur.id, showroomId: showroomJaipur.id,
   });
   // Mark a couple EMIs as delayed
   await prisma.eMI.updateMany({
@@ -356,6 +405,7 @@ async function main() {
     fileNo: "LN-2024-091", user: u6, loanType: loanTypeTW,
     principal: 70000, interestRate: 14, tenureMonths: 12, startDateDaysAgo: 400,
     fileStatus: "CLOSED", paidMonths: 12, employeeId: empAmit.id,
+    branchId: branchPune.id, showroomId: showroomPune.id,
   });
   await prisma.loan.update({
     where: { id: loan6.id },
@@ -367,6 +417,7 @@ async function main() {
     fileNo: "LN-2025-012", user: u7, loanType: loanTypePersonal,
     principal: 100000, interestRate: 18, tenureMonths: 18, startDateDaysAgo: 5,
     fileStatus: "PENDING_APPROVAL", paidMonths: 0, employeeId: empRajesh.id,
+    branchId: branchLucknow.id, showroomId: showroomLucknow.id,
   });
   await prisma.loan.update({
     where: { id: loan7.id },

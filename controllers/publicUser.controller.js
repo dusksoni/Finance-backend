@@ -2053,8 +2053,8 @@ exports.getForeclosureQuote = async (req, res) => {
     let totalPaidPrincipal = 0;
 
     for (const e of unpaidEmis) {
-      outstandingPrincipal += Number(e.principalAmount || 0);
-      outstandingInterest += Number(e.interestAmount || 0);
+      outstandingPrincipal += Number(e.principalAmt || 0);
+      outstandingInterest += Number(e.interestAmt || 0);
       outstandingFine += Number(e.fineAmount || 0);
     }
 
